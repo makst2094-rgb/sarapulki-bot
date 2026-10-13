@@ -5,17 +5,19 @@ import time
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import Message
-import aiosqlite
+import asyncpg
 from aiohttp import web
 import os
 
 # ==================== НАСТРОЙКИ ====================
 API_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "0").split(",") if x.strip().isdigit()]
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
+pool = None
 
 # ==================== ФУНКЦИЯ СКЛОНЕНИЯ ====================
 def pluralize(n, forms):
@@ -54,93 +56,140 @@ CARS = {
     "priora": {"name": "🚘 Приора", "price": 10000, "desc": "Музыка громче двигателя."},
     "bmw": {"name": "🏎️ BMW X5", "price": 40000, "desc": "Для важных дел."},
     "gelik": {"name": "🚙 Гелик", "price": 80000, "desc": "Черный, тонированный."},
-    "lambo": {"name": "🚀 Lamborghini", "price": 200000, "desc": "Король дороги."}
+    "lambo": {"name": " Lamborghini", "price": 200000, "desc": "Король дороги."}
 }
 
-SLOTS_SYMBOLS = ['🍒', '', '🍊', '🍇', '💎', '7️⃣']
+SLOTS_SYMBOLS = ['', '🍋', '🍊', '🍇', '💎', '7️⃣']
 SLOTS_PAYOUTS = {
-    '7️⃣7️⃣7️': 10,
-    '💎💎': 5,
-    '🍇🍇🍇': 3,
+    '7️⃣7️7️⃣': 10,
+    '💎💎💎': 5,
+    '🍇🍇': 3,
     '🍊🍊': 2,
-    '🍋🍋': 2,
-    '🍒🍒🍒': 2
+    '🍋🍋🍋': 2,
+    '🍒🍒': 2
 }
 
 # ==================== БАЗА ДАННЫХ ====================
 async def init_db():
-    async with aiosqlite.connect("economy.db") as db:
-        await db.execute("""CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY, balance INTEGER DEFAULT 0)""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS profiles (
-            user_id INTEGER PRIMARY KEY, job_key TEXT DEFAULT 'novice',
-            level INTEGER DEFAULT 1, last_work_time REAL DEFAULT 0, has_coffee INTEGER DEFAULT 0)""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS inventory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
-            item_name TEXT, item_type TEXT, rarity TEXT DEFAULT 'common')""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS businesses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER,
-            business_name TEXT, income INTEGER, last_collect_time REAL DEFAULT 0)""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS garage (
-            user_id INTEGER PRIMARY KEY, car_key TEXT DEFAULT None, car_name TEXT DEFAULT None)""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS daily_bonus (
-            user_id INTEGER PRIMARY KEY, last_claim REAL DEFAULT 0, streak INTEGER DEFAULT 0)""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS robbery (
-            user_id INTEGER PRIMARY KEY, last_robbery REAL DEFAULT 0)""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS lottery_tickets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, draw_date TEXT)""")
-        await db.execute("""CREATE TABLE IF NOT EXISTS usernames (
-            user_id INTEGER PRIMARY KEY, username TEXT)""")
-        await db.commit()
+    global pool
+    pool = await asyncpg.create_pool(DATABASE_URL)
+    
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id BIGINT PRIMARY KEY, 
+                balance INTEGER DEFAULT 0
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS profiles (
+                user_id BIGINT PRIMARY KEY, 
+                job_key TEXT DEFAULT 'novice',
+                level INTEGER DEFAULT 1, 
+                last_work_time REAL DEFAULT 0, 
+                has_coffee BOOLEAN DEFAULT FALSE
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS inventory (
+                id SERIAL PRIMARY KEY, 
+                user_id BIGINT,
+                item_name TEXT, 
+                item_type TEXT, 
+                rarity TEXT DEFAULT 'common'
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS businesses (
+                id SERIAL PRIMARY KEY, 
+                user_id BIGINT,
+                business_name TEXT, 
+                income INTEGER, 
+                last_collect_time REAL DEFAULT 0
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS garage (
+                user_id BIGINT PRIMARY KEY, 
+                car_key TEXT, 
+                car_name TEXT
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_bonus (
+                user_id BIGINT PRIMARY KEY, 
+                last_claim REAL DEFAULT 0, 
+                streak INTEGER DEFAULT 0
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS robbery (
+                user_id BIGINT PRIMARY KEY, 
+                last_robbery REAL DEFAULT 0
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS lottery_tickets (
+                id SERIAL PRIMARY KEY, 
+                user_id BIGINT, 
+                draw_date TEXT
+            )
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS usernames (
+                user_id BIGINT PRIMARY KEY, 
+                username TEXT
+            )
+        """)
+    
+    print("✅ База данных PostgreSQL инициализирована")
 
 async def save_username(user_id: int, username: str):
-    async with aiosqlite.connect("economy.db") as db:
-        await db.execute("REPLACE INTO usernames (user_id, username) VALUES (?, ?)", (user_id, username))
-        await db.commit()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO usernames (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET username = $2",
+            user_id, username
+        )
 
 async def get_username(user_id: int):
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT username FROM usernames WHERE user_id = ?", (user_id,))
-        result = await cursor.fetchone()
-        return result[0] if result else None
+    async with pool.acquire() as conn:
+        return await conn.fetchval("SELECT username FROM usernames WHERE user_id = $1", user_id)
 
-# ==================== ФУНКЦИИ БД ====================
 async def get_user(user_id: int):
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
-        result = await cursor.fetchone()
-        if result: return {"balance": result[0]}
-        await db.execute("INSERT INTO users (user_id) VALUES (?)", (user_id,))
-        await db.commit()
+    async with pool.acquire() as conn:
+        balance = await conn.fetchval("SELECT balance FROM users WHERE user_id = $1", user_id)
+        if balance is not None:
+            return {"balance": balance}
+        await conn.execute("INSERT INTO users (user_id) VALUES ($1)", user_id)
         return {"balance": 0}
 
 async def update_balance(user_id: int, amount: int):
-    async with aiosqlite.connect("economy.db") as db:
-        await db.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
-        await db.commit()
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE users SET balance = balance + $1 WHERE user_id = $2", amount, user_id)
 
 async def get_profile(user_id: int):
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT job_key, level, last_work_time, has_coffee FROM profiles WHERE user_id = ?", (user_id,))
-        result = await cursor.fetchone()
-        if not result:
-            await db.execute("INSERT INTO profiles (user_id) VALUES (?)", (user_id,))
-            await db.commit()
-            return {"job_key": "novice", "level": 1, "last_work_time": 0, "has_coffee": 0}
-        return {"job_key": result[0], "level": result[1], "last_work_time": result[2], "has_coffee": result[3]}
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT job_key, level, last_work_time, has_coffee FROM profiles WHERE user_id = $1", 
+            user_id
+        )
+        if not row:
+            await conn.execute("INSERT INTO profiles (user_id) VALUES ($1)", user_id)
+            return {"job_key": "novice", "level": 1, "last_work_time": 0, "has_coffee": False}
+        return dict(row)
 
 async def set_car(user_id: int, car_key: str, car_name: str):
-    async with aiosqlite.connect("economy.db") as db:
-        await db.execute("REPLACE INTO garage (user_id, car_key, car_name) VALUES (?, ?, ?)", (user_id, car_key, car_name))
-        await db.commit()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO garage (user_id, car_key, car_name) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET car_key = $2, car_name = $3",
+            user_id, car_key, car_name
+        )
 
 async def get_car(user_id: int):
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT car_name FROM garage WHERE user_id = ?", (user_id,))
-        result = await cursor.fetchone()
-        return result[0] if result else None
+    async with pool.acquire() as conn:
+        return await conn.fetchval("SELECT car_name FROM garage WHERE user_id = $1", user_id)
 
-# ==================== ВЕБ-СЕРВЕР (чтобы Render не усыплял) ====================
+# ==================== ВЕБ-СЕРВЕР ====================
 async def handle_ping(request):
     return web.Response(text="Bot is alive! 🤖")
 
@@ -163,18 +212,18 @@ async def cmd_start(message: Message):
         "💰 /balance - мои сарапулки\n"
         "💼 /work - работать\n"
         "💸 /pay - перевести (ответь на сообщение)\n"
-        " /rob - ограбить (ответь на сообщение)\n"
+        "🔫 /rob - ограбить (ответь на сообщение)\n"
         "🎁 /daily - ежедневный бонус\n"
-        " /slots ставка - казино\n"
+        "🎰 /slots ставка - казино\n"
         "🎟️ /buy_ticket - лотерейный билет\n"
         "🛒 /shop - улучшения\n"
         "🏪 /market - бизнесы и кейсы\n"
-        " /cars - автосалон\n"
-        "🅿️ /mycar - моя тачка\n"
+        "🚗 /cars - автосалон\n"
+        "️ /mycar - моя тачка\n"
         "💼 /collect - прибыль с бизнеса\n"
         "🎒 /inv - инвентарь\n"
         "📊 /info - моя карточка\n"
-        "🏆 /rating - рейтинг богачей"
+        " /rating - рейтинг богачей"
     )
 
 @dp.message(Command("balance"))
@@ -182,7 +231,7 @@ async def cmd_balance(message: Message):
     await save_username(message.from_user.id, message.from_user.full_name)
     user = await get_user(message.from_user.id)
     car = await get_car(message.from_user.id)
-    car_text = f"\n🚗 Тачка: {car}" if car else "\n🚗 Тачка: нет (/cars)"
+    car_text = f"\n🚗 Тачка: {car}" if car else "\n Тачка: нет (/cars)"
     await message.answer(f"💰 Баланс: <b>{fmt_money(user['balance'])}</b>{car_text}", parse_mode="HTML")
 
 @dp.message(Command("work"))
@@ -199,16 +248,15 @@ async def cmd_work(message: Message):
         return await message.answer(f"⏳ Отдыхайте еще {remaining // 60} мин.")
     salary = job['base_pay'] * profile['level'] + random.randint(0, 5)
     await update_balance(user_id, salary)
-    async with aiosqlite.connect("economy.db") as db:
-        await db.execute("UPDATE profiles SET last_work_time = ? WHERE user_id = ?", (current_time, user_id))
-        await db.commit()
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE profiles SET last_work_time = $1 WHERE user_id = $2", current_time, user_id)
     await message.answer(f"💼 <b>{job['name']}</b> (Ур. {profile['level']}): заработано <b>{fmt_money(salary)}</b>.", parse_mode="HTML")
 
 @dp.message(Command("jobs"))
 async def cmd_jobs(message: Message):
     text = "📋 <b>Вакансии:</b>\n"
     for key, info in JOBS.items():
-        text += f"🔹 {info['name']} ({info['base_pay']} сарапулок/час) → /job {key}\n"
+        text += f" {info['name']} ({info['base_pay']} сарапулок/час) → /job {key}\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp.message(Command("job"))
@@ -216,9 +264,8 @@ async def cmd_change_job(message: Message):
     args = message.text.split()
     if len(args) < 2 or args[1] not in JOBS:
         return await message.answer("Выберите работу: /jobs")
-    async with aiosqlite.connect("economy.db") as db:
-        await db.execute("UPDATE profiles SET job_key = ? WHERE user_id = ?", (args[1], message.from_user.id))
-        await db.commit()
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE profiles SET job_key = $1 WHERE user_id = $2", args[1], message.from_user.id)
     await message.answer(f"✅ Вы теперь: <b>{JOBS[args[1]]['name']}</b>", parse_mode="HTML")
 
 @dp.message(Command("pay"))
@@ -249,16 +296,17 @@ async def cmd_rob(message: Message):
     robber_id = message.from_user.id
     victim_id = message.reply_to_message.from_user.id
     if robber_id == victim_id: return await message.answer("Нельзя ограбить самого себя!")
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT last_robbery FROM robbery WHERE user_id = ?", (robber_id,))
-        result = await cursor.fetchone()
-        last_rob = result[0] if result else 0
+    async with pool.acquire() as conn:
+        last_rob = await conn.fetchval("SELECT last_robbery FROM robbery WHERE user_id = $1", robber_id)
+        last_rob = last_rob or 0
         current_time = time.time()
         if current_time - last_rob < 10800:
             remaining = int(10800 - (current_time - last_rob))
             return await message.answer(f"⏳ Отдыхайте еще {remaining // 3600} ч.")
-        await db.execute("REPLACE INTO robbery (user_id, last_robbery) VALUES (?, ?)", (robber_id, current_time))
-        await db.commit()
+        await conn.execute(
+            "INSERT INTO robbery (user_id, last_robbery) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET last_robbery = $2",
+            robber_id, current_time
+        )
     victim_bal = await get_user(victim_id)
     if victim_bal['balance'] < 50:
         return await message.answer("У жертвы слишком мало денег!")
@@ -280,21 +328,22 @@ async def cmd_daily(message: Message):
     user_id = message.from_user.id
     await save_username(user_id, message.from_user.full_name)
     current_time = time.time()
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT last_claim, streak FROM daily_bonus WHERE user_id = ?", (user_id,))
-        result = await cursor.fetchone()
-        last_claim, streak = (result[0], result[1]) if result else (0, 0)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT last_claim, streak FROM daily_bonus WHERE user_id = $1", user_id)
+        last_claim, streak = (row['last_claim'], row['streak']) if row else (0, 0)
         if current_time - last_claim < 86400:
             remaining = int(86400 - (current_time - last_claim))
-            return await message.answer(f"⏳ Приходи через {remaining // 3600} ч. {remaining % 3600 // 60} мин.")
+            return await message.answer(f" Приходи через {remaining // 3600} ч. {remaining % 3600 // 60} мин.")
         if current_time - last_claim < 172800: streak += 1
         else: streak = 1
         base_bonus = random.randint(100, 300)
         multiplier = min(streak, 7)
         bonus = base_bonus * multiplier
         await update_balance(user_id, bonus)
-        await db.execute("REPLACE INTO daily_bonus (user_id, last_claim, streak) VALUES (?, ?, ?)", (user_id, current_time, streak))
-        await db.commit()
+        await conn.execute(
+            "INSERT INTO daily_bonus (user_id, last_claim, streak) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET last_claim = $2, streak = $3",
+            user_id, current_time, streak
+        )
     await message.answer(f"🎁 <b>Ежедневный бонус!</b>\n\nТы зашёл {streak} {pluralize(streak, ['день', 'дня', 'дней'])} подряд!\n💰 Получено: <b>{fmt_money(bonus)}</b>", parse_mode="HTML")
 
 @dp.message(Command("slots"))
@@ -333,26 +382,23 @@ async def cmd_buy_ticket(message: Message):
         return await message.answer(f"❌ Билет стоит {fmt_money(ticket_price)}")
     await update_balance(user_id, -ticket_price)
     today = time.strftime("%Y-%m-%d")
-    async with aiosqlite.connect("economy.db") as db:
-        await db.execute("INSERT INTO lottery_tickets (user_id, draw_date) VALUES (?, ?)", (user_id, today))
-        await db.commit()
+    async with pool.acquire() as conn:
+        await conn.execute("INSERT INTO lottery_tickets (user_id, draw_date) VALUES ($1, $2)", user_id, today)
     await message.answer(f"🎟️ Вы купили лотерейный билет за {fmt_money(ticket_price)}!\nРозыгрыш: /lottery_draw (админ)")
 
 @dp.message(Command("lottery_draw"))
 async def cmd_lottery_draw(message: Message):
     if message.from_user.id not in ADMIN_IDS: return
     today = time.strftime("%Y-%m-%d")
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT user_id FROM lottery_tickets WHERE draw_date = ?", (today,))
-        tickets = await cursor.fetchall()
+    async with pool.acquire() as conn:
+        tickets = await conn.fetch("SELECT user_id FROM lottery_tickets WHERE draw_date = $1", today)
         if not tickets: return await message.answer("Сегодня никто не купил билеты!")
-        winner_id = random.choice(tickets)[0]
+        winner_id = random.choice(tickets)['user_id']
         bank = len(tickets) * 50
         await update_balance(winner_id, bank)
-        await db.execute("DELETE FROM lottery_tickets WHERE draw_date = ?", (today,))
-        await db.commit()
+        await conn.execute("DELETE FROM lottery_tickets WHERE draw_date = $1", today)
     winner_name = await get_username(winner_id) or f"User{winner_id}"
-    await message.answer(f" <b>РОЗЫГРЫШ ЛОТЕРЕИ!</b>\n\n🏆 Победитель: <b>{winner_name}</b>\n💰 Выигрыш: <b>{fmt_money(bank)}</b>\n\nВсего участников: {len(tickets)}", parse_mode="HTML")
+    await message.answer(f"🎊 <b>РОЗЫГРЫШ ЛОТЕРЕИ!</b>\n\n🏆 Победитель: <b>{winner_name}</b>\n💰 Выигрыш: <b>{fmt_money(bank)}</b>\n\nВсего участников: {len(tickets)}", parse_mode="HTML")
 
 @dp.message(Command("info"))
 async def cmd_info(message: Message):
@@ -361,17 +407,15 @@ async def cmd_info(message: Message):
     user = await get_user(user_id)
     profile = await get_profile(user_id)
     car = await get_car(user_id)
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT COUNT(*) FROM businesses WHERE user_id = ?", (user_id,))
-        biz_count = (await cursor.fetchone())[0]
-        cursor = await db.execute("SELECT COUNT(*) FROM inventory WHERE user_id = ?", (user_id,))
-        inv_count = (await cursor.fetchone())[0]
+    async with pool.acquire() as conn:
+        biz_count = await conn.fetchval("SELECT COUNT(*) FROM businesses WHERE user_id = $1", user_id)
+        inv_count = await conn.fetchval("SELECT COUNT(*) FROM inventory WHERE user_id = $1", user_id)
     job = JOBS[profile['job_key']]
-    text = f"📊 <b>Карточка игрока</b>\n\n <b>{message.from_user.full_name}</b>\n\n"
+    text = f"📊 <b>Карточка игрока</b>\n\n👤 <b>{message.from_user.full_name}</b>\n\n"
     text += f"💰 Баланс: <b>{fmt_money(user['balance'])}</b>\n"
     text += f"💼 Профессия: <b>{job['name']}</b> (Ур. {profile['level']})\n"
-    text += f" Машина: <b>{car if car else 'нет'}</b>\n"
-    text += f"🏪 Бизнесов: <b>{biz_count}</b>\n"
+    text += f"🚗 Машина: <b>{car if car else 'нет'}</b>\n"
+    text += f" Бизнесов: <b>{biz_count}</b>\n"
     text += f"🎒 Предметов: <b>{inv_count}</b>\n"
     if profile['has_coffee']: text += "☕ Кофе-машина: <b>есть</b>\n"
     await message.answer(text, parse_mode="HTML")
@@ -394,19 +438,17 @@ async def cmd_buy(message: Message):
     await update_balance(user_id, -item['price'])
     if item['type'] == 'level_up':
         p = await get_profile(user_id)
-        async with aiosqlite.connect("economy.db") as db:
-            await db.execute("UPDATE profiles SET level = ? WHERE user_id = ?", (p['level']+1, user_id))
-            await db.commit()
+        async with pool.acquire() as conn:
+            await conn.execute("UPDATE profiles SET level = $1 WHERE user_id = $2", p['level']+1, user_id)
         await message.answer(f"✅ Уровень повышен до {p['level']+1}!")
     elif item['type'] == 'cooldown_reduce':
-        async with aiosqlite.connect("economy.db") as db:
-            await db.execute("UPDATE profiles SET has_coffee = 1 WHERE user_id = ?", (user_id,))
-            await db.commit()
+        async with pool.acquire() as conn:
+            await conn.execute("UPDATE profiles SET has_coffee = TRUE WHERE user_id = $1", user_id)
         await message.answer("✅ Кофе куплен! Работа быстрее.")
 
 @dp.message(Command("market"))
 async def cmd_market(message: Message):
-    text = "🏪 <b>Рынок:</b>\n"
+    text = " <b>Рынок:</b>\n"
     for k, v in MARKET.items():
         text += f"🔹 {v['name']} ({fmt_money(v['price'])}) → /buy_market {k}\n"
     await message.answer(text, parse_mode="HTML")
@@ -422,17 +464,15 @@ async def cmd_buy_market(message: Message):
     await update_balance(user_id, -item['price'])
     if item['type'] == 'case':
         rand = random.randint(1, 100)
-        if rand <= 5: prize, rar = "👑 Золотая Скрипка", "legendary"
+        if rand <= 5: prize, rar = " Золотая Скрипка", "legendary"
         elif rand <= 25: prize, rar = "💎 Алмаз", "rare"
         else: prize, rar = "📄 Бумага", "common"
-        async with aiosqlite.connect("economy.db") as db:
-            await db.execute("INSERT INTO inventory (user_id, item_name, item_type, rarity) VALUES (?, ?, 'card', ?)", (user_id, prize, rar))
-            await db.commit()
+        async with pool.acquire() as conn:
+            await conn.execute("INSERT INTO inventory (user_id, item_name, item_type, rarity) VALUES ($1, $2, 'card', $3)", user_id, prize, rar)
         await message.answer(f"📦 Выпало: <b>{prize}</b> ({rar})", parse_mode="HTML")
     elif item['type'] == 'business':
-        async with aiosqlite.connect("economy.db") as db:
-            await db.execute("INSERT INTO businesses (user_id, business_name, income) VALUES (?, ?, ?)", (user_id, item['name'], item['income']))
-            await db.commit()
+        async with pool.acquire() as conn:
+            await conn.execute("INSERT INTO businesses (user_id, business_name, income) VALUES ($1, $2, $3)", user_id, item['name'], item['income'])
         await message.answer(f"✅ Куплен <b>{item['name']}</b>. Жми /collect раз в сутки!", parse_mode="HTML")
 
 @dp.message(Command("collect"))
@@ -440,15 +480,13 @@ async def cmd_collect(message: Message):
     user_id = message.from_user.id
     now = time.time()
     total = 0
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT id, income, last_collect_time FROM businesses WHERE user_id = ?", (user_id,))
-        bizs = await cursor.fetchall()
+    async with pool.acquire() as conn:
+        bizs = await conn.fetch("SELECT id, income, last_collect_time FROM businesses WHERE user_id = $1", user_id)
         if not bizs: return await message.answer("Нет бизнеса.")
-        for bid, inc, last in bizs:
-            if now - last > 86400:
-                total += inc
-                await db.execute("UPDATE businesses SET last_collect_time = ? WHERE id = ?", (now, bid))
-        await db.commit()
+        for biz in bizs:
+            if now - biz['last_collect_time'] > 86400:
+                total += biz['income']
+                await conn.execute("UPDATE businesses SET last_collect_time = $1 WHERE id = $2", now, biz['id'])
     if total > 0:
         await update_balance(user_id, total)
         await message.answer(f"💼 Прибыль: <b>+{fmt_money(total)}</b>", parse_mode="HTML")
@@ -470,44 +508,42 @@ async def cmd_buycar(message: Message):
     car = CARS[car_key]
     user_id = message.from_user.id
     user = await get_user(user_id)
-    if user['balance'] < car['price']: return await message.answer(f" Нужно {fmt_money(car['price'])}")
+    if user['balance'] < car['price']: return await message.answer(f"❌ Нужно {fmt_money(car['price'])}")
     await update_balance(user_id, -car['price'])
     await set_car(user_id, car_key, car['name'])
-    await message.answer(f"🎉 <b>КУПЛЕНО!</b>\nТеперь ты ездишь на <b>{car['name']}</b>!\nПроверь через /mycar", parse_mode="HTML")
+    await message.answer(f" <b>КУПЛЕНО!</b>\nТеперь ты ездишь на <b>{car['name']}</b>!\nПроверь через /mycar", parse_mode="HTML")
 
 @dp.message(Command("mycar"))
 async def cmd_mycar(message: Message):
     car = await get_car(message.from_user.id)
-    if car: await message.answer(f"🅿️ Твой гараж:\n <b>{car}</b>", parse_mode="HTML")
-    else: await message.answer("️ Гараж пуст. Купи тачку в /cars!")
+    if car: await message.answer(f"🅿️ Твой гараж:\n🚗 <b>{car}</b>", parse_mode="HTML")
+    else: await message.answer("🅿️ Гараж пуст. Купи тачку в /cars!")
 
 @dp.message(Command("inv"))
 async def cmd_inv(message: Message):
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT item_name, rarity FROM inventory WHERE user_id = ?", (message.from_user.id,))
-        items = await cursor.fetchall()
+    async with pool.acquire() as conn:
+        items = await conn.fetch("SELECT item_name, rarity FROM inventory WHERE user_id = $1", message.from_user.id)
     if not items: return await message.answer("🎒 Пусто.")
     text = "🎒 <b>Предметы:</b>\n"
-    for name, rar in items:
-        c = "🟡" if rar=="legendary" else "🔵" if rar=="rare" else "🟢"
-        text += f"{c} {name}\n"
+    for item in items:
+        c = "🟡" if item['rarity']=="legendary" else "🔵" if item['rarity']=="rare" else "🟢"
+        text += f"{c} {item['item_name']}\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp.message(Command("rating"))
 async def cmd_rating(message: Message):
-    async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("""
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
             SELECT u.user_id, u.balance, us.username 
             FROM users u 
             LEFT JOIN usernames us ON u.user_id = us.user_id 
             ORDER BY u.balance DESC LIMIT 10
         """)
-        rows = await cursor.fetchall()
     
     text = "🏆 <b>Рейтинг богачей:</b>\n\n"
-    for i, (uid, bal, name) in enumerate(rows, 1):
-        display_name = name if name else f"User{uid}"
-        text += f"{i}. <b>{display_name}</b> — {fmt_money(bal)}\n"
+    for i, row in enumerate(rows, 1):
+        display_name = row['username'] if row['username'] else f"User{row['user_id']}"
+        text += f"{i}. <b>{display_name}</b> — {fmt_money(row['balance'])}\n"
     
     await message.answer(text, parse_mode="HTML")
 
