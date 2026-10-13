@@ -11,8 +11,8 @@ import threading
 import os
 
 # ==================== НАСТРОЙКИ ====================
-API_TOKEN = os.environ.get("BOT_TOKEN", "ВСТАВЬ_СЮДА_СВОЙ_ТОКЕН")
-ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "123456789").split(",")]
+API_TOKEN = os.environ.get("BOT_TOKEN", "8868987540:AAHhhqOGu4gWOjH4X_6z77-_r4yv1BkKBtA")
+ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "5967807166").split(",")]
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
