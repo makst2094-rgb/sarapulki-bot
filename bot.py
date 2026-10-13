@@ -7,12 +7,11 @@ from aiogram.filters import Command
 from aiogram.types import Message
 import aiosqlite
 from aiohttp import web
-import threading
 import os
 
 # ==================== НАСТРОЙКИ ====================
-API_TOKEN = os.environ.get("BOT_TOKEN", "8868987540:AAHhhqOGu4gWOjH4X_6z77-_r4yv1BkKBtA")
-ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "5967807166").split(",")]
+API_TOKEN = os.environ.get("BOT_TOKEN", "")
+ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "0").split(",") if x.strip().isdigit()]
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
@@ -40,14 +39,14 @@ JOBS = {
 }
 
 SHOP_ITEMS = {
-    "course": {"name": " Курсы", "price": 500, "desc": "+1 уровень профессии", "type": "level_up"},
+    "course": {"name": "📚 Курсы", "price": 500, "desc": "+1 уровень профессии", "type": "level_up"},
     "coffee": {"name": "☕ Кофе-машина", "price": 1000, "desc": "-10% время отдыха", "type": "cooldown_reduce"}
 }
 
 MARKET = {
     "case_basic": {"name": "📦 Обычный кейс", "price": 200, "type": "case"},
     "biz_shawarma": {"name": "🌯 Ларёк с шаурмой", "price": 2000, "type": "business", "income": 150},
-    "biz_crypto": {"name": " Крипто-ферма", "price": 15000, "type": "business", "income": 1200}
+    "biz_crypto": {"name": "💻 Крипто-ферма", "price": 15000, "type": "business", "income": 1200}
 }
 
 CARS = {
@@ -60,8 +59,12 @@ CARS = {
 
 SLOTS_SYMBOLS = ['🍒', '', '🍊', '🍇', '💎', '7️⃣']
 SLOTS_PAYOUTS = {
-    '7️⃣7️⃣7️': 10, '💎💎': 5, '🍇🍇': 3,
-    '🍊🍊🍊': 2, '🍋🍋🍋': 2, '🍒🍒': 2
+    '7️⃣7️⃣7️': 10,
+    '💎💎': 5,
+    '🍇🍇🍇': 3,
+    '🍊🍊': 2,
+    '🍋🍋': 2,
+    '🍒🍒🍒': 2
 }
 
 # ==================== БАЗА ДАННЫХ ====================
@@ -86,7 +89,20 @@ async def init_db():
             user_id INTEGER PRIMARY KEY, last_robbery REAL DEFAULT 0)""")
         await db.execute("""CREATE TABLE IF NOT EXISTS lottery_tickets (
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, draw_date TEXT)""")
+        await db.execute("""CREATE TABLE IF NOT EXISTS usernames (
+            user_id INTEGER PRIMARY KEY, username TEXT)""")
         await db.commit()
+
+async def save_username(user_id: int, username: str):
+    async with aiosqlite.connect("economy.db") as db:
+        await db.execute("REPLACE INTO usernames (user_id, username) VALUES (?, ?)", (user_id, username))
+        await db.commit()
+
+async def get_username(user_id: int):
+    async with aiosqlite.connect("economy.db") as db:
+        cursor = await db.execute("SELECT username FROM usernames WHERE user_id = ?", (user_id,))
+        result = await cursor.fetchone()
+        return result[0] if result else None
 
 # ==================== ФУНКЦИИ БД ====================
 async def get_user(user_id: int):
@@ -140,27 +156,30 @@ async def start_web_server():
 # ==================== КОМАНДЫ ====================
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
+    await save_username(message.from_user.id, message.from_user.full_name)
+    
     await message.answer(
         "👋 <b>Экономика группы</b>\n\n"
         "💰 /balance - мои сарапулки\n"
         "💼 /work - работать\n"
         "💸 /pay - перевести (ответь на сообщение)\n"
-        "🔫 /rob - ограбить (ответь на сообщение)\n"
-        " /daily - ежедневный бонус\n"
-        "🎰 /slots ставка - казино\n"
+        " /rob - ограбить (ответь на сообщение)\n"
+        "🎁 /daily - ежедневный бонус\n"
+        " /slots ставка - казино\n"
         "🎟️ /buy_ticket - лотерейный билет\n"
         "🛒 /shop - улучшения\n"
         "🏪 /market - бизнесы и кейсы\n"
-        "🚗 /cars - автосалон\n"
-        "️ /mycar - моя тачка\n"
+        " /cars - автосалон\n"
+        "🅿️ /mycar - моя тачка\n"
         "💼 /collect - прибыль с бизнеса\n"
         "🎒 /inv - инвентарь\n"
         "📊 /info - моя карточка\n"
-        "🏆 /top - топ богачей"
+        "🏆 /rating - рейтинг богачей"
     )
 
 @dp.message(Command("balance"))
 async def cmd_balance(message: Message):
+    await save_username(message.from_user.id, message.from_user.full_name)
     user = await get_user(message.from_user.id)
     car = await get_car(message.from_user.id)
     car_text = f"\n🚗 Тачка: {car}" if car else "\n🚗 Тачка: нет (/cars)"
@@ -168,6 +187,7 @@ async def cmd_balance(message: Message):
 
 @dp.message(Command("work"))
 async def cmd_work(message: Message):
+    await save_username(message.from_user.id, message.from_user.full_name)
     user_id = message.from_user.id
     profile = await get_profile(user_id)
     job = JOBS[profile['job_key']]
@@ -188,7 +208,7 @@ async def cmd_work(message: Message):
 async def cmd_jobs(message: Message):
     text = "📋 <b>Вакансии:</b>\n"
     for key, info in JOBS.items():
-        text += f" {info['name']} ({info['base_pay']} сарапулок/час) → /job {key}\n"
+        text += f"🔹 {info['name']} ({info['base_pay']} сарапулок/час) → /job {key}\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp.message(Command("job"))
@@ -219,6 +239,7 @@ async def cmd_pay(message: Message):
         return await message.answer(f"❌ Недостаточно ({fmt_money(sender_bal['balance'])})")
     await update_balance(sender_id, -amount)
     await update_balance(receiver_id, amount)
+    await save_username(receiver_id, message.reply_to_message.from_user.full_name)
     await message.answer(f"✅ <b>{message.from_user.full_name}</b> перевёл <b>{fmt_money(amount)}</b> пользователю <b>{message.reply_to_message.from_user.full_name}</b>", parse_mode="HTML")
 
 @dp.message(Command("rob"))
@@ -252,11 +273,12 @@ async def cmd_rob(message: Message):
         penalty = int(robber_bal['balance'] * 0.2)
         await update_balance(robber_id, -penalty)
         await update_balance(victim_id, penalty)
-        await message.answer(f"🚨 <b>ПОПАЛСЯ!</b>\n\n{message.from_user.full_name} заплатил штраф <b>{fmt_money(penalty)}</b> пользователю {message.reply_to_message.from_user.full_name}!", parse_mode="HTML")
+        await message.answer(f" <b>ПОПАЛСЯ!</b>\n\n{message.from_user.full_name} заплатил штраф <b>{fmt_money(penalty)}</b> пользователю {message.reply_to_message.from_user.full_name}!", parse_mode="HTML")
 
 @dp.message(Command("daily"))
 async def cmd_daily(message: Message):
     user_id = message.from_user.id
+    await save_username(user_id, message.from_user.full_name)
     current_time = time.time()
     async with aiosqlite.connect("economy.db") as db:
         cursor = await db.execute("SELECT last_claim, streak FROM daily_bonus WHERE user_id = ?", (user_id,))
@@ -304,6 +326,7 @@ async def cmd_slots(message: Message):
 @dp.message(Command("buy_ticket"))
 async def cmd_buy_ticket(message: Message):
     user_id = message.from_user.id
+    await save_username(user_id, message.from_user.full_name)
     user_bal = await get_user(user_id)
     ticket_price = 50
     if user_bal['balance'] < ticket_price:
@@ -328,12 +351,13 @@ async def cmd_lottery_draw(message: Message):
         await update_balance(winner_id, bank)
         await db.execute("DELETE FROM lottery_tickets WHERE draw_date = ?", (today,))
         await db.commit()
-    winner = await bot.get_chat_member(message.chat.id, winner_id)
-    await message.answer(f"🎊 <b>РОЗЫГРЫШ ЛОТЕРЕИ!</b>\n\n🏆 Победитель: <b>{winner.user.full_name}</b>\n💰 Выигрыш: <b>{fmt_money(bank)}</b>\n\nВсего участников: {len(tickets)}", parse_mode="HTML")
+    winner_name = await get_username(winner_id) or f"User{winner_id}"
+    await message.answer(f" <b>РОЗЫГРЫШ ЛОТЕРЕИ!</b>\n\n🏆 Победитель: <b>{winner_name}</b>\n💰 Выигрыш: <b>{fmt_money(bank)}</b>\n\nВсего участников: {len(tickets)}", parse_mode="HTML")
 
 @dp.message(Command("info"))
 async def cmd_info(message: Message):
     user_id = message.from_user.id
+    await save_username(user_id, message.from_user.full_name)
     user = await get_user(user_id)
     profile = await get_profile(user_id)
     car = await get_car(user_id)
@@ -343,10 +367,10 @@ async def cmd_info(message: Message):
         cursor = await db.execute("SELECT COUNT(*) FROM inventory WHERE user_id = ?", (user_id,))
         inv_count = (await cursor.fetchone())[0]
     job = JOBS[profile['job_key']]
-    text = f" <b>Карточка игрока</b>\n\n👤 <b>{message.from_user.full_name}</b>\n\n"
+    text = f"📊 <b>Карточка игрока</b>\n\n <b>{message.from_user.full_name}</b>\n\n"
     text += f"💰 Баланс: <b>{fmt_money(user['balance'])}</b>\n"
     text += f"💼 Профессия: <b>{job['name']}</b> (Ур. {profile['level']})\n"
-    text += f"🚗 Машина: <b>{car if car else 'нет'}</b>\n"
+    text += f" Машина: <b>{car if car else 'нет'}</b>\n"
     text += f"🏪 Бизнесов: <b>{biz_count}</b>\n"
     text += f"🎒 Предметов: <b>{inv_count}</b>\n"
     if profile['has_coffee']: text += "☕ Кофе-машина: <b>есть</b>\n"
@@ -382,7 +406,7 @@ async def cmd_buy(message: Message):
 
 @dp.message(Command("market"))
 async def cmd_market(message: Message):
-    text = " <b>Рынок:</b>\n"
+    text = "🏪 <b>Рынок:</b>\n"
     for k, v in MARKET.items():
         text += f"🔹 {v['name']} ({fmt_money(v['price'])}) → /buy_market {k}\n"
     await message.answer(text, parse_mode="HTML")
@@ -398,7 +422,7 @@ async def cmd_buy_market(message: Message):
     await update_balance(user_id, -item['price'])
     if item['type'] == 'case':
         rand = random.randint(1, 100)
-        if rand <= 5: prize, rar = " Золотая Скрипка", "legendary"
+        if rand <= 5: prize, rar = "👑 Золотая Скрипка", "legendary"
         elif rand <= 25: prize, rar = "💎 Алмаз", "rare"
         else: prize, rar = "📄 Бумага", "common"
         async with aiosqlite.connect("economy.db") as db:
@@ -435,7 +459,7 @@ async def cmd_collect(message: Message):
 async def cmd_cars(message: Message):
     text = "🚗 <b>Автосалон:</b>\n\n"
     for k, v in CARS.items():
-        text += f" <b>{v['name']}</b>\n   💰 {fmt_money(v['price'])}\n   <i>{v['desc']}</i>\n   Купить: <code>/buycar {k}</code>\n\n"
+        text += f"🔸 <b>{v['name']}</b>\n   💰 {fmt_money(v['price'])}\n   <i>{v['desc']}</i>\n   Купить: <code>/buycar {k}</code>\n\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp.message(Command("buycar"))
@@ -446,7 +470,7 @@ async def cmd_buycar(message: Message):
     car = CARS[car_key]
     user_id = message.from_user.id
     user = await get_user(user_id)
-    if user['balance'] < car['price']: return await message.answer(f"❌ Нужно {fmt_money(car['price'])}")
+    if user['balance'] < car['price']: return await message.answer(f" Нужно {fmt_money(car['price'])}")
     await update_balance(user_id, -car['price'])
     await set_car(user_id, car_key, car['name'])
     await message.answer(f"🎉 <b>КУПЛЕНО!</b>\nТеперь ты ездишь на <b>{car['name']}</b>!\nПроверь через /mycar", parse_mode="HTML")
@@ -455,7 +479,7 @@ async def cmd_buycar(message: Message):
 async def cmd_mycar(message: Message):
     car = await get_car(message.from_user.id)
     if car: await message.answer(f"🅿️ Твой гараж:\n <b>{car}</b>", parse_mode="HTML")
-    else: await message.answer("🅿️ Гараж пуст. Купи тачку в /cars!")
+    else: await message.answer("️ Гараж пуст. Купи тачку в /cars!")
 
 @dp.message(Command("inv"))
 async def cmd_inv(message: Message):
@@ -469,18 +493,22 @@ async def cmd_inv(message: Message):
         text += f"{c} {name}\n"
     await message.answer(text, parse_mode="HTML")
 
-@dp.message(Command("top"))
-async def cmd_top(message: Message):
+@dp.message(Command("rating"))
+async def cmd_rating(message: Message):
     async with aiosqlite.connect("economy.db") as db:
-        cursor = await db.execute("SELECT user_id, balance FROM users ORDER BY balance DESC LIMIT 10")
+        cursor = await db.execute("""
+            SELECT u.user_id, u.balance, us.username 
+            FROM users u 
+            LEFT JOIN usernames us ON u.user_id = us.user_id 
+            ORDER BY u.balance DESC LIMIT 10
+        """)
         rows = await cursor.fetchall()
-    text = "🏆 <b>Топ сарапулек:</b>\n\n"
-    for i, (uid, bal) in enumerate(rows, 1):
-        try:
-            u = await bot.get_chat_member(message.chat.id, uid)
-            name = u.user.full_name
-        except: name = f"User{uid}"
-        text += f"{i}. {name} — {fmt_money(bal)}\n"
+    
+    text = "🏆 <b>Рейтинг богачей:</b>\n\n"
+    for i, (uid, bal, name) in enumerate(rows, 1):
+        display_name = name if name else f"User{uid}"
+        text += f"{i}. <b>{display_name}</b> — {fmt_money(bal)}\n"
+    
     await message.answer(text, parse_mode="HTML")
 
 @dp.message(Command("give"))
@@ -491,13 +519,13 @@ async def cmd_give(message: Message):
     try: amount = int(args[1])
     except: return await message.answer("Число!")
     await update_balance(message.reply_to_message.from_user.id, amount)
+    await save_username(message.reply_to_message.from_user.id, message.reply_to_message.from_user.full_name)
     await message.answer(f"✅ Выдано {fmt_money(amount)}.")
 
 # ==================== ЗАПУСК ====================
 async def main():
     await init_db()
-    print("🤖 Бот запущен! Валюта: Сарапулки")
-    # Запускаем веб-сервер в фоне
+    print(" Бот запущен! Валюта: Сарапулки")
     asyncio.create_task(start_web_server())
     await dp.start_polling(bot)
 
