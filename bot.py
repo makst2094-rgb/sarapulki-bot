@@ -562,10 +562,9 @@ async def start_blackjack(message: Message, state: FSMContext):
         return await message.answer(f"Нужно минимум 100 сарапулек! У тебя: {fmt_money(user['balance'])}")
     
     bj_tables[chat_id] = {
-        "players": {user_id: {"name": message.from_user.first_name, "bet": 0, "cards": [], "stand": False, "busted": False}},
+        "players": {user_id: {"name": message.from_user.first_name, "bet": 0, "cards": [], "stand": False, "busted": False, "bet_msg_id": None}},
         "order": [user_id],
-        "stage": "waiting",
-        "message_id": None
+        "stage": "waiting"
     }
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -580,7 +579,7 @@ async def start_blackjack(message: Message, state: FSMContext):
         f"Нажмите кнопку чтобы сесть за стол!",
         reply_markup=kb
     )
-    bj_tables[chat_id]["message_id"] = msg.message_id
+    bj_tables[chat_id]["main_msg_id"] = msg.message_id
     
     await state.set_state(BJStates.waiting)
     await asyncio.sleep(60)
@@ -598,19 +597,30 @@ async def start_blackjack(message: Message, state: FSMContext):
     table["stage"] = "betting"
     players_list = ", ".join(p["name"] for p in table["players"].values())
     
-    bets_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="50", callback_data=f"bet_50_{chat_id}"),
-         InlineKeyboardButton(text="100", callback_data=f"bet_100_{chat_id}"),
-         InlineKeyboardButton(text="200", callback_data=f"bet_200_{chat_id}")],
-        [InlineKeyboardButton(text="500", callback_data=f"bet_500_{chat_id}"),
-         InlineKeyboardButton(text="1000", callback_data=f"bet_1000_{chat_id}")]
-    ])
-    
     await message.answer(
         f"Игорёчек: Отлично! Игроки: {players_list}\n\n"
-        f"Каждый игрок, нажмите кнопку ставки:",
-        reply_markup=bets_kb
+        f"Каждый игрок, проверьте личку для ставки!"
     )
+    
+    # Отправляем КАЖДОМУ игроку отдельное сообщение со ставками
+    for uid in table["order"]:
+        bets_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="50", callback_data=f"bet_50_{chat_id}"),
+             InlineKeyboardButton(text="100", callback_data=f"bet_100_{chat_id}"),
+             InlineKeyboardButton(text="200", callback_data=f"bet_200_{chat_id}")],
+            [InlineKeyboardButton(text="500", callback_data=f"bet_500_{chat_id}"),
+             InlineKeyboardButton(text="1000", callback_data=f"bet_1000_{chat_id}")]
+        ])
+        
+        try:
+            bet_msg = await bot.send_message(
+                uid,
+                f"Игорёчек: Ваша ставка?",
+                reply_markup=bets_kb
+            )
+            table["players"][uid]["bet_msg_id"] = bet_msg.message_id
+        except:
+            await message.answer(f"⚠️ {table['players'][uid]['name']}, напишите боту в личку!")
 
 @dp.callback_query(lambda c: c.data.startswith("bj_join_"))
 async def join_table(callback: types.CallbackQuery, state: FSMContext):
@@ -640,7 +650,7 @@ async def join_table(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer(f"Нужно 100 сарапулек! У вас: {fmt_money(user['balance'])}", show_alert=True)
         return
     
-    table["players"][uid] = {"name": callback.from_user.first_name, "bet": 0, "cards": [], "stand": False, "busted": False}
+    table["players"][uid] = {"name": callback.from_user.first_name, "bet": 0, "cards": [], "stand": False, "busted": False, "bet_msg_id": None}
     table["order"].append(uid)
     
     await callback.answer(f"Вы присоединились!")
@@ -689,8 +699,15 @@ async def place_bet(callback: types.CallbackQuery, state: FSMContext):
     await update_balance(chat_id, uid, -bet)
     table["players"][uid]["bet"] = bet
     
-    await callback.message.edit_text(f"Ваша ставка: {bet} сарапулек. Ждём остальных...")
+    # Обновляем ТОЛЬКО личное сообщение этого игрока
+    try:
+        await callback.message.edit_text(f"✅ Ваша ставка: {bet} сарапулек. Ждём остальных...")
+    except:
+        pass
     
+    await callback.answer(f"Ставка {bet} принята!")
+    
+    # Проверяем, все ли поставили
     if all(p["bet"] > 0 for p in table["players"].values()):
         await deal_cards(chat_id, state)
 
