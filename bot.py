@@ -37,8 +37,7 @@ CRAFT_RECIPES = {
 
 LOTTERY_PRICE = 50
 LOTTERY_INTERVAL = 12 * 3600
-
-BANK_INTEREST_RATE = 0.01  # 1% в сутки
+BANK_INTEREST_RATE = 0.01
 
 def pluralize(n, forms):
     n = abs(n) % 100
@@ -73,21 +72,22 @@ MARKET = {
 CARS = {
     "ok": {"name": "🚲 Ока", "price": 3000, "desc": "Едет и едет."},
     "priora": {"name": "🚘 Приора", "price": 10000, "desc": "Музыка громче двигателя."},
-    "bmw": {"name": "🏎️ BMW X5", "price": 40000, "desc": "Для важных дел."},
-    "gelik": {"name": "🚙 Гелик", "price": 80000, "desc": "Чёрный, тонированный."},
+    "bmw": {"name": "️ BMW X5", "price": 40000, "desc": "Для важных дел."},
+    "gelik": {"name": " Гелик", "price": 80000, "desc": "Чёрный, тонированный."},
     "lambo": {"name": "🏎️ Lamborghini", "price": 200000, "desc": "Король дороги."}
 }
 
-SLOTS_SYMBOLS = ['🍒', '🍋', '', '🍇', '💎', '7️⃣']
+SLOTS_SYMBOLS = ['🍒', '🍋', '🍊', '🍇', '💎', '7️⃣']
 SLOTS_PAYOUTS = {
-    '7️⃣7️⃣7️⃣': 10,
+    '7️7️⃣7️⃣': 10,
     '💎💎💎': 5,
     '🍇🍇🍇': 3,
-    '🍊🍊': 2,
-    '🍋🍋🍋': 2,
+    '🍊🍊🍊': 2,
+    '🍋🍋': 2,
     '🍒🍒🍒': 2
 }
 
+# ==================== БАЗА ДАННЫХ (БЕЗ УДАЛЕНИЯ!) ====================
 async def init_db():
     global pool
     pool = await asyncpg.create_pool(
@@ -99,20 +99,8 @@ async def init_db():
     )
     
     async with pool.acquire() as conn:
-        await conn.execute("DROP TABLE IF EXISTS lottery_tickets CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS robbery CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS daily_bonus CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS garage CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS businesses CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS inventory CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS profiles CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS usernames CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS bank CASCADE")
-        await conn.execute("DROP TABLE IF EXISTS users CASCADE")
-        print("🗑️ Старые таблицы удалены")
-        
         await conn.execute("""
-            CREATE TABLE users (
+            CREATE TABLE IF NOT EXISTS users (
                 chat_id BIGINT,
                 user_id BIGINT,
                 balance INTEGER DEFAULT 0,
@@ -121,7 +109,7 @@ async def init_db():
         """)
         
         await conn.execute("""
-            CREATE TABLE profiles (
+            CREATE TABLE IF NOT EXISTS profiles (
                 chat_id BIGINT,
                 user_id BIGINT,
                 job_key TEXT DEFAULT 'novice',
@@ -133,7 +121,7 @@ async def init_db():
         """)
         
         await conn.execute("""
-            CREATE TABLE inventory (
+            CREATE TABLE IF NOT EXISTS inventory (
                 id SERIAL PRIMARY KEY,
                 chat_id BIGINT,
                 user_id BIGINT,
@@ -144,7 +132,7 @@ async def init_db():
         """)
         
         await conn.execute("""
-            CREATE TABLE businesses (
+            CREATE TABLE IF NOT EXISTS businesses (
                 id SERIAL PRIMARY KEY,
                 chat_id BIGINT,
                 user_id BIGINT,
@@ -155,7 +143,7 @@ async def init_db():
         """)
         
         await conn.execute("""
-            CREATE TABLE garage (
+            CREATE TABLE IF NOT EXISTS garage (
                 chat_id BIGINT,
                 user_id BIGINT,
                 car_key TEXT,
@@ -165,7 +153,7 @@ async def init_db():
         """)
         
         await conn.execute("""
-            CREATE TABLE daily_bonus (
+            CREATE TABLE IF NOT EXISTS daily_bonus (
                 chat_id BIGINT,
                 user_id BIGINT,
                 last_claim REAL DEFAULT 0,
@@ -175,7 +163,7 @@ async def init_db():
         """)
         
         await conn.execute("""
-            CREATE TABLE robbery (
+            CREATE TABLE IF NOT EXISTS robbery (
                 chat_id BIGINT,
                 user_id BIGINT,
                 last_robbery REAL DEFAULT 0,
@@ -184,7 +172,7 @@ async def init_db():
         """)
         
         await conn.execute("""
-            CREATE TABLE lottery_tickets (
+            CREATE TABLE IF NOT EXISTS lottery_tickets (
                 id SERIAL PRIMARY KEY,
                 chat_id BIGINT,
                 user_id BIGINT,
@@ -193,7 +181,7 @@ async def init_db():
         """)
         
         await conn.execute("""
-            CREATE TABLE usernames (
+            CREATE TABLE IF NOT EXISTS usernames (
                 chat_id BIGINT,
                 user_id BIGINT,
                 username TEXT,
@@ -202,7 +190,7 @@ async def init_db():
         """)
         
         await conn.execute("""
-            CREATE TABLE bank (
+            CREATE TABLE IF NOT EXISTS bank (
                 chat_id BIGINT,
                 user_id BIGINT,
                 deposit INTEGER DEFAULT 0,
@@ -211,7 +199,7 @@ async def init_db():
             )
         """)
         
-    print("✅ База данных создана с изоляцией групп")
+    print("✅ База данных проверена (данные сохранены)")
 
 async def save_username(chat_id, user_id, username):
     async with pool.acquire() as conn:
@@ -297,7 +285,7 @@ async def calc_interest(deposit, last_time):
     return interest, now
 
 async def handle_ping(request):
-    return web.Response(text=" Bot is alive!")
+    return web.Response(text="🤖 Bot is alive!")
 
 async def start_web_server():
     app = web.Application()
@@ -306,7 +294,7 @@ async def start_web_server():
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 8080)
     await site.start()
-    print(" Web server started")
+    print("🌐 Web server started")
 
 async def polling_health_check():
     while True:
@@ -350,10 +338,10 @@ async def auto_lottery_loop():
                     try:
                         await bot.send_message(
                             chat_id,
-                            f"🎊 <b>АВТО-РОЗЫГРЫШ ЛОТЕРЕИ!</b>\n\n"
+                            f" <b>АВТО-РОЗЫГРЫШ ЛОТЕРЕИ!</b>\n\n"
                             f"🏆 Победитель: <b>{winner_name}</b>\n"
                             f"💰 Банк: <b>{fmt_money(bank)}</b>\n"
-                            f"🎟️ Билетов участвовало: {len(tickets)}",
+                            f"️ Билетов участвовало: {len(tickets)}",
                             parse_mode="HTML"
                         )
                     except Exception as e:
@@ -368,21 +356,21 @@ async def cmd_start(message: Message):
     await message.answer(
         "👋 <b>Добро пожаловать в Экономику группы!</b>\n\n"
         "💰 <b>/balance</b> — мой баланс\n"
-        "💼 <b>/work</b> — работать\n"
+        " <b>/work</b> — работать\n"
         "💸 <b>/pay</b> — перевести (ответь на сообщение)\n"
         "🔫 <b>/rob</b> — ограбить (ответь на сообщение)\n"
         "🎁 <b>/daily</b> — ежедневный бонус\n"
-        "🎰 <b>/slots</b> ставка — казино\n"
+        " <b>/slots</b> ставка — казино\n"
         "🎟️ <b>/buy_ticket</b> — лотерейный билет\n"
         "🛒 <b>/shop</b> — улучшения\n"
-        "🏪 <b>/market</b> — бизнесы и кейсы\n"
-        " <b>/cars</b> — автосалон\n"
+        " <b>/market</b> — бизнесы и кейсы\n"
+        "🚗 <b>/cars</b> — автосалон\n"
         "🅿️ <b>/mycar</b> — моя тачка\n"
         "💼 <b>/collect</b> — прибыль с бизнеса\n"
         "🎒 <b>/inv</b> — инвентарь\n"
         "📊 <b>/info</b> — моя карточка\n"
         "🏆 <b>/rating</b> — рейтинг богачей\n"
-        "🃏 <b>/blackjack</b> — Блэкджек с Игорёчком\n"
+        " <b>/blackjack</b> — Блэкджек с Игорёчком\n"
         "🔨 <b>/craft</b> — крафт предметов\n"
         "🔄 <b>/trade</b> — обмен с игроком\n"
         "🏦 <b>/bank</b> — банковский счёт\n"
@@ -447,8 +435,8 @@ async def cmd_jobs(message: Message):
     text = "📋 <b>Доступные вакансии:</b>\n\n"
     for key, info in JOBS.items():
         text += f"🔹 <b>{info['name']}</b>\n"
-        text += f"   💰 {info['base_pay']} сарапулок/час\n"
-        text += f"   ⏱️ Кулдаун: {info['cooldown'] // 3600} ч\n"
+        text += f"    {info['base_pay']} сарапулок/час\n"
+        text += f"   ️ Кулдаун: {info['cooldown'] // 3600} ч\n"
         text += f"   → /job {key}\n\n"
     await message.answer(text, parse_mode="HTML")
 
@@ -487,7 +475,7 @@ async def cmd_pay(message: Message):
     try:
         amount = int(args[1])
     except:
-        return await message.answer(" Сумма должна быть числом!")
+        return await message.answer("❌ Сумма должна быть числом!")
     
     if amount <= 0:
         return await message.answer("❌ Сумма должна быть положительной!")
@@ -496,11 +484,11 @@ async def cmd_pay(message: Message):
     receiver_id = message.reply_to_message.from_user.id
     
     if sender_id == receiver_id:
-        return await message.answer(" Нельзя перевести самому себе!")
+        return await message.answer("❌ Нельзя перевести самому себе!")
     
     sender_bal = await get_user(chat_id, sender_id)
     if sender_bal['balance'] < amount:
-        return await message.answer(f"❌ Недостаточно средств ({fmt_money(sender_bal['balance'])})")
+        return await message.answer(f" Недостаточно средств ({fmt_money(sender_bal['balance'])})")
     
     await update_balance(chat_id, sender_id, -amount)
     await update_balance(chat_id, receiver_id, amount)
@@ -544,8 +532,6 @@ async def cmd_rob(message: Message):
         )
     
     victim_bal = await get_user(chat_id, victim_id)
-    
-    # Деньги в банке нельзя украсть
     available_balance = victim_bal['balance']
     
     if available_balance < 50:
@@ -596,7 +582,7 @@ async def cmd_daily(message: Message):
             hours = remaining // 3600
             minutes = (remaining % 3600) // 60
             return await message.answer(
-                f"⏰ Приходи через <b>{hours}</b> ч. <b>{minutes}</b> мин.",
+                f" Приходи через <b>{hours}</b> ч. <b>{minutes}</b> мин.",
                 parse_mode="HTML"
             )
         
@@ -617,7 +603,7 @@ async def cmd_daily(message: Message):
         )
     
     await message.answer(
-        f" <b>Ежедневный бонус!</b>\n\n"
+        f"🎁 <b>Ежедневный бонус!</b>\n\n"
         f"🔥 Ты зашёл <b>{streak}</b> {pluralize(streak, ['день', 'дня', 'дней'])} подряд!\n"
         f"💰 Получено: <b>{fmt_money(bonus)}</b>",
         parse_mode="HTML"
@@ -656,7 +642,7 @@ async def cmd_slots(message: Message):
         await update_balance(chat_id, user_id, win_amount)
     
     text = f"🎰 <b>СЛОТЫ</b>\n\n"
-    text += f" Ставка: {fmt_money(bet)}\n"
+    text += f"💰 Ставка: {fmt_money(bet)}\n"
     text += f"🎲 Результат: {' | '.join(result)}\n\n"
     
     if win_amount > 0:
@@ -718,10 +704,10 @@ async def cmd_info(message: Message):
     text += f"👤 <b>{message.from_user.full_name}</b>\n\n"
     text += f"💰 Баланс: <b>{fmt_money(user['balance'])}</b>\n"
     text += f"🏦 В банке: <b>{fmt_money(bank_data['deposit'])}</b>\n"
-    text += f" Профессия: <b>{job['name']}</b> (Ур. {profile['level']})\n"
+    text += f"💼 Профессия: <b>{job['name']}</b> (Ур. {profile['level']})\n"
     text += f" Машина: <b>{car if car else 'нет'}</b>\n"
     text += f"🏢 Бизнесов: <b>{biz_count}</b>\n"
-    text += f" Предметов: <b>{inv_count}</b>\n"
+    text += f"🎒 Предметов: <b>{inv_count}</b>\n"
     
     if profile['has_coffee']:
         text += "☕ Кофе-машина: <b>есть</b>\n"
@@ -776,7 +762,7 @@ async def cmd_buy(message: Message):
 async def cmd_market(message: Message):
     text = "🏪 <b>Рынок:</b>\n\n"
     for k, v in MARKET.items():
-        text += f"🔹 <b>{v['name']}</b>\n"
+        text += f" <b>{v['name']}</b>\n"
         text += f"   💰 {fmt_money(v['price'])}\n"
         text += f"   → /buy_market {k}\n\n"
     await message.answer(text, parse_mode="HTML")
@@ -907,7 +893,7 @@ async def cmd_mycar(message: Message):
     car = await get_car(chat_id, user_id)
     
     if car:
-        await message.answer(f"🅿️ Твой гараж:\n🚗 <b>{car}</b>", parse_mode="HTML")
+        await message.answer(f"🅿️ Твой гараж:\n <b>{car}</b>", parse_mode="HTML")
     else:
         await message.answer("🅿️ Гараж пуст. Купи тачку в /cars!")
 
@@ -928,7 +914,7 @@ async def cmd_inv(message: Message):
     text = "🎒 <b>Инвентарь:</b>\n\n"
     for item in items:
         if item['rarity'] == 'legendary':
-            emoji = "🟡"
+            emoji = ""
         elif item['rarity'] == 'rare':
             emoji = "🔵"
         else:
@@ -982,7 +968,6 @@ async def cmd_give(message: Message):
     await update_balance(chat_id, message.reply_to_message.from_user.id, amount)
     await message.answer(f"✅ Выдано {fmt_money(amount)}.")
 
-# ==================== 🏦 БАНК ====================
 @dp.message(Command("bank"))
 async def cmd_bank(message: Message):
     chat_id = message.chat.id
@@ -991,14 +976,14 @@ async def cmd_bank(message: Message):
     bank_data = await get_bank(chat_id, user_id)
     interest, _ = await calc_interest(bank_data['deposit'], bank_data['last_interest_time'])
     
-    text = "🏦 <b>Твой банковский счёт</b>\n\n"
+    text = " <b>Твой банковский счёт</b>\n\n"
     text += f"💰 На счету: <b>{fmt_money(bank_data['deposit'])}</b>\n"
     text += f"📈 Накоплено процентов: <b>+{fmt_money(interest)}</b>\n"
-    text += f" Ставка: <b>1% в сутки</b>\n\n"
+    text += f"💹 Ставка: <b>1% в сутки</b>\n\n"
     text += f"<b>Команды:</b>\n"
     text += f"📥 <code>/deposit сумма</code> — положить\n"
     text += f"📤 <code>/withdraw сумма</code> — снять\n\n"
-    text += f"️ Деньги в банке <b>нельзя украсть</b> через /rob!"
+    text += f"⚠️ Деньги в банке <b>нельзя украсть</b> через /rob!"
     
     await message.answer(text, parse_mode="HTML")
 
@@ -1051,7 +1036,7 @@ async def cmd_withdraw(message: Message):
     try:
         amount = int(args[1])
     except:
-        return await message.answer(" Сумма должна быть числом!")
+        return await message.answer("❌ Сумма должна быть числом!")
     
     if amount <= 0:
         return await message.answer("❌ Сумма должна быть положительной!")
@@ -1084,21 +1069,20 @@ async def cmd_withdraw(message: Message):
     text += f"Получено: <b>{fmt_money(amount)}</b>\n"
     
     if interest > 0:
-        text += f"📈 Начислено процентов: <b>+{fmt_money(interest)}</b>\n"
+        text += f" Начислено процентов: <b>+{fmt_money(interest)}</b>\n"
     
     text += f"Остаток на счету: <b>{fmt_money(new_bank['deposit'])}</b>"
     
     await message.answer(text, parse_mode="HTML")
 
-# ==================== 🔨 КРАФТ ====================
 @dp.message(Command("craft"))
 async def cmd_craft(message: Message):
-    text = "🔨 <b>Крафт:</b>\n\n"
+    text = " <b>Крафт:</b>\n\n"
     text += "Объединяй предметы для создания более ценных!\n\n"
     
     for key, recipe in CRAFT_RECIPES.items():
         requires_text = ", ".join([f"{count}× {name}" for name, count in recipe["requires"].items()])
-        text += f"🔹 <b>{recipe['name']}</b>\n"
+        text += f" <b>{recipe['name']}</b>\n"
         text += f"   Нужно: {requires_text}\n"
         text += f"   Редкость: {recipe['rarity']}\n"
         text += f"   Команда: <code>/craft_item {key}</code>\n\n"
@@ -1164,7 +1148,6 @@ async def cmd_craft_item(message: Message):
         parse_mode="HTML"
     )
 
-# ==================== 🔄 ТРЕЙД ====================
 @dp.message(Command("trade"))
 async def cmd_trade(message: Message):
     chat_id = message.chat.id
@@ -1199,7 +1182,7 @@ async def cmd_trade(message: Message):
     
     if have < count:
         return await message.answer(
-            f" У вас нет <b>{count}× {item_name}</b>\n"
+            f"❌ У вас нет <b>{count}× {item_name}</b>\n"
             f"Есть: <b>{have}× {item_name}</b>",
             parse_mode="HTML"
         )
@@ -1228,7 +1211,6 @@ async def cmd_trade(message: Message):
         parse_mode="HTML"
     )
 
-# ==================== 🃏 БЛЭКДЖЕК ====================
 def create_deck():
     suits = ['♠', '♥', '♦', '♣']
     ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
@@ -1289,7 +1271,7 @@ async def start_blackjack(message: Message, state: FSMContext):
     
     await message.answer(
         f"🎩 <b>Игорёчек открывает стол!</b>\n\n"
-        f" Создатель: {message.from_user.first_name}\n"
+        f"👤 Создатель: {message.from_user.first_name}\n"
         f"👥 Игроков: 1/5\n"
         f"⏳ Сбор игроков — 60 секунд\n\n"
         f"Нажмите кнопку, чтобы сесть за стол!",
@@ -1315,7 +1297,7 @@ async def start_blackjack(message: Message, state: FSMContext):
     players_list = ", ".join(p["name"] for p in table["players"].values())
     
     await message.answer(
-        f" <b>Игорёчек:</b> Отлично! Игроки: {players_list}\n\n"
+        f"🎩 <b>Игорёчек:</b> Отлично! Игроки: {players_list}\n\n"
         f"💰 Каждый игрок, проверьте <b>личку</b> для ставки!",
         parse_mode="HTML"
     )
@@ -1336,7 +1318,7 @@ async def start_blackjack(message: Message, state: FSMContext):
         try:
             await bot.send_message(
                 uid,
-                f" <b>Игорёчек:</b> Ваша ставка?",
+                f"🎩 <b>Игорёчек:</b> Ваша ставка?",
                 reply_markup=bets_kb,
                 parse_mode="HTML"
             )
@@ -1442,11 +1424,11 @@ async def deal_cards(chat_id, state):
     table["dealer"] = [table["deck"].pop(), table["deck"].pop()]
     table["stage"] = "playing"
     
-    players_info = "\n".join([f" {p['name']}: ставка {p['bet']}" for p in table["players"].values()])
+    players_info = "\n".join([f"👤 {p['name']}: ставка {p['bet']}" for p in table["players"].values()])
     
     await bot.send_message(
         chat_id,
-        f"🎩 <b>Игорёчек:</b> Карты розданы!\n\n"
+        f" <b>Игорёчек:</b> Карты розданы!\n\n"
         f"🤖 Мои карты: {show_cards(table['dealer'], hide_first=True)}\n\n"
         f"{players_info}\n\n"
         f"🎮 Ходит: <b>{table['players'][table['order'][0]]['name']}</b>",
@@ -1462,14 +1444,14 @@ async def player_turn(chat_id, uid, state):
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🃏 Ещё карту", callback_data=f"hit_{uid}_{chat_id}"),
-            InlineKeyboardButton(text="✋ Хватит", callback_data=f"stand_{uid}_{chat_id}")
+            InlineKeyboardButton(text=" Ещё карту", callback_data=f"hit_{uid}_{chat_id}"),
+            InlineKeyboardButton(text=" Хватит", callback_data=f"stand_{uid}_{chat_id}")
         ]
     ])
     
     await bot.send_message(
         uid,
-        f" <b>Игорёчек:</b> Ваш ход!\n\n"
+        f"🎩 <b>Игорёчек:</b> Ваш ход!\n\n"
         f"🃏 Ваши карты: {show_cards(p['cards'])}\n"
         f"🔢 Сумма: <b>{calc_score(p['cards'])}</b>\n"
         f"💰 Ставка: {p['bet']}\n\n"
@@ -1508,7 +1490,7 @@ async def hit_stand(callback: types.CallbackQuery, state: FSMContext):
             p["stand"] = True
             p["busted"] = True
             await callback.message.answer(
-                f" <b>Перебор ({score})!</b> Вы проиграли ставку.",
+                f"💥 <b>Перебор ({score})!</b> Вы проиграли ставку.",
                 parse_mode="HTML"
             )
             await next_turn(chat_id, state)
@@ -1523,7 +1505,7 @@ async def hit_stand(callback: types.CallbackQuery, state: FSMContext):
                     InlineKeyboardButton(text="✋ Хватит", callback_data=f"stand_{uid}_{chat_id}")
                 ]
             ])
-            await callback.message.answer(f" Сумма: {score}. Ещё?", reply_markup=kb)
+            await callback.message.answer(f"💰 Сумма: {score}. Ещё?", reply_markup=kb)
     
     elif action == "stand":
         p["stand"] = True
@@ -1546,7 +1528,7 @@ async def next_turn(chat_id, state):
         p = table["players"][next_uid]
         await bot.send_message(
             chat_id,
-            f"🎮 Ходит: <b>{p['name']}</b>",
+            f" Ходит: <b>{p['name']}</b>",
             parse_mode="HTML"
         )
         await player_turn(chat_id, next_uid, state)
@@ -1569,7 +1551,7 @@ async def dealer_play(chat_id, state):
         table["dealer"].append(card)
         await bot.send_message(
             chat_id,
-            f" Игорёчек берёт: <b>{card[0]}{card[1]}</b> → сумма: <b>{calc_score(table['dealer'])}</b>",
+            f"🎩 Игорёчек берёт: <b>{card[0]}{card[1]}</b> → сумма: <b>{calc_score(table['dealer'])}</b>",
             parse_mode="HTML"
         )
     
@@ -1588,10 +1570,10 @@ async def dealer_play(chat_id, state):
             results.append(f"🎉 {p['name']}: Игорёчек перебрал! +{bet}")
         elif ps > dealer_score:
             await update_balance(chat_id, uid, bet * 2)
-            results.append(f" {p['name']}: победа! +{bet}")
+            results.append(f"🏆 {p['name']}: победа! +{bet}")
         elif ps == dealer_score:
             await update_balance(chat_id, uid, bet)
-            results.append(f"🤝 {p['name']}: ничья")
+            results.append(f" {p['name']}: ничья")
         else:
             results.append(f"😢 {p['name']}: проигрыш")
     
@@ -1600,14 +1582,14 @@ async def dealer_play(chat_id, state):
     elif any("победа" in r for r in results):
         final = "🎉 Игорёчек поздравляет победителей!"
     elif any("проигрыш" in r for r in results):
-        final = " Игорёчек забирает ставки!"
+        final = "🎩 Игорёчек забирает ставки!"
     else:
         final = "🤝 Ничья!"
     
     await bot.send_message(
         chat_id,
         f"🎩 <b>Игорёчек:</b> {final}\n\n"
-        f"🤖 Карты Игорёчка: {show_cards(table['dealer'])} ({dealer_score})\n\n"
+        f" Карты Игорёчка: {show_cards(table['dealer'])} ({dealer_score})\n\n"
         f"📊 Результаты:\n" + "\n".join(results),
         parse_mode="HTML"
     )
