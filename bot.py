@@ -87,8 +87,21 @@ async def init_db():
         max_inactive_connection_lifetime=300
     )
     async with pool.acquire() as conn:
+        # Удаляем старые таблицы
+        await conn.execute("DROP TABLE IF EXISTS lottery_tickets")
+        await conn.execute("DROP TABLE IF EXISTS robbery")
+        await conn.execute("DROP TABLE IF EXISTS daily_bonus")
+        await conn.execute("DROP TABLE IF EXISTS garage")
+        await conn.execute("DROP TABLE IF EXISTS businesses")
+        await conn.execute("DROP TABLE IF EXISTS inventory")
+        await conn.execute("DROP TABLE IF EXISTS profiles")
+        await conn.execute("DROP TABLE IF EXISTS usernames")
+        await conn.execute("DROP TABLE IF EXISTS users")
+        print("🗑️ Старые таблицы удалены")
+        
+        # Создаём новые с chat_id
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
+            CREATE TABLE users (
                 chat_id BIGINT,
                 user_id BIGINT,
                 balance INTEGER DEFAULT 0,
@@ -96,7 +109,7 @@ async def init_db():
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS profiles (
+            CREATE TABLE profiles (
                 chat_id BIGINT,
                 user_id BIGINT,
                 job_key TEXT DEFAULT 'novice',
@@ -107,7 +120,7 @@ async def init_db():
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS inventory (
+            CREATE TABLE inventory (
                 id SERIAL PRIMARY KEY,
                 chat_id BIGINT,
                 user_id BIGINT,
@@ -117,7 +130,7 @@ async def init_db():
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS businesses (
+            CREATE TABLE businesses (
                 id SERIAL PRIMARY KEY,
                 chat_id BIGINT,
                 user_id BIGINT,
@@ -127,15 +140,16 @@ async def init_db():
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS garage (
+            CREATE TABLE garage (
                 chat_id BIGINT,
-                user_id BIGINT PRIMARY KEY,
+                user_id BIGINT,
                 car_key TEXT,
-                car_name TEXT
+                car_name TEXT,
+                PRIMARY KEY (chat_id, user_id)
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS daily_bonus (
+            CREATE TABLE daily_bonus (
                 chat_id BIGINT,
                 user_id BIGINT,
                 last_claim REAL DEFAULT 0,
@@ -144,7 +158,7 @@ async def init_db():
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS robbery (
+            CREATE TABLE robbery (
                 chat_id BIGINT,
                 user_id BIGINT,
                 last_robbery REAL DEFAULT 0,
@@ -152,7 +166,7 @@ async def init_db():
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS lottery_tickets (
+            CREATE TABLE lottery_tickets (
                 id SERIAL PRIMARY KEY,
                 chat_id BIGINT,
                 user_id BIGINT,
@@ -160,14 +174,14 @@ async def init_db():
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS usernames (
+            CREATE TABLE usernames (
                 chat_id BIGINT,
                 user_id BIGINT,
                 username TEXT,
                 PRIMARY KEY (chat_id, user_id)
             )
         """)
-    print("✅ База данных инициализирована с изоляцией групп")
+    print("✅ База данных создана с изоляцией групп")
 
 async def save_username(chat_id, user_id, username):
     async with pool.acquire() as conn:
