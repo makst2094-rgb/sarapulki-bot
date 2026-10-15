@@ -444,6 +444,18 @@ async def init_db():
                 PRIMARY KEY (chat_id, user_id)
             )
         """)
+                # Таблица кредитов
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS loans (
+                chat_id BIGINT,
+                user_id BIGINT,
+                amount INTEGER DEFAULT 0,
+                interest INTEGER DEFAULT 0,
+                taken_at REAL DEFAULT 0,
+                due_date REAL DEFAULT 0,
+                PRIMARY KEY (chat_id, user_id)
+            )
+        """)
         
     print("✅ База данных готова")
 
@@ -578,6 +590,45 @@ async def complete_course(chat_id, user_id, course_key):
                 "UPDATE education SET completed_courses = array_append(completed_courses, $1) WHERE chat_id = $2 AND user_id = $3",
                 course_key, chat_id, user_id
             )
+async def get_loan(cid, uid):
+    """Получить данные о кредите"""
+    async with pool.acquire() as conn:
+        r = await conn.fetchrow(
+            "SELECT amount, interest, taken_at, due_date FROM loans WHERE chat_id=$1 AND user_id=$2",
+            cid, uid
+        )
+        if not r:
+            return {"amount": 0, "interest": 0, "taken_at": 0, "due_date": 0}
+        return dict(r)
+
+async def update_loan(cid, uid, amount, interest, taken_at, due_date):
+    """Обновить кредит"""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO loans (chat_id, user_id, amount, interest, taken_at, due_date) 
+               VALUES ($1,$2,$3,$4,$5,$6)
+               ON CONFLICT (chat_id, user_id) 
+               DO UPDATE SET amount=$3, interest=$4, taken_at=$5, due_date=$6""",
+            cid, uid, amount, interest, taken_at, due_date
+        )
+
+async def clear_loan(cid, uid):
+    """Удалить кредит (полное погашение)"""
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM loans WHERE chat_id=$1 AND user_id=$2", cid, uid)
+
+async def calc_loan_interest(cid, uid):
+    """Начислить проценты по кредиту (вызывается раз в день)"""
+    loan = await get_loan(cid, uid)
+    if loan['amount'] <= 0:
+        return 0
+    
+    # 2% в день от суммы долга
+    daily_interest = int(loan['amount'] * 0.02)
+    new_interest = loan['interest'] + daily_interest
+    
+    await update_loan(cid, uid, loan['amount'], new_interest, loan['taken_at'], loan['due_date'])
+    return daily_interest
 
 
 # ============================================================================
@@ -645,6 +696,36 @@ async def auto_lottery_loop():
                         )
                     except Exception as e:
                         print(f"❌ Ошибка лотереи: {e}")
+async def loan_interest_loop():
+    """Ежедневное начисление процентов по кредитам"""
+    print("💳 Цикл начисления процентов по кредитам запущен")
+    while True:
+        await asyncio.sleep(86400)  # раз в 24 часа
+        async with pool.acquire() as conn:
+            loans = await conn.fetch("SELECT chat_id, user_id, amount, interest, due_date FROM loans WHERE amount > 0")
+            for loan in loans:
+                cid, uid = loan['chat_id'], loan['user_id']
+                
+                # Проверяем срок
+                if time.time() > loan['due_date']:
+                    # Просрочка — штраф 50%
+                    penalty = int(loan['amount'] * 0.5)
+                    await update_balance(cid, uid, -penalty)
+                    await clear_loan(cid, uid)
+                    
+                    try:
+                        await bot.send_message(
+                            cid,
+                            f"⚠️ <b>ПРОСРОЧКА КРЕДИТА!</b>\n\n"
+                            f"Игрок не вернул кредит вовремя.\n"
+                            f"Штраф: <b>{fmt_money(penalty)}</b> списан с баланса!",
+                            parse_mode="HTML"
+                        )
+                    except:
+                        pass
+                else:
+                    # Начисляем проценты
+                    await calc_loan_interest(cid, uid)
 
 
 # ============================================================================
@@ -873,6 +954,10 @@ async def cmd_rob(message: Message):
             f"🚔 <b>ПОПАЛСЯ!</b>\n\n{message.from_user.full_name} заплатил штраф <b>{fmt_money(penalty)}</b> пользователю {message.reply_to_message.from_user.full_name}!",
             parse_mode="HTML"
         )
+            loan = await get_loan(cid, uid)
+    if loan['amount'] > 0:
+        total_debt = loan['amount'] + loan['interest']
+        text += f"💳 Долг: <b>{fmt_money(total_debt)}</b>\n"
 
 
 @dp.message(Command("daily"))
@@ -2122,6 +2207,7 @@ async def main():
     asyncio.create_task(start_web_server())
     asyncio.create_task(polling_health_check())
     asyncio.create_task(auto_lottery_loop())
+    asyncio.create_task(loan_interest_loop())
     await dp.start_polling(bot, timeout=30, allowed_updates=["message", "callback_query", "my_chat_member"])
 
 
