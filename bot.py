@@ -1429,47 +1429,64 @@ async def cmd_buy_course(message: Message):
 
 @dp.message()
 async def handle_exam_answer(message: Message):
-    """Обработка ответов на экзамене"""
+    # ВАЖНО: пропускаем команды (начинаются с /)
+    if not message.text or message.text.startswith('/'):
+        return
+    # Пропускаем не группы
     if message.chat.type not in ['group', 'supergroup']:
         return
-    if message.text and message.text.startswith('/'):
-        return
+    
     chat_id = message.chat.id
     user_id = message.from_user.id
     exam_key = f"{chat_id}_{user_id}"
+    
+    # Если нет активного экзамена — выходим
     if exam_key not in exam_sessions:
         return
+    
     exam = exam_sessions[exam_key]
     course = COURSES[exam['course']]
+    
     try:
         answer = int(message.text) - 1
     except:
         return await message.answer("❌ Введите номер ответа (1, 2 или 3)")
+    
     if answer < 0 or answer > 2:
-        return await message.answer("❌ Введите номер ответа (1, 2 или 3)")
+        return await message.answer(" Введите номер ответа (1, 2 или 3)")
+    
     question = course['questions'][exam['question']]
     if answer == question['correct']:
         exam['correct'] += 1
         await message.answer("✅ Правильно!")
     else:
         await message.answer(f"❌ Неправильно! Правильный ответ: {question['a'][question['correct']]}")
+    
     exam['question'] += 1
+    
     if exam['question'] < 3:
         q = course['questions'][exam['question']]
         await message.answer(
-            f"Вопрос {exam['question'] + 1} из 3:\n<b>{q['q']}</b>\n\n{' | '.join([f'{i+1}. {a}' for i, a in enumerate(q['a'])])}\n\nНапишите номер ответа (1, 2 или 3)",
+            f"Вопрос {exam['question'] + 1} из 3:\n<b>{q['q']}</b>\n\n"
+            f"{' | '.join([f'{i+1}. {a}' for i, a in enumerate(q['a'])])}\n\n"
+            f"Напишите номер ответа (1, 2 или 3)",
             parse_mode="HTML"
         )
     else:
         if exam['correct'] >= 2:
             await complete_course(chat_id, user_id, exam['course'])
             await message.answer(
-                f"🎉 <b>Поздравляем!</b>\n\nВы сдали экзамен на {exam['correct']}/3!\nКурс <b>{course['name']}</b> завершён!",
+                f"🎉 <b>Поздравляем!</b>\n\n"
+                f"Вы сдали экзамен на {exam['correct']}/3!\n"
+                f"Курс <b>{course['name']}</b> завершён!",
                 parse_mode="HTML"
             )
         else:
             await message.answer(
-                f" <b>Экзамен провален.</b>\n\nВы ответили правильно на {exam['correct']}/3.\nНужно минимум 2 правильных ответа.\n\nПопробуйте ещё раз: /buy_course {exam['course']}",
+                f"😔 <b>Экзамен провален.</b>\n\n"
+                f"Вы ответили правильно на {exam['correct']}/3.\n"
+                f"Нужно минимум 2 правильных ответа.\n\n"
+                f"Попробуйте ещё раз: /buy_course {exam['course']}",
                 parse_mode="HTML"
             )
         del exam_sessions[exam_key]
