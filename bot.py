@@ -1427,8 +1427,9 @@ async def cmd_buy_course(message: Message):
     )
 
 
-@dp.message()
+@dp.message(F.text & ~F.text.startswith('/'))
 async def handle_exam_answer(message: Message):
+
     # ВАЖНО: пропускаем команды (начинаются с /)
     if not message.text or message.text.startswith('/'):
         return
