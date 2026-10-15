@@ -1310,6 +1310,183 @@ async def cmd_withdraw(message: Message):
     text += f"Остаток на счету: <b>{fmt_money(new_bank['deposit'])}</b>"
     await message.answer(text, parse_mode="HTML")
 
+@dp.message(Command("credit"))
+async def cmd_credit(m: Message):
+    """Взять кредит"""
+    cid, uid = m.chat.id, m.from_user.id
+    args = m.text.split()
+    
+    if len(args) < 2:
+        return await m.answer(
+            "💳 <b>Взять кредит</b>\n\n"
+            "Использование: <b>/credit сумма</b>\n\n"
+            " Условия:\n"
+            "• Максимум: 10x вашего баланса\n"
+            "• Процент: 2% в день\n"
+            "• Срок: 7 дней\n"
+            "• Штраф за просрочку: 50%",
+            parse_mode="HTML"
+        )
+    
+    try:
+        amount = int(args[1])
+    except:
+        return await m.answer("❌ Сумма должна быть числом!")
+    
+    if amount < 100:
+        return await m.answer("❌ Минимальный кредит: 100 сарапулок")
+    
+    # Проверяем текущий кредит
+    loan = await get_loan(cid, uid)
+    if loan['amount'] > 0:
+        return await m.answer(
+            f"❌ У вас уже есть кредит!\n"
+            f"Долг: <b>{fmt_money(loan['amount'])}</b>\n"
+            f"Проценты: <b>{fmt_money(loan['interest'])}</b>\n\n"
+            f"Сначала погасите: /repay",
+            parse_mode="HTML"
+        )
+    
+    # Проверяем лимит
+    user = await get_user(cid, uid)
+    max_loan = user['balance'] * 10
+    if amount > max_loan:
+        return await m.answer(f"❌ Максимальный кредит: {fmt_money(max_loan)}")
+    
+    # Выдаем кредит
+    taken_at = time.time()
+    due_date = taken_at + (7 * 86400)  # 7 дней
+    
+    await update_loan(cid, uid, amount, 0, taken_at, due_date)
+    await update_balance(cid, uid, amount)
+    
+    await m.answer(
+        f"💳 <b>Кредит оформлен!</b>\n\n"
+        f"💰 Получено: <b>{fmt_money(amount)}</b>\n"
+        f" Процент: 2% в день\n"
+        f"⏰ Вернуть до: {time.strftime('%d.%m.%Y', time.localtime(due_date))}\n\n"
+        f"⚠️ При просрочке — штраф 50%!",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("debt"))
+async def cmd_debt(m: Message):
+    """Посмотреть долг"""
+    cid, uid = m.chat.id, m.from_user.id
+    loan = await get_loan(cid, uid)
+    
+    if loan['amount'] == 0:
+        return await m.answer("✅ У вас нет кредитов!")
+    
+    total_debt = loan['amount'] + loan['interest']
+    days_left = int((loan['due_date'] - time.time()) / 86400)
+    
+    if days_left < 0:
+        days_text = "⚠️ ПРОСРОЧЕНО!"
+    else:
+        days_text = f"Осталось: {days_left} дн."
+    
+    await m.answer(
+        f"💳 <b>Ваш долг</b>\n\n"
+        f"📊 Основной долг: <b>{fmt_money(loan['amount'])}</b>\n"
+        f"📈 Проценты: <b>{fmt_money(loan['interest'])}</b>\n"
+        f"💰 Итого к возврату: <b>{fmt_money(total_debt)}</b>\n\n"
+        f" {days_text}\n\n"
+        f"Погасить: /repay сумма\n"
+        f"Погасить всё: /repay_all",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("repay"))
+async def cmd_repay(m: Message):
+    """Погасить часть долга"""
+    cid, uid = m.chat.id, m.from_user.id
+    args = m.text.split()
+    
+    if len(args) < 2:
+        return await m.answer("💳 Использование: <b>/repay сумма</b>", parse_mode="HTML")
+    
+    try:
+        amount = int(args[1])
+    except:
+        return await m.answer("❌ Сумма должна быть числом!")
+    
+    if amount <= 0:
+        return await m.answer("❌ Сумма должна быть положительной!")
+    
+    loan = await get_loan(cid, uid)
+    if loan['amount'] == 0:
+        return await m.answer("✅ У вас нет кредитов!")
+    
+    user = await get_user(cid, uid)
+    if user['balance'] < amount:
+        return await m.answer(f"❌ Недостаточно средств ({fmt_money(user['balance'])})")
+    
+    total_debt = loan['amount'] + loan['interest']
+    if amount > total_debt:
+        amount = total_debt  # Не даем переплатить
+    
+    # Сначала списываем проценты, потом основной долг
+    remaining = amount
+    interest_paid = min(remaining, loan['interest'])
+    remaining -= interest_paid
+    principal_paid = min(remaining, loan['amount'])
+    
+    new_interest = loan['interest'] - interest_paid
+    new_amount = loan['amount'] - principal_paid
+    
+    await update_balance(cid, uid, -amount)
+    
+    if new_amount <= 0:
+        await clear_loan(cid, uid)
+        await m.answer(
+            f"✅ <b>Кредит полностью погашен!</b>\n\n"
+            f"Списано: {fmt_money(amount)}\n"
+            f"Из них проценты: {fmt_money(interest_paid)}\n"
+            f"Основной долг: {fmt_money(principal_paid)}",
+            parse_mode="HTML"
+        )
+    else:
+        await update_loan(cid, uid, new_amount, new_interest, loan['taken_at'], loan['due_date'])
+        await m.answer(
+            f"✅ <b>Частичное погашение!</b>\n\n"
+            f"Списано: {fmt_money(amount)}\n"
+            f"Остаток долга: <b>{fmt_money(new_amount + new_interest)}</b>\n"
+            f"(основной: {fmt_money(new_amount)}, проценты: {fmt_money(new_interest)})",
+            parse_mode="HTML"
+        )
+
+@dp.message(Command("repay_all"))
+async def cmd_repay_all(m: Message):
+    """Погасить весь долг"""
+    cid, uid = m.chat.id, m.from_user.id
+    loan = await get_loan(cid, uid)
+    
+    if loan['amount'] == 0:
+        return await m.answer("✅ У вас нет кредитов!")
+    
+    total_debt = loan['amount'] + loan['interest']
+    user = await get_user(cid, uid)
+    
+    if user['balance'] < total_debt:
+        return await m.answer(
+            f"❌ Недостаточно средств!\n"
+            f"Нужно: {fmt_money(total_debt)}\n"
+            f"У вас: {fmt_money(user['balance'])}\n\n"
+            f"Используйте /repay для частичного погашения",
+            parse_mode="HTML"
+        )
+    
+    await update_balance(cid, uid, -total_debt)
+    await clear_loan(cid, uid)
+    
+    await m.answer(
+        f"✅ <b>Кредит полностью погашен!</b>\n\n"
+        f"Списано: <b>{fmt_money(total_debt)}</b>\n"
+        f"(основной долг: {fmt_money(loan['amount'])}, проценты: {fmt_money(loan['interest'])})",
+        parse_mode="HTML"
+    )
+
 
 # ============================================================================
 # КРАФТ
