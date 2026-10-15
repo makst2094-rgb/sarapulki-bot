@@ -1403,6 +1403,8 @@ async def cmd_credit(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
     
+    loan = await get_loan(cid, uid)  ← 4 пробела
+    
     if len(args) < 2:
         return await m.answer(
             "💳 <b>Взять кредит</b>\n\n"
