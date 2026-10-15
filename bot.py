@@ -763,8 +763,12 @@ async def cmd_start(message: Message):
         "📤 <b>/withdraw</b> — снять из банка\n"
         "🎓 <b>/education</b> — образование\n"
         "📘 <b>/buy_course</b> — купить курс",
+        "💳 <b>/credit</b> — взять кредит\n"
+        " <b>/debt</b> — посмотреть долг\n"
+        "💸 <b>/repay</b> — погасить часть долга\n"
+        "✅ <b>/repay_all</b> — погасить весь долг\n"
         parse_mode="HTML"
-    )
+     )
 
 
 @dp.message(Command("balance"))
