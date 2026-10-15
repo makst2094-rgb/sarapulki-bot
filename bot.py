@@ -254,15 +254,55 @@ CARS = {
 
 
 # ==================== НАСТРОЙКИ СЛОТОВ ====================
-SLOTS_SYMBOLS = ['🍒', '🍋', '🍊', '🍇', '', '7️⃣']
-SLOTS_PAYOUTS = {
-    '7️7️⃣7️⃣': 10,
-    '💎💎': 5,
-    '🍇🍇': 3,
-    '🍊🍊🍊': 2,
-    '🍋🍋': 2,
-    '🍒🍒': 2
-}
+@dp.message(Command("dice"))
+async def cmd_dice(message: Message):
+    """Игра в кости 50/50"""
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    args = message.text.split()
+    
+    if len(args) < 2:
+        return await message.answer("🎲 Использование: <b>/dice сумма</b>\n\nШанс 50/50. Выпадает число 1-6.\n4, 5, 6 — выигрыш x2\n1, 2, 3 — проигрыш", parse_mode="HTML")
+    
+    try:
+        bet = int(args[1])
+    except:
+        return await message.answer("❌ Ставка должна быть числом!")
+    
+    if bet < 10:
+        return await message.answer("❌ Минимальная ставка: 10 сарапулок")
+    
+    user_bal = await get_user(chat_id, user_id)
+    if user_bal['balance'] < bet:
+        return await message.answer(f"❌ Недостаточно ({fmt_money(user_bal['balance'])})")
+    
+    await update_balance(chat_id, user_id, -bet)
+    
+    # Бросаем кубик
+    dice = random.randint(1, 6)
+    
+    # Анимация броска
+    await message.answer(f"🎲 <b>Бросаем кубик...</b>\n\nСтавка: {fmt_money(bet)}", parse_mode="HTML")
+    await asyncio.sleep(1)
+    
+    # Результат
+    if dice >= 4:
+        win_amount = bet * 2
+        await update_balance(chat_id, user_id, win_amount)
+        await message.answer(
+            f"🎲 <b>Выпало: {dice}</b>\n\n"
+            f"🎉 <b>ПОБЕДА!</b>\n"
+            f"Выигрыш: <b>{fmt_money(win_amount)}</b> (x2)",
+            parse_mode="HTML"
+        )
+    else:
+        await message.answer(
+            f"🎲 <b>Выпало: {dice}</b>\n\n"
+            f"💀 <b>Проигрыш</b>\n"
+            f"Попробуй ещё раз!",
+            parse_mode="HTML"
+        )
+
 
 
 # ============================================================================
@@ -624,7 +664,7 @@ async def cmd_start(message: Message):
         "💸 <b>/pay</b> — перевести (ответь на сообщение)\n"
         "🔫 <b>/rob</b> — ограбить (ответь на сообщение)\n"
         "🎁 <b>/daily</b> — ежедневный бонус\n"
-        "🎰 <b>/slots</b> ставка — казино\n"
+        "🎲 <b>/dice</b> сумма — кости (50/50)\n"
         "️ <b>/buy_ticket</b> — лотерейный билет\n"
         " <b>/shop</b> — улучшения\n"
         "🏪 <b>/market</b> — бизнесы и кейсы\n"
