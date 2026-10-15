@@ -590,7 +590,13 @@ async def init_db():
         """)
         
         # Таблица ограблений (кулдаун)
-        await conn.execute("CREATE TABLE IF NOT EXISTS robbery (chat_id BIGINT, user_id BIGINT, last_robbery REAL DEFAULT 0, PRIMARY KEY (chat_id, user_id))")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS robbery (
+                chat_id BIGINT,
+                user_id BIGINT,
+                last_robbery REAL DEFAULT 0,
+                PRIMARY KEY (chat_id, user_id)
+            )
         """)
         
         # Таблица лотерейных билетов
@@ -1396,7 +1402,14 @@ async def cmd_pay(m: Message):
 
 @dp.message(Command("rob"))
 async def cmd_rob(m: Message):
-    """Команда /rob - ограбление"""
+    """
+    Команда /rob - ограбление
+    
+    Шанс успеха: 40%
+    При успехе: крадет 10-50% баланса жертвы
+    При провале: штраф 20% баланса грабителя
+    Кулдаун: 3 часа
+    """
     cid, uid = m.chat.id, m.from_user.id
     
     if not m.reply_to_message:
@@ -1404,21 +1417,25 @@ async def cmd_rob(m: Message):
     
     rid, vid = uid, m.reply_to_message.from_user.id
     if rid == vid:
-        return await m.answer(" Себя нельзя!")
+        return await m.answer("❌ Себя нельзя!")
     
     async with pool.acquire() as conn:
         lr = await conn.fetchval(
-            "SELECT last_robbery FROM robbery WHERE chat_id=$1 AND user_id=$2",
+            "SELECT last_robbery FROM robbery "
+            "WHERE chat_id=$1 AND user_id=$2",
             cid, rid
         ) or 0
         ct = time.time()
         
         if ct - lr < ROB_COOLDOWN:
             remaining = ROB_COOLDOWN - (ct - lr)
-            return await m.answer(f"⏳ Кулдаун {format_time(remaining)}")
+            return await m.answer(
+                f"⏳ Кулдаун {format_time(remaining)}"
+            )
         
         await conn.execute(
-            "INSERT INTO robbery VALUES ($1,$2,$3) ON CONFLICT DO UPDATE SET last_robbery=$3",
+            "INSERT INTO robbery VALUES ($1,$2,$3) "
+            "ON CONFLICT DO UPDATE SET last_robbery=$3",
             cid, rid, ct
         )
     
@@ -1427,7 +1444,9 @@ async def cmd_rob(m: Message):
         return await m.answer("❌ У жертвы мало денег!")
     
     if random.random() < ROB_SUCCESS_RATE:
-        st = int(vb['balance'] * random.uniform(ROB_MIN_PERCENT, ROB_MAX_PERCENT))
+        st = int(vb['balance'] * random.uniform(
+            ROB_MIN_PERCENT, ROB_MAX_PERCENT
+        ))
         await update_balance(cid, vid, -st)
         await update_balance(cid, rid, st)
         await m.answer(
@@ -1440,9 +1459,10 @@ async def cmd_rob(m: Message):
         await update_balance(cid, rid, -pn)
         await update_balance(cid, vid, pn)
         await m.answer(
-            f" Штраф <b>{fmt_money(pn)}</b>!",
+            f"🚔 Штраф <b>{fmt_money(pn)}</b>!",
             parse_mode="HTML"
         )
+
 
 @dp.message(Command("daily"))
 async def cmd_daily(m: Message):
