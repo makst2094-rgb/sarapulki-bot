@@ -733,42 +733,40 @@ async def loan_interest_loop():
 # ============================================================================
 
 @dp.message(Command("start"))
-async def cmd_start(message: Message):
-    """Команда /start - главное меню"""
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-    await save_username(chat_id, user_id, message.from_user.full_name)
-    await message.answer(
-        " <b>Добро пожаловать в Экономику группы!</b>\n\n"
-        "💰 <b>/balance</b> — мой баланс\n"
-        "💼 <b>/work</b> — работать\n"
-        "💸 <b>/pay</b> — перевести (ответь на сообщение)\n"
-        "🔫 <b>/rob</b> — ограбить (ответь на сообщение)\n"
-        "🎁 <b>/daily</b> — ежедневный бонус\n"
-        "🎲 <b>/dice</b> сумма — кости (50/50)\n"
-        "️ <b>/buy_ticket</b> — лотерейный билет\n"
-        " <b>/shop</b> — улучшения\n"
-        "🏪 <b>/market</b> — бизнесы и кейсы\n"
-        "🚗 <b>/cars</b> — автосалон\n"
-        "️ <b>/mycar</b> — моя тачка\n"
-        "💼 <b>/collect</b> — прибыль с бизнеса\n"
-        "🎒 <b>/inv</b> — инвентарь\n"
-        " <b>/info</b> — моя карточка\n"
-        "🏆 <b>/rating</b> — рейтинг богачей\n"
-        "🃏 <b>/blackjack</b> — Блэкджек с Игорёчком\n"
-        "🔨 <b>/craft</b> — крафт предметов\n"
-        "🔄 <b>/trade</b> — обмен с игроком\n"
-        "🏦 <b>/bank</b> — банковский счёт\n"
-        "📥 <b>/deposit</b> — положить в банк\n"
-        "📤 <b>/withdraw</b> — снять из банка\n"
-        "🎓 <b>/education</b> — образование\n"
-        "📘 <b>/buy_course</b> — купить курс",
-        "💳 <b>/credit</b> — взять кредит\n"
-        " <b>/debt</b> — посмотреть долг\n"
-        "💸 <b>/repay</b> — погасить часть долга\n"
-        "✅ <b>/repay_all</b> — погасить весь долг\n"
+async def cmd_start(m: Message):
+    await save_username(m.chat.id, m.from_user.id, m.from_user.full_name)
+    await m.answer(
+        " <b>Экономика группы!</b>\n\n"
+        "💰 /balance — мой баланс\n"
+        "💼 /work — работать\n"
+        "💸 /pay сумма (ответ) — перевести\n"
+        "🔫 /rob (ответ) — ограбить\n"
+        "🎁 /daily — ежедневный бонус\n"
+        "🎲 /dice сумма — кости 50/50\n"
+        "🎟️ /buy_ticket — лотерейный билет\n"
+        "🛒 /shop — улучшения\n"
+        "🏪 /market — бизнесы и кейсы\n"
+        "🚗 /cars — автосалон\n"
+        "🅿️ /mycar — моя тачка\n"
+        "💼 /collect — прибыль с бизнеса\n"
+        "🎒 /inv — инвентарь\n"
+        "📊 /info — моя карточка\n"
+        " /rating — рейтинг богачей\n"
+        "🃏 /blackjack — Блэкджек с Игорёчком\n"
+        " /craft — крафт предметов\n"
+        "🔄 /trade — обмен с игроком\n"
+        "🏦 /bank — банковский счёт\n"
+        "📥 /deposit — положить в банк\n"
+        "📤 /withdraw — снять из банка\n"
+        " /education — образование\n"
+        "📘 /buy_course — купить курс\n"
+        "💳 /credit сумма — взять кредит\n"
+        "📊 /debt — посмотреть долг\n"
+        "💸 /repay сумма — погасить часть долга\n"
+        "✅ /repay_all — погасить весь долг\n"
+        "🚔 /bailout — информация о выкупе",
         parse_mode="HTML"
-     )
+    )
 
 
 @dp.message(Command("balance"))
