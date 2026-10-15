@@ -590,12 +590,11 @@ async def init_db():
         """)
         
         # Таблица ограблений (кулдаун)
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS robbery (
-                chat_id BIGINT,
-                user_id BIGINT,
-                last_robbery REAL DEFAULT 0,
-                PRIMARY KEY (chat_id, user_id)
+       await conn.execute("""
+           CREATE TABLE IF NOT EXISTS robbery 
+           (chat_id BIGINT, user_id BIGINT,
+           last_robbery REAL DEFAULT 0,
+           PRIMARY KEY (chat_id, user_id))
             )
         """)
         
