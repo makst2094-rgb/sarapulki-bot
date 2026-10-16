@@ -112,12 +112,13 @@ SHOP_ITEMS = {
 
 MARKET = {
     "case_basic": {"name": "📦 Кейс", "price": 200, "type": "case"},
-    "biz_newspaper": {"name": " Газетный киоск", "price": 500, "type": "business", "income": 83},
-    "biz_shawarma": {"name": "🌯 Шаурма", "price": 2000, "type": "business", "income": 333},
-    "biz_coffee": {"name": "☕ Кофейня", "price": 5000, "type": "business", "income": 833},
-    "biz_crypto": {"name": "💻 Крипто-ферма", "price": 15000, "type": "business", "income": 2500},
-    "biz_hotel": {"name": "🏨 Отель", "price": 50000, "type": "business", "income": 8333}
+    "biz_newspaper": {"name": "📰 Газетный киоск", "price": 500, "type": "business", "income": 83},
+    "biz_shawarma": {"name": " Шаурма", "price": 2000, "type": "business", "income": 400},
+    "biz_coffee": {"name": "☕ Кофейня", "price": 5000, "type": "business", "income": 1250},
+    "biz_crypto": {"name": "💻 Крипто-ферма", "price": 15000, "type": "business", "income": 4000},
+    "biz_hotel": {"name": "🏨 Отель", "price": 50000, "type": "business", "income": 16000}
 }
+
 
 CARS = {
     "ok": {"name": "🚲 Ока", "price": 3000},
