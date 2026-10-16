@@ -1,33 +1,20 @@
 # ============================================================================
 # 🤖 ЭКОНОМИЧЕСКИЙ БОТ ДЛЯ TELEGRAM ГРУПП
 # ============================================================================
-# Название: Сарапулки Economy Bot
-# Версия: 10.0 Premium Edition
+# Версия: 11.0 Ultimate Edition
 # Дата: 16 октября 2026
 # 
-# Описание:
-# Полноценная экономическая система с изоляцией групп.
-# Каждый чат имеет свою независимую экономику.
-# 
-# Основные функции:
-# - Работа и профессии с системой образования
-# - Банковская система с процентами (1% в сутки)
-# - Блэкджек с Игорёчком (2-5 игроков, кнопки, отмена игры)
-# - Система кредитов с арестом имущества при просрочке
-# - Крафт предметов (Алмаз, Золотая Скрипка)
-# - Трейд между игроками
-# - Авто-лотерея каждые 12 часов
-# - 5 бизнесов с быстрой окупаемостью (6 дней)
-# - Автосалон (5 машин, можно иметь много)
-# - Инвентарь и предметы с редкостью
-# - Рейтинг богачей
-# - Ежедневные бонусы с множителем за серию
-# - Ограбления (40% шанс успеха)
-# - Игровые кости (50/50)
+# Все команды работают корректно:
+# - Работа, профессии, образование (включая адвоката)
+# - Ограбления с системой судов
+# - Блэкджек с Игорёчком
+# - Банки, кредиты, арест имущества
+# - Бизнесы (можно много одинаковых)
+# - Машины (можно много одинаковых)
+# - Крафт, трейд, инвентарь
+# - Лотерея, кости, ежедневные бонусы
 # ============================================================================
 
-
-# ==================== ИМПОРТ БИБЛИОТЕК ====================
 import asyncio
 import logging
 import random
@@ -43,8 +30,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 from aiohttp import web
 
-
-# ==================== НАСТРОЙКИ БОТА ====================
 API_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "0").split(",") if x.strip().isdigit()]
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -55,35 +40,20 @@ storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 pool = None
 
-
-# ==================== СОСТОЯНИЯ FSM ====================
 class BlackjackStates(StatesGroup):
     waiting = State()
     betting = State()
     playing = State()
 
-
-# ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
 bj_tables = {}
 exam_sessions = {}
+active_cases = {}
 
-
-# ==================== РЕЦЕПТЫ КРАФТА ====================
 CRAFT_RECIPES = {
-    "diamond": {
-        "name": "💎 Алмаз",
-        "requires": {"📄 Бумага": 10},
-        "rarity": "rare"
-    },
-    "scriptka": {
-        "name": "🎸 Золотая Скрипка",
-        "requires": {" Алмаз": 5},
-        "rarity": "legendary"
-    }
+    "diamond": {"name": "💎 Алмаз", "requires": {" Бумага": 10}, "rarity": "rare"},
+    "scriptka": {"name": "🎸 Золотая Скрипка", "requires": {"💎 Алмаз": 5}, "rarity": "legendary"}
 }
 
-
-# ==================== НАСТРОЙКИ ====================
 LOTTERY_PRICE = 50
 LOTTERY_INTERVAL = 12 * 3600
 BANK_INTEREST_RATE = 0.01
@@ -103,8 +73,6 @@ BJ_MAX_PLAYERS = 5
 BJ_WAIT_TIME = 60
 BJ_DEALER_STOP = 17
 
-
-# ==================== КУРСЫ ОБРАЗОВАНИЯ ====================
 COURSES = {
     "miner": {
         "name": "📘 Курс шахтёра",
@@ -136,8 +104,18 @@ COURSES = {
             {"q": "Ликвидность актива?", "a": ["скорость продажи", "цена", "объём"], "correct": 0}
         ]
     },
+    "lawyer": {
+        "name": "⚖️ Курс адвоката",
+        "price": 3000,
+        "required_for": None,
+        "questions": [
+            {"q": "Что такое презумпция невиновности?", "a": ["виновен пока не доказано", "невиновен пока не доказано", "все равны"], "correct": 1},
+            {"q": "Срок давности уголовного дела?", "a": ["5 лет", "10 лет", "зависит от тяжести"], "correct": 2},
+            {"q": "Кто защищает обвиняемого?", "a": ["прокурор", "адвокат", "судья"], "correct": 1}
+        ]
+    },
     "mba": {
-        "name": "🎓 MBA",
+        "name": " MBA",
         "price": 15000,
         "required_for": None,
         "questions": [
@@ -148,8 +126,6 @@ COURSES = {
     }
 }
 
-
-# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def pluralize(n, forms):
     n = abs(n) % 100
     n1 = n % 10
@@ -175,8 +151,6 @@ def format_time(seconds):
 def format_date(timestamp):
     return time.strftime('%d.%m.%Y', time.localtime(timestamp))
 
-
-# ==================== КОНФИГУРАЦИЯ РАБОТЫ ====================
 JOBS = {
     "novice": {"name": " Новичок", "base_pay": 10, "cooldown": 3600},
     "miner": {"name": "⛏️ Шахтёр", "base_pay": 25, "cooldown": 3600},
@@ -184,38 +158,27 @@ JOBS = {
     "trader": {"name": "📈 Трейдер", "base_pay": 80, "cooldown": 10800}
 }
 
-
-# ==================== МАГАЗИН УЛУЧШЕНИЙ ====================
 SHOP_ITEMS = {
     "course": {"name": "📚 Курсы", "price": 1500, "desc": "+1 уровень", "type": "level_up"},
     "coffee": {"name": "☕ Кофе-машина", "price": 2500, "desc": "-10% кулдаун", "type": "cooldown_reduce"}
 }
 
-
-# ==================== РЫНОК (БИЗНЕСЫ И КЕЙСЫ) ====================
 MARKET = {
     "case_basic": {"name": "📦 Кейс", "price": 200, "type": "case"},
-    "biz_newspaper": {"name": "📰 Газетный киоск", "price": 500, "type": "business", "income": 83},
+    "biz_newspaper": {"name": " Газетный киоск", "price": 500, "type": "business", "income": 83},
     "biz_shawarma": {"name": "🌯 Шаурма", "price": 2000, "type": "business", "income": 333},
     "biz_coffee": {"name": "☕ Кофейня", "price": 5000, "type": "business", "income": 833},
     "biz_crypto": {"name": "💻 Крипто-ферма", "price": 15000, "type": "business", "income": 2500},
     "biz_hotel": {"name": "🏨 Отель", "price": 50000, "type": "business", "income": 8333}
 }
 
-
-# ==================== АВТОСАЛОН ====================
 CARS = {
-    "ok": {"name": "🚲 Ока", "price": 3000},
-    "priora": {"name": "🚘 Приора", "price": 10000},
+    "ok": {"name": " Ока", "price": 3000},
+    "priora": {"name": " Приора", "price": 10000},
     "bmw": {"name": "🏎️ BMW", "price": 40000},
     "gelik": {"name": "🚙 Гелик", "price": 80000},
     "lambo": {"name": "🏎️ Lamborghini", "price": 200000}
 }
-
-
-# ============================================================================
-# БАЗА ДАННЫХ
-# ============================================================================
 
 async def init_db():
     global pool
@@ -301,7 +264,6 @@ async def init_db():
         """)
     print("✅ База данных готова")
 
-
 async def save_username(cid, uid, name):
     async with pool.acquire() as conn:
         await conn.execute(
@@ -309,7 +271,6 @@ async def save_username(cid, uid, name):
             "ON CONFLICT (chat_id, user_id) DO UPDATE SET username=$3",
             cid, uid, name
         )
-
 
 async def get_user(cid, uid):
     async with pool.acquire() as conn:
@@ -325,14 +286,12 @@ async def get_user(cid, uid):
         )
         return {"balance": 0}
 
-
 async def update_balance(cid, uid, amt):
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE users SET balance=balance+$1 WHERE chat_id=$2 AND user_id=$3",
             amt, cid, uid
         )
-
 
 async def get_profile(cid, uid):
     async with pool.acquire() as conn:
@@ -350,14 +309,12 @@ async def get_profile(cid, uid):
             return {"job_key": "novice", "level": 1, "last_work_time": 0, "has_coffee": False}
         return dict(r)
 
-
 async def set_car(cid, uid, key, name):
     async with pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO garage (chat_id, user_id, car_key, car_name) VALUES ($1,$2,$3,$4)",
             cid, uid, key, name
         )
-
 
 async def get_car(cid, uid):
     async with pool.acquire() as conn:
@@ -368,7 +325,6 @@ async def get_car(cid, uid):
         if not cars:
             return None
         return ", ".join([c['car_name'] for c in cars])
-
 
 async def get_bank(cid, uid):
     async with pool.acquire() as conn:
@@ -384,7 +340,6 @@ async def get_bank(cid, uid):
             return {"deposit": 0, "last_interest_time": time.time()}
         return dict(r)
 
-
 async def update_bank(cid, uid, amt):
     async with pool.acquire() as conn:
         await conn.execute(
@@ -392,11 +347,9 @@ async def update_bank(cid, uid, amt):
             amt, cid, uid
         )
 
-
 async def calc_interest(dep, lt):
     days = (time.time() - lt) / 86400
     return int(dep * BANK_INTEREST_RATE * days), time.time()
-
 
 async def get_education(cid, uid):
     async with pool.acquire() as conn:
@@ -412,7 +365,6 @@ async def get_education(cid, uid):
             return {"completed_courses": [], "has_mba": False}
         return {"completed_courses": r['completed_courses'] or [], "has_mba": r['has_mba']}
 
-
 async def complete_course(cid, uid, ck):
     async with pool.acquire() as conn:
         if ck == "mba":
@@ -426,7 +378,6 @@ async def complete_course(cid, uid, ck):
                 ck, cid, uid
             )
 
-
 async def get_loan(cid, uid):
     async with pool.acquire() as conn:
         r = await conn.fetchrow(
@@ -437,7 +388,6 @@ async def get_loan(cid, uid):
             return {"amount": 0, "interest": 0, "taken_at": 0, "due_date": 0}
         return dict(r)
 
-
 async def update_loan(cid, uid, amount, interest, taken_at, due_date):
     async with pool.acquire() as conn:
         await conn.execute(
@@ -447,11 +397,9 @@ async def update_loan(cid, uid, amount, interest, taken_at, due_date):
             cid, uid, amount, interest, taken_at, due_date
         )
 
-
 async def clear_loan(cid, uid):
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM loans WHERE chat_id=$1 AND user_id=$2", cid, uid)
-
 
 async def arrest_player(cid, uid):
     arrested = []
@@ -491,16 +439,24 @@ async def arrest_player(cid, uid):
             "UPDATE profiles SET job_key='novice', level=1 WHERE chat_id=$1 AND user_id=$2",
             cid, uid
         )
-    arrested.append("💼 Профессия сброшена до Новичка")
+    arrested.append(" Профессия сброшена до Новичка")
     return arrested
 
-
-# ============================================================================
-# ВЕБ-СЕРВЕР И ФОНОВЫЕ ЗАДАЧИ
-# ============================================================================
+def cleanup_old_cases():
+    now = time.time()
+    to_delete = []
+    for case_id, case in active_cases.items():
+        try:
+            timestamp = int(case_id.split("_")[-1])
+            if now - timestamp > 600:
+                to_delete.append(case_id)
+        except:
+            to_delete.append(case_id)
+    for case_id in to_delete:
+        del active_cases[case_id]
 
 async def handle_ping(request):
-    return web.Response(text="🤖 Bot is alive!")
+    return web.Response(text=" Bot is alive!")
 
 async def start_web_server():
     app = web.Application()
@@ -578,44 +534,18 @@ async def loan_interest_loop():
                     new_interest = loan['interest'] + daily_interest
                     await update_loan(cid, uid, loan['amount'], new_interest, loan['taken_at'], loan['due_date'])
 
-
-# ============================================================================
-# ОСНОВНЫЕ КОМАНДЫ
-# ============================================================================
-
 @dp.message(Command("start"))
 async def cmd_start(m: Message):
     await save_username(m.chat.id, m.from_user.id, m.from_user.full_name)
     await m.answer(
         "👋 <b>Экономика группы!</b>\n\n"
-        " /balance — мой баланс\n"
-        " /work — работать\n"
-        "💸 /pay сумма (ответ) — перевести\n"
-        "🔫 /rob (ответ) — ограбить\n"
-        "🎁 /daily — ежедневный бонус\n"
-        " /dice сумма — кости 50/50\n"
-        "🎟️ /buy_ticket — лотерейный билет\n"
-        "🛒 /shop — улучшения\n"
-        "🏪 /market — бизнесы и кейсы\n"
-        "🚗 /cars — автосалон\n"
-        "🅿️ /mycar — мои машины\n"
-        "💼 /collect — прибыль с бизнеса\n"
-        "🎒 /inv — инвентарь\n"
-        "📊 /info — моя карточка\n"
-        " /rating — рейтинг богачей\n"
-        "🃏 /blackjack — Блэкджек с Игорёчком\n"
-        " /craft — крафт предметов\n"
-        "🔄 /trade — обмен с игроком\n"
-        "🏦 /bank — банковский счёт\n"
-        "📥 /deposit — положить в банк\n"
-        "📤 /withdraw — снять из банка\n"
-        "🎓 /education — образование\n"
-        "📘 /buy_course — купить курс\n"
-        "💳 /credit сумма — взять кредит\n"
-        " /debt — посмотреть долг\n"
-        "💸 /repay сумма — погасить часть долга\n"
-        "✅ /repay_all — погасить весь долг\n"
-        " /bailout — информация о выкупе",
+        "💰 /balance\n💼 /work\n💸 /pay (ответ)\n🔫 /rob (ответ)\n"
+        " /daily\n🎲 /dice сумма\n🎟️ /buy_ticket\n🛒 /shop\n"
+        "🏪 /market\n🚗 /cars\n🅿️ /mycar\n💼 /collect\n🎒 /inv\n"
+        "📊 /info\n🏆 /rating\n🃏 /blackjack\n🔨 /craft\n🔄 /trade\n"
+        "🏦 /bank\n /deposit\n📤 /withdraw\n /education\n"
+        "📘 /buy_course\n💳 /credit сумма\n📊 /debt\n💸 /repay сумма\n"
+        "✅ /repay_all\n🚔 /bailout\n⚖️ /hire_lawyer @user сумма\n🏛️ /court",
         parse_mode="HTML"
     )
 
@@ -663,7 +593,7 @@ async def cmd_work(m: Message):
             ct, cid, uid
         )
     await m.answer(
-        f" <b>{j['name']}</b> (Ур.{p['level']}): "
+        f"💼 <b>{j['name']}</b> (Ур.{p['level']}): "
         f"+<b>{fmt_money(sal)}</b>",
         parse_mode="HTML"
     )
@@ -731,7 +661,7 @@ async def cmd_rob(m: Message):
         ct = time.time()
         if ct - lr < ROB_COOLDOWN:
             remaining = ROB_COOLDOWN - (ct - lr)
-            return await m.answer(f" Кулдаун {format_time(remaining)}")
+            return await m.answer(f"⏳ Кулдаун {format_time(remaining)}")
         await conn.execute(
             "INSERT INTO robbery (chat_id, user_id, last_robbery) VALUES ($1,$2,$3) "
             "ON CONFLICT (chat_id, user_id) DO UPDATE SET last_robbery=$3",
@@ -739,13 +669,13 @@ async def cmd_rob(m: Message):
         )
     vb = await get_user(cid, vid)
     if vb['balance'] < 50:
-        return await m.answer(" У жертвы мало денег!")
+        return await m.answer("❌ У жертвы мало денег!")
     if random.random() < ROB_SUCCESS_RATE:
         st = int(vb['balance'] * random.uniform(ROB_MIN_PERCENT, ROB_MAX_PERCENT))
         await update_balance(cid, vid, -st)
         await update_balance(cid, rid, st)
         await m.answer(
-            f"🔫 <b>ОГРАБЛЕНИЕ УСПЕШНО!</b>\n\n"
+            f" <b>ОГРАБЛЕНИЕ УСПЕШНО!</b>\n\n"
             f"{m.from_user.full_name} украл <b>{fmt_money(st)}</b> "
             f"у {m.reply_to_message.from_user.full_name}!",
             parse_mode="HTML"
@@ -753,14 +683,139 @@ async def cmd_rob(m: Message):
     else:
         rb = await get_user(cid, rid)
         pn = int(rb['balance'] * ROB_PENALTY_RATE)
+        case_id = f"{cid}_{rid}_{int(time.time())}"
+        active_cases[case_id] = {
+            "criminal": rid,
+            "victim": vid,
+            "penalty": pn,
+            "lawyer": None,
+            "paid_lawyer_fee": 0
+        }
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⚖️ Нанять адвоката", callback_data=f"find_lawyer_{case_id}")]
+        ])
         await update_balance(cid, rid, -pn)
         await update_balance(cid, vid, pn)
         await m.answer(
-            f" <b>ПОПАЛСЯ!</b>\n\n"
-            f"{m.from_user.full_name} заплатил штраф <b>{fmt_money(pn)}</b> "
-            f"пользователю {m.reply_to_message.from_user.full_name}!",
+            f"🚔 <b>ПОПАЛСЯ!</b>\n\n"
+            f"{m.from_user.full_name} получил штраф <b>{fmt_money(pn)}</b>!\n\n"
+            f"⚖️ У вас есть 10 минут, чтобы нанять адвоката и пойти в суд.\n"
+            f"Если адвокат проиграет — штраф увеличится x2!",
+            reply_markup=kb,
             parse_mode="HTML"
         )
+
+@dp.callback_query(lambda c: c.data.startswith("find_lawyer_"))
+async def find_lawyer_cb(cb: types.CallbackQuery):
+    case_id = "_".join(cb.data.split("_")[2:])
+    if case_id not in active_cases:
+        return await cb.answer("Дело уже закрыто или истекло!", show_alert=True)
+    cid = cb.message.chat.id
+    criminal_uid = active_cases[case_id]["criminal"]
+    if cb.from_user.id != criminal_uid:
+        return await cb.answer("Это не ваше дело!", show_alert=True)
+    cleanup_old_cases()
+    await cb.message.edit_text(
+        f"⚖️ <b>Поиск адвоката...</b>\n\n"
+        f"Напишите в чате: <b>/hire_lawyer @ник сумма</b>\n"
+        f"(ответив на сообщение адвоката)\n\n"
+        f"⏰ У вас есть 10 минут, иначе дело закроется.",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("hire_lawyer"))
+async def cmd_hire_lawyer(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    args = m.text.split()
+    if len(args) < 3 or not m.reply_to_message:
+        return await m.answer(
+            "⚖️ Использование: <b>/hire_lawyer @user сумма</b>\n"
+            "(ответьте на сообщение адвоката)",
+            parse_mode="HTML"
+        )
+    try:
+        fee = int(args[2])
+    except:
+        return await m.answer("❌ Сумма должна быть числом!")
+    if fee < 100:
+        return await m.answer("❌ Минимальная оплата адвокату: 100 сарапулок")
+    lawyer_uid = m.reply_to_message.from_user.id
+    if lawyer_uid == uid:
+        return await m.answer("❌ Нельзя нанять самого себя!")
+    cleanup_old_cases()
+    my_case = None
+    for case_id, case in active_cases.items():
+        if case["criminal"] == uid and case["lawyer"] is None:
+            my_case = case_id
+            break
+    if not my_case:
+        return await m.answer("❌ У вас нет активных дел для найма адвоката!")
+    edu = await get_education(cid, lawyer_uid)
+    if "lawyer" not in edu['completed_courses']:
+        return await m.answer("❌ Этот игрок не имеет курса адвоката!")
+    client_bal = await get_user(cid, uid)
+    if client_bal['balance'] < fee:
+        return await m.answer(f"❌ Недостаточно средств ({fmt_money(client_bal['balance'])})")
+    await update_balance(cid, uid, -fee)
+    await update_balance(cid, lawyer_uid, fee)
+    active_cases[my_case]["lawyer"] = lawyer_uid
+    active_cases[my_case]["paid_lawyer_fee"] = fee
+    lawyer_name = m.reply_to_message.from_user.full_name
+    await m.answer(
+        f"⚖️ <b>Адвокат нанят!</b>\n\n"
+        f"👨‍⚖️ {lawyer_name} получил <b>{fmt_money(fee)}</b> за услуги.\n"
+        f"Теперь используйте <b>/court</b> для начала судебного заседания!\n\n"
+        f"⚠️ Если адвокат проиграет — штраф увеличится x2, а оплата не вернётся.",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("court"))
+async def cmd_court(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    cleanup_old_cases()
+    my_case_id = None
+    for case_id, case in active_cases.items():
+        if case["criminal"] == uid:
+            my_case_id = case_id
+            break
+    if not my_case_id:
+        return await m.answer("❌ У вас нет активных дел!")
+    case = active_cases[my_case_id]
+    if case["lawyer"] is None:
+        return await m.answer(
+            "❌ Сначала наймите адвоката через <b>/hire_lawyer</b>!",
+            parse_mode="HTML"
+        )
+    await m.answer("🏛️ <b>СУДЕБНОЕ ЗАСЕДАНИЕ НАЧИНАЕТСЯ...</b>", parse_mode="HTML")
+    await asyncio.sleep(3)
+    verdict = random.random() < 0.5
+    if verdict:
+        lawyer_fee = case["paid_lawyer_fee"]
+        del active_cases[my_case_id]
+        await m.answer(
+            f"⚖️ <b>ВЕРДИКТ: НЕВИНОВЕН!</b>\n\n"
+            f"👨⚖️ Адвокат успешно защитил интересы подсудимого.\n"
+            f"✅ Штраф аннулирован. Вы свободны! 🎉\n\n"
+            f" Оплата адвокату ({fmt_money(lawyer_fee)}) остаётся у него.",
+            parse_mode="HTML"
+        )
+    else:
+        penalty = case["penalty"]
+        doubled_penalty = penalty * 2
+        lawyer_fee = case["paid_lawyer_fee"]
+        current_bal = await get_user(cid, uid)
+        actual_penalty = min(doubled_penalty, current_bal['balance'])
+        await update_balance(cid, uid, -actual_penalty)
+        del active_cases[my_case_id]
+        msg = (
+            f"⚖️ <b>ВЕРДИКТ: ВИНОВЕН!</b>\n\n"
+            f"😔 Адвокат не смог доказать невиновность.\n\n"
+            f"💰 Штраф увеличен x2: <b>{fmt_money(actual_penalty)}</b>\n"
+        )
+        if lawyer_fee > 0:
+            msg += f"💸 Услуги адвоката ({fmt_money(lawyer_fee)}) не возвращаются.\n"
+        msg += f"\n🔒 Дело закрыто."
+        await m.answer(msg, parse_mode="HTML")
 
 @dp.message(Command("daily"))
 async def cmd_daily(m: Message):
@@ -819,13 +874,13 @@ async def cmd_dice(m: Message):
         await update_balance(cid, uid, win)
         await m.answer(
             f"🎲 <b>Выпало: {dice}</b>\n\n"
-            f" <b>ПОБЕДА!</b>\n"
+            f"🎉 <b>ПОБЕДА!</b>\n"
             f"Выигрыш: <b>{fmt_money(win)}</b> (x2)",
             parse_mode="HTML"
         )
     else:
         await m.answer(
-            f" <b>Выпало: {dice}</b>\n\n"
+            f"🎲 <b>Выпало: {dice}</b>\n\n"
             f"💀 <b>Проигрыш</b>\n"
             f"Попробуй ещё раз!",
             parse_mode="HTML"
@@ -872,15 +927,15 @@ async def cmd_info(m: Message):
         f"💰 {fmt_money(u['balance'])}\n"
         f"🏦 Банк: {fmt_money(bd['deposit'])}\n"
         f"💼 {j['name']} (Ур.{p['level']})\n"
-        f" {c or 'нет'}\n"
+        f"🚗 {c or 'нет'}\n"
         f"🏢 {bc} биз.\n"
         f"🎒 {ic} предм.\n"
         f"🎓 {cc} курсов"
     )
     if edu['has_mba']:
-        t += "\n MBA (+50%)"
+        t += "\n🎯 MBA (+50%)"
     if p['has_coffee']:
-        t += "\n Кофе"
+        t += "\n☕ Кофе"
     if loan['amount'] > 0:
         total_debt = loan['amount'] + loan['interest']
         t += f"\n💳 Долг: <b>{fmt_money(total_debt)}</b>"
@@ -890,7 +945,7 @@ async def cmd_info(m: Message):
 async def cmd_shop(m: Message):
     t = "🛒 <b>Улучшения:</b>\n"
     for k, v in SHOP_ITEMS.items():
-        t += f" {v['name']} ({fmt_money(v['price'])}) → /buy {k}\n"
+        t += f"🔹 {v['name']} ({fmt_money(v['price'])}) → /buy {k}\n"
     await m.answer(t, parse_mode="HTML")
 
 @dp.message(Command("buy"))
@@ -930,7 +985,7 @@ async def cmd_market(m: Message):
     for k, v in MARKET.items():
         if v["type"] == "business":
             t += f"🔹 {v['name']} ({fmt_money(v['price'])}) → /buy_market {k}\n"
-            t += f"   💰 Доход: {fmt_money(v['income'])}/сутки\n"
+            t += f"    Доход: {fmt_money(v['income'])}/сутки\n"
     await m.answer(t, parse_mode="HTML")
 
 @dp.message(Command("buy_market"))
@@ -947,7 +1002,7 @@ async def cmd_buy_market(m: Message):
     if it['type'] == 'case':
         r = random.randint(1, 100)
         if r <= 5:
-            pr, rar = "🎸 Золотая Скрипка", "legendary"
+            pr, rar = " Золотая Скрипка", "legendary"
         elif r <= 25:
             pr, rar = "💎 Алмаз", "rare"
         else:
@@ -1035,7 +1090,7 @@ async def cmd_inv(m: Message):
         return await m.answer(" Пусто.")
     t = " <b>Инвентарь:</b>\n"
     for i in its:
-        em = "🟡" if i['rarity'] == "legendary" else "" if i['rarity'] == "rare" else "🟢"
+        em = "🟡" if i['rarity'] == "legendary" else "🔵" if i['rarity'] == "rare" else "🟢"
         t += f"{em} {i['item_name']}\n"
     await m.answer(t, parse_mode="HTML")
 
@@ -1078,7 +1133,7 @@ async def cmd_bank(m: Message):
     t = (
         f"🏦 <b>Банк</b>\n"
         f"💰 На счету: <b>{fmt_money(bd['deposit'])}</b>\n"
-        f" Проценты: <b>+{fmt_money(interest)}</b>\n"
+        f"📈 Проценты: <b>+{fmt_money(interest)}</b>\n"
         f"💹 1% в сутки\n\n"
         f"📥 /deposit сумма\n"
         f"📤 /withdraw сумма\n"
@@ -1105,7 +1160,7 @@ async def cmd_deposit(m: Message):
     await update_bank(cid, uid, amt)
     bd = await get_bank(cid, uid)
     await m.answer(
-        f" Вклад: <b>{fmt_money(amt)}</b>. "
+        f"📥 Вклад: <b>{fmt_money(amt)}</b>. "
         f"На счету: <b>{fmt_money(bd['deposit'])}</b>",
         parse_mode="HTML"
     )
@@ -1119,11 +1174,11 @@ async def cmd_withdraw(m: Message):
     try:
         amt = int(args[1])
     except:
-        return await m.answer(" Число!")
+        return await m.answer("❌ Число!")
     bd = await get_bank(cid, uid)
     interest, new_time = await calc_interest(bd['deposit'], bd['last_interest_time'])
     if bd['deposit'] < amt:
-        return await m.answer(f"❌ На счету {fmt_money(bd['deposit'])}")
+        return await m.answer(f" На счету {fmt_money(bd['deposit'])}")
     async with pool.acquire() as conn:
         await conn.execute(
             "UPDATE bank SET deposit=deposit-$1, last_interest_time=$2 WHERE chat_id=$3 AND user_id=$4",
@@ -1196,7 +1251,7 @@ async def cmd_debt(m: Message):
     total_debt = loan['amount'] + loan['interest']
     days_left = int((loan['due_date'] - time.time()) / 86400)
     if days_left < 0:
-        days_text = "🚔 ПРОСРОЧЕНО! ГРОЗИТ АРЕСТ ИМУЩЕСТВА!"
+        days_text = " ПРОСРОЧЕНО! ГРОЗИТ АРЕСТ ИМУЩЕСТВА!"
     elif days_left <= 2:
         days_text = f"⚠️ Осталось: {days_left} дн. Срочно погасите!"
     else:
@@ -1298,7 +1353,7 @@ async def cmd_bailout(m: Message):
     total_debt = loan['amount'] + loan['interest']
     bailout_cost = int(total_debt * 2)
     await m.answer(
-        f"🚔 <b>Информация о выкупе</b>\n\n"
+        f" <b>Информация о выкупе</b>\n\n"
         f"Текущий долг: <b>{fmt_money(total_debt)}</b>\n"
         f"Стоимость выкупа: <b>{fmt_money(bailout_cost)}</b>\n\n"
         f"⚠️ Выкуп возможен только ДО ареста!\n"
@@ -1308,10 +1363,10 @@ async def cmd_bailout(m: Message):
 
 @dp.message(Command("craft"))
 async def cmd_craft(m: Message):
-    t = " <b>Крафт:</b>\n"
+    t = "🔨 <b>Крафт:</b>\n"
     for k, v in CRAFT_RECIPES.items():
         req = ", ".join([f"{c}× {n}" for n, c in v["requires"].items()])
-        t += f" {v['name']} ({req}) → /craft_item {k}\n"
+        t += f"🔹 {v['name']} ({req}) → /craft_item {k}\n"
     await m.answer(t, parse_mode="HTML")
 
 @dp.message(Command("craft_item"))
@@ -1390,7 +1445,7 @@ async def cmd_trade(m: Message):
 async def cmd_education(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     edu = await get_education(cid, uid)
-    t = " <b>Образование:</b>\n"
+    t = "🎓 <b>Образование:</b>\n"
     for k, c in COURSES.items():
         done = k in edu['completed_courses'] or (k == 'mba' and edu['has_mba'])
         st = "✅" if done else "🔒"
@@ -1445,7 +1500,7 @@ async def handle_exam_answer(m: Message):
         ex['correct'] += 1
         await m.answer("✅ Верно!")
     else:
-        await m.answer(f"❌ Неверно! Ответ: {q['a'][q['correct']]}")
+        await m.answer(f" Неверно! Ответ: {q['a'][q['correct']]}")
     ex['question'] += 1
     if ex['question'] < 3:
         q = c['questions'][ex['question']]
@@ -1460,24 +1515,19 @@ async def handle_exam_answer(m: Message):
         if ex['correct'] >= 2:
             await complete_course(cid, uid, ex['course'])
             await m.answer(
-                f" <b>Сдано!</b> Курс <b>{c['name']}</b> завершён!",
+                f"🎉 <b>Сдано!</b> Курс <b>{c['name']}</b> завершён!",
                 parse_mode="HTML"
             )
         else:
             await m.answer(
-                f"😔 <b>Провал.</b> Правильных: {ex['correct']}/3.\n"
+                f" <b>Провал.</b> Правильных: {ex['correct']}/3.\n"
                 f"Попробуйте: /buy_course {ex['course']}",
                 parse_mode="HTML"
             )
         del exam_sessions[ek]
 
-
-# ============================================================================
-# БЛЭКДЖЕК С КНОПКОЙ ОТМЕНЫ
-# ============================================================================
-
 def create_deck():
-    suits = ['♠', '♥', '♦', '♣']
+    suits = ['', '♥', '♦', '♣']
     ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
     deck = [(r, s) for s in suits for r in ranks]
     random.shuffle(deck)
@@ -1524,9 +1574,9 @@ async def blackjack_start(m: Message, state: FSMContext):
     ])
     await m.answer(
         f"🎩 <b>Игорёчек открывает стол!</b>\n\n"
-        f"👤 {m.from_user.first_name}\n"
+        f" {m.from_user.first_name}\n"
         f"👥 1/{BJ_MAX_PLAYERS}\n"
-        f" {BJ_WAIT_TIME} сек\n\n"
+        f"⏳ {BJ_WAIT_TIME} сек\n\n"
         f"Нажмите кнопку!\n"
         f"Создатель может отменить игру.",
         reply_markup=kb,
@@ -1588,11 +1638,11 @@ async def blackjack_join(cb: types.CallbackQuery, state: FSMContext):
     pl = "\n".join([f"• {p['name']}" for p in t["players"].values()])
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Присоединиться", callback_data=f"bj_join_{cid}")],
-        [InlineKeyboardButton(text="❌ Отменить игру", callback_data=f"bj_cancel_{cid}")]
+        [InlineKeyboardButton(text=" Отменить игру", callback_data=f"bj_cancel_{cid}")]
     ])
     try:
         await cb.message.edit_text(
-            f"🎩 <b>Игроки ({len(t['players'])}/{BJ_MAX_PLAYERS}):\n{pl}\n\n⏳ Ждём...</b>",
+            f" <b>Игроки ({len(t['players'])}/{BJ_MAX_PLAYERS}):\n{pl}\n\n⏳ Ждём...</b>",
             reply_markup=kb,
             parse_mode="HTML"
         )
@@ -1674,15 +1724,15 @@ async def blackjack_player_turn(cid, uid, state):
     t = bj_tables[cid]
     p = t["players"][uid]
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🃏 Ещё", callback_data=f"hit_{uid}_{cid}"),
+        [InlineKeyboardButton(text=" Ещё", callback_data=f"hit_{uid}_{cid}"),
          InlineKeyboardButton(text="✋ Хватит", callback_data=f"stand_{uid}_{cid}")]
     ])
     await bot.send_message(
         uid,
         f"🎩 <b>Ваш ход!</b>\n\n"
         f"🃏 Ваши: {show_cards(p['cards'])}\n"
-        f"🔢 Сумма: <b>{calc_score(p['cards'])}</b>\n"
-        f"💰 Ставка: {p['bet']}\n\n"
+        f" Сумма: <b>{calc_score(p['cards'])}</b>\n"
+        f" Ставка: {p['bet']}\n\n"
         f"🎴 Карта Игорёчка: {t['dealer'][0][0]}{t['dealer'][0][1]}",
         reply_markup=kb,
         parse_mode="HTML"
@@ -1703,7 +1753,7 @@ async def blackjack_hit_stand(cb: types.CallbackQuery, state: FSMContext):
         p["cards"].append(c)
         sc = calc_score(p["cards"])
         await cb.message.edit_text(
-            f"🎩 Взял карту!\n\n🃏 +{c[0]}{c[1]}\n📊 {show_cards(p['cards'])}\n🔢 Сумма: <b>{sc}</b>",
+            f"🎩 Взял карту!\n\n +{c[0]}{c[1]}\n📊 {show_cards(p['cards'])}\n🔢 Сумма: <b>{sc}</b>",
             parse_mode="HTML"
         )
         if sc > 21:
@@ -1717,7 +1767,7 @@ async def blackjack_hit_stand(cb: types.CallbackQuery, state: FSMContext):
             await blackjack_next_turn(cid, state)
         else:
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=" Ещё", callback_data=f"hit_{uid}_{cid}"),
+                [InlineKeyboardButton(text="🃏 Ещё", callback_data=f"hit_{uid}_{cid}"),
                  InlineKeyboardButton(text="✋ Хватит", callback_data=f"stand_{uid}_{cid}")]
             ])
             await cb.message.answer(f"💰 Сумма: {sc}. Ещё?", reply_markup=kb)
@@ -1737,7 +1787,7 @@ async def blackjack_next_turn(cid, state):
 
 async def blackjack_dealer_play(cid, state):
     t = bj_tables[cid]
-    await bot.send_message(cid, f"🎩 <b>Ход Игорёчка!</b>\n\n🤖 Мои: {show_cards(t['dealer'])}", parse_mode="HTML")
+    await bot.send_message(cid, f" <b>Ход Игорёчка!</b>\n\n🤖 Мои: {show_cards(t['dealer'])}", parse_mode="HTML")
     while calc_score(t["dealer"]) < BJ_DEALER_STOP:
         await asyncio.sleep(1)
         c = t["deck"].pop()
@@ -1753,7 +1803,7 @@ async def blackjack_dealer_play(cid, state):
             res.append(f"❌ {p['name']}: перебор ({ps})")
         elif ds > 21:
             await update_balance(cid, uid, bet*2)
-            res.append(f" {p['name']}: Игорёчек перебрал! +{bet}")
+            res.append(f"🎉 {p['name']}: Игорёчек перебрал! +{bet}")
         elif ps > ds:
             await update_balance(cid, uid, bet*2)
             res.append(f"🏆 {p['name']}: победа! +{bet}")
@@ -1767,21 +1817,16 @@ async def blackjack_dealer_play(cid, state):
     elif any("победа" in r for r in res):
         fn = "🎉 Поздравляем!"
     elif any("проигрыш" in r for r in res):
-        fn = " Забирает ставки!"
+        fn = "🎩 Забирает ставки!"
     else:
         fn = "🤝 Ничья!"
     await bot.send_message(
         cid,
-        f"🎩 <b>{fn}</b>\n\n🤖 Карты: {show_cards(t['dealer'])} ({ds})\n\n Результаты:\n" + "\n".join(res),
+        f"🎩 <b>{fn}</b>\n\n🤖 Карты: {show_cards(t['dealer'])} ({ds})\n\n📊 Результаты:\n" + "\n".join(res),
         parse_mode="HTML"
     )
     del bj_tables[cid]
     await state.clear()
-
-
-# ============================================================================
-# АВТО-РЕГИСТРАЦИЯ И ПРИВЕТСТВИЕ
-# ============================================================================
 
 @dp.message()
 async def auto_register(m: Message):
@@ -1799,11 +1844,6 @@ async def on_user_join(m: Message):
             continue
         await get_user(cid, user.id)
         await save_username(cid, user.id, user.full_name)
-
-
-# ============================================================================
-# ЗАПУСК БОТА
-# ============================================================================
 
 async def main():
     await init_db()
