@@ -127,8 +127,8 @@ COURSES = {
 
 # ✅ ВСЕ КЛЮЧИ БЕЗ ПРОБЕЛОВ
 JOBS = {
-    "novice": {"name": "👶 Новичок", "base_pay": 10, "cooldown": 3600},
-    "miner": {"name": "⛏️ Шахтёр", "base_pay": 25, "cooldown": 3600},
+    "novice": {"name": "👶 Новичок", "base_pay": 25, "cooldown": 3600},
+    "miner": {"name": "⛏️ Шахтёр", "base_pay": 50, "cooldown": 3600},
     "coder": {"name": "💻 Программист", "base_pay": 150, "cooldown": 7200},
     "trader": {"name": "📈 Трейдер", "base_pay": 300, "cooldown": 10800}
 }
