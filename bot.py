@@ -99,11 +99,12 @@ COURSES = {
 }
 
 JOBS = {
-    "novice": {"name": " Новичок", "base_pay": 10, "cooldown": 3600},
-    "miner": {"name": "⛏️ Шахтёр", "base_pay": 25, "cooldown": 3600},
-    "coder": {"name": "💻 Программист", "base_pay": 50, "cooldown": 7200},
-    "trader": {"name": "📈 Трейдер", "base_pay": 80, "cooldown": 10800}
+    "novice": {"name": "👶 Новичок", "base_pay": 10, "cooldown": 3600},
+    "miner": {"name": "️ Шахтёр", "base_pay": 50, "cooldown": 3600},
+    "coder": {"name": " Программист", "base_pay": 150, "cooldown": 7200},
+    "trader": {"name": "📈 Трейдер", "base_pay": 400, "cooldown": 10800}
 }
+
 
 SHOP_ITEMS = {
     "course": {"name": "📚 Курсы", "price": 500, "desc": "+1 уровень", "type": "level_up"},
