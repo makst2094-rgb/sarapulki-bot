@@ -548,7 +548,7 @@ async def cmd_rob(m: Message):
         await update_balance(cid, vid, -st)
         await update_balance(cid, rid, st)
         await m.answer(f"🔫 <b>ОГРАБЛЕНИЕ УСПЕШНО!</b>\n\n{m.from_user.full_name} украл <b>{fmt_money(st)}</b> у {m.reply_to_message.from_user.full_name}!", parse_mode="HTML")
-        else:
+    else:
         rb = await get_user(cid, rid)
         pn = int(rb['balance'] * ROB_PENALTY_RATE)
         
