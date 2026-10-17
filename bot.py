@@ -539,7 +539,7 @@ async def cmd_rob(m: Message):
         ct = time.time()
         if ct - lr < ROB_COOLDOWN:
             return await m.answer(f" Кулдаун {format_time(ROB_COOLDOWN - (ct - lr))}")
-        await conn.execute("INSERT INTO robbery VALUES ($1,$2,$3) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_robbery=$3", cid, rid, ct)
+        await conn.execute("INSERT INTO robbery VALUES ($1,$2,$3,0,0) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_robbery=$3", cid, rid, ct)
     vb = await get_user(cid, vid)
     if vb['balance'] < 50:
         return await m.answer(" У жертвы мало денег!")
@@ -548,26 +548,77 @@ async def cmd_rob(m: Message):
         await update_balance(cid, vid, -st)
         await update_balance(cid, rid, st)
         await m.answer(f"🔫 <b>ОГРАБЛЕНИЕ УСПЕШНО!</b>\n\n{m.from_user.full_name} украл <b>{fmt_money(st)}</b> у {m.reply_to_message.from_user.full_name}!", parse_mode="HTML")
-    else:
+        else:
         rb = await get_user(cid, rid)
         pn = int(rb['balance'] * ROB_PENALTY_RATE)
+        
+        # Списываем штраф сначала с банка
+        bank_data = await get_bank(cid, rid)
+        paid_from_bank = min(pn, bank_data['deposit'])
+        
+        if paid_from_bank > 0:
+            await update_bank(cid, rid, -paid_from_bank)
+            pn -= paid_from_bank
+        
+        # Остаток списываем с баланса (может уйти в минус)
+        if pn > 0:
+            await update_balance(cid, rid, -pn)
+        
+        # Передаем жертве полный штраф
+        total_penalty = int(rb['balance'] * ROB_PENALTY_RATE)
+        await update_balance(cid, vid, total_penalty)
+        
+        # Записываем долг если баланс ушел в минус
+        async with pool.acquire() as conn2:
+            current_user = await get_user(cid, rid)
+            if current_user['balance'] < 0:
+                await conn2.execute(
+                    "UPDATE robbery SET debt_amount=$1, debt_time=$2 WHERE chat_id=$3 AND user_id=$4",
+                    abs(current_user['balance']), time.time(), cid, rid
+                )
+        
         lawyers = await find_lawyers_in_chat(cid)
-        has_money = rb['balance'] >= LAWYER_MIN_FEE
-        await update_balance(cid, rid, -pn)
-        await update_balance(cid, vid, pn)
+        has_money = (await get_user(cid, rid))['balance'] >= LAWYER_MIN_FEE
+        
         if not lawyers or not has_money:
             await send_to_jail(cid, rid, JAIL_TIME_HOURS)
             total_fine = JAIL_TIME_HOURS * JAIL_FINE_PER_HOUR
-            await m.answer(f"🚔 <b>ПОПАЛСЯ!</b>\n\nШтраф: <b>{fmt_money(pn)}</b>\n\n⚖️ {'Нет адвокатов в чате' if not lawyers else 'Недостаточно денег для адвоката'}\n🔒 Тюрьма: <b>{JAIL_TIME_HOURS} часа</b>\n💰 Штраф за тюрьму: <b>{fmt_money(total_fine)}</b>\n\nИспользуйте /jail_pay для досрочного выхода.", parse_mode="HTML")
+            
+            debt_msg = ""
+            if (await get_user(cid, rid))['balance'] < 0:
+                debt_msg = f"\n⛔ <b>Долг: {fmt_money(abs((await get_user(cid, rid))['balance']))}</b>\n⏳ Срок на оплату: 2 часа!"
+            
+            await m.answer(
+                f"🚔 <b>ПОПАЛСЯ!</b>\n\n"
+                f"Штраф: <b>{fmt_money(total_penalty)}</b> (списано с банка/баланса)\n\n"
+                f"️ {'Нет адвокатов' if not lawyers else 'Мало денег'}\n"
+                f"🔒 Тюрьма: <b>{JAIL_TIME_HOURS} часа</b>{debt_msg}",
+                parse_mode="HTML"
+            )
         else:
             case_id = f"{cid}_{rid}_{int(time.time())}"
-            active_cases[case_id] = {"criminal": rid, "victim": vid, "penalty": pn, "lawyer": None, "paid_fee": 0}
+            active_cases[case_id] = {"criminal": rid, "victim": vid, "penalty": total_penalty, "lawyer": None, "paid_fee": 0}
+            asyncio.create_task(auto_cleanup_timer(case_id))
             kb = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="⚖️ Нанять адвоката", callback_data=f"find_lawyer_{case_id}")],
                 [InlineKeyboardButton(text="🔒 Пойти в тюрьму", callback_data=f"go_jail_{case_id}")]
             ])
             lawyer_list = "\n".join([f"• @{l[1]}" for l in lawyers[:5]])
-            await m.answer(f" <b>ПОПАЛСЯ!</b>\n\nШтраф: <b>{fmt_money(pn)}</b>\n\n⚖️ Доступные адвокаты:\n{lawyer_list}\n\nВыберите:\n• Нанять адвоката (50/50 шанс)\n• Пойти в тюрьму ({JAIL_TIME_HOURS} ч, {fmt_money(JAIL_TIME_HOURS * JAIL_FINE_PER_HOUR)})", reply_markup=kb, parse_mode="HTML")
+            
+            debt_msg = ""
+            if (await get_user(cid, rid))['balance'] < 0:
+                debt_msg = f"\n⛔ <b>Долг: {fmt_money(abs((await get_user(cid, rid))['balance']))}</b> (срок 2 часа)"
+            
+            await m.answer(
+                f" <b>ПОПАЛСЯ!</b>\n\n"
+                f"Штраф: <b>{fmt_money(total_penalty)}</b>\n\n"
+                f"⚖️ Доступные адвокаты:\n{lawyer_list}\n{debt_msg}\n\n"
+                f"Выберите:\n"
+                f"• Нанять адвоката (50/50 шанс)\n"
+                f"• Пойти в тюрьму ({JAIL_TIME_HOURS} ч)",
+                reply_markup=kb,
+                parse_mode="HTML"
+            )
 
 @dp.callback_query(lambda c: c.data.startswith("go_jail_"))
 async def go_jail_cb(cb: types.CallbackQuery):
@@ -1512,6 +1563,35 @@ async def on_user_join(m: Message):
         await get_user(cid, user.id)
         await save_username(cid, user.id, user.full_name)
 
+async def rob_debt_check_loop():
+    print("⚖️ Цикл проверки долгов за ограбления запущен")
+    while True:
+        await asyncio.sleep(300)  # Проверка каждые 5 минут
+        now = time.time()
+        async with pool.acquire() as conn:
+            # Ищем всех, у кого есть активный долг
+            debts = await conn.fetch("SELECT chat_id, user_id FROM robbery WHERE debt_amount > 0")
+            
+            for d in debts:
+                cid, uid = d['chat_id'], d['user_id']
+                
+                # Получаем время образования долга
+                row = await conn.fetchrow("SELECT debt_time FROM robbery WHERE chat_id=$1 AND user_id=$2", cid, uid)
+                if not row or now - row['debt_time'] < ROB_DEBT_TIMEOUT:
+                    continue
+                    
+                # ⏰ СРОК ВЫШЕЛ! Запускаем арест
+                arrested = await arrest_player(cid, uid)
+                
+                # Очищаем долг после ареста
+                await conn.execute("UPDATE robbery SET debt_amount=0, debt_time=0 WHERE chat_id=$1 AND user_id=$2", cid, uid)
+                
+                try:
+                    msg = f"🚔 <b>АРЕСТ ЗА НЕОПЛАЧЕННЫЙ ШТРАФ!</b>\n\nВы не погасили штраф за ограбление за {int(ROB_DEBT_TIMEOUT/3600)} часа.\n\n<b>Конфисковано:</b>\n" + "\n".join([f"• {i}" for i in arrested])
+                    await bot.send_message(cid, msg, parse_mode="HTML")
+                except:
+                    pass
+
 async def main():
     await init_db()
     print("🤖 Бот запущен!")
@@ -1519,6 +1599,7 @@ async def main():
     asyncio.create_task(polling_health_check())
     asyncio.create_task(auto_lottery_loop())
     asyncio.create_task(loan_interest_loop())
+    asyncio.create_task(rob_debt_check_loop())
     await dp.start_polling(bot, timeout=30, drop_pending_updates=True, allowed_updates=["message", "callback_query", "my_chat_member"])
 
 if __name__ == "__main__":
