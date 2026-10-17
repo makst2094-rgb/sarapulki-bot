@@ -132,15 +132,15 @@ COURSES = {
 }
 
 JOBS = {
-    "novice": {"name": "👶 Новичок", "base_pay": 10, "cooldown": 3600},
-    "miner": {"name": "⛏️ Шахтёр", "base_pay": 25, "cooldown": 3600},
-    "coder": {"name": "💻 Программист", "base_pay": 50, "cooldown": 7200},
-    "trader": {"name": " Трейдер", "base_pay": 80, "cooldown": 10800}
+    "novice": {"name": "👶 Новичок", "base_pay": 25, "cooldown": 3600},
+    "miner": {"name": "⛏️ Шахтёр", "base_pay": 50, "cooldown": 3600},
+    "coder": {"name": "💻 Программист", "base_pay": 100, "cooldown": 7200},
+    "trader": {"name": " Трейдер", "base_pay": 200, "cooldown": 10800}
 }
 
 SHOP_ITEMS = {
-    "course": {"name": "📚 Уровень+", "price": 1500, "type": "level_up"},
-    "coffee": {"name": "☕ Кофе-машина", "price": 2500, "type": "cooldown_reduce"}
+    "course": {"name": "📚 Уровень+", "price": 2000, "type": "level_up"},
+    "coffee": {"name": "☕ Кофе-машина", "price": 5000, "type": "cooldown_reduce"}
 }
 
 MARKET = {
