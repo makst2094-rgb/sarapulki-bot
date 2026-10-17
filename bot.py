@@ -966,6 +966,29 @@ async def cmd_bank(m: Message):
     t = f"🏦 <b>Банк</b>\n💰 На счету: <b>{fmt_money(bd['deposit'])}</b>\n Проценты: <b>+{fmt_money(interest)}</b>\n💹 1% в сутки\n\n📥 /deposit сумма\n /withdraw сумма\n⚠️ Деньги в банке нельзя украсть!"
     await m.answer(t, parse_mode="HTML")
 
+@dp.message(Command("fix_income"))
+async def cmd_fix_income(m: Message):
+    if m.from_user.id not in ADMIN_IDS:
+        return await m.answer("❌ Только для админов!")
+    
+    async with pool.acquire() as conn:
+        # Показываем что было
+        rows = await conn.fetch("SELECT business_name, income FROM businesses GROUP BY business_name, income ORDER BY income")
+        old = "📋 **БЫЛО:**\n" + "\n".join([f"• {r['business_name']}: {r['income']}" for r in rows])
+        
+        # Обновляем доходы
+        await conn.execute("UPDATE businesses SET income = 83 WHERE business_name LIKE '%Газетн%'")
+        await conn.execute("UPDATE businesses SET income = 333 WHERE business_name LIKE '%Шаурм%'")
+        await conn.execute("UPDATE businesses SET income = 833 WHERE business_name LIKE '%Кофейн%'")
+        await conn.execute("UPDATE businesses SET income = 2500 WHERE business_name LIKE '%Крипто%'")
+        await conn.execute("UPDATE businesses SET income = 8333 WHERE business_name LIKE '%Отел%'")
+        
+        # Показываем что стало
+        rows = await conn.fetch("SELECT business_name, income FROM businesses GROUP BY business_name, income ORDER BY income")
+        new = "📋 **СТАЛО:**\n" + "\n".join([f"• {r['business_name']}: {r['income']}" for r in rows])
+    
+    await m.answer(f"{old}\n\n✅ Обновлено!\n\n{new}", parse_mode="Markdown")
+
 @dp.message(Command("deposit"))
 async def cmd_deposit(m: Message):
     cid, uid = m.chat.id, m.from_user.id
