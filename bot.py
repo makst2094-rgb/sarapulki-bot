@@ -139,13 +139,13 @@ JOBS = {
 }
 
 SHOP_ITEMS = {
-    "course": {"name": "📚 Уровень+", "price": 2000, "type": "level_up"},
-    "coffee": {"name": "☕ Кофе-машина", "price": 5000, "type": "cooldown_reduce"}
+    "course": {"name": "📚 Уровень+", "price": 3000, "type": "level_up"},
+    "coffee": {"name": "☕ Кофе-машина", "price": 6000, "type": "cooldown_reduce"}
 }
 
 MARKET = {
     "case_basic": {"name": "📦 Кейс", "price": 200, "type": "case"},
-    "biz_newspaper": {"name": " Газетный киоск", "price": 500, "type": "business", "income": 83},
+    "biz_newspaper": {"name": " 📰Газетный киоск", "price": 500, "type": "business", "income": 83},
     "biz_shawarma": {"name": "🌯 Шаурма", "price": 2000, "type": "business", "income": 333},
     "biz_coffee": {"name": "☕ Кофейня", "price": 5000, "type": "business", "income": 833},
     "biz_crypto": {"name": "💻 Крипто-ферма", "price": 15000, "type": "business", "income": 2500},
@@ -153,8 +153,8 @@ MARKET = {
 }
 
 CARS = {
-    "ok": {"name": " Ока", "price": 3000},
-    "priora": {"name": " Приора", "price": 10000},
+    "ok": {"name": " 🚘Ока", "price": 3000},
+    "priora": {"name": " 🚗Приора", "price": 10000},
     "bmw": {"name": "🏎️ BMW", "price": 40000},
     "gelik": {"name": "🚙 Гелик", "price": 80000},
     "lambo": {"name": "🏎️ Lamborghini", "price": 200000}
