@@ -128,8 +128,8 @@ JOBS = {
 }
 
 SHOP_ITEMS = {
-    "course": {"name": "📚 Уровень+", "price": 1500, "type": "level_up"},
-    "coffee": {"name": "☕ Кофе-машина", "price": 2500, "type": "cooldown_reduce"}
+    "course": {"name": "📚 Уровень+", "price": 2500, "type": "level_up"},
+    "coffee": {"name": "☕ Кофе-машина", "price": 4500, "type": "cooldown_reduce"}
 }
 
 MARKET = {
