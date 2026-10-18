@@ -595,16 +595,45 @@ async def execute_mafia_threats():
                 "SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2",
                 cid, uid
             ) or f"User{uid}"
-            if threat_type == 'asset':
-                businesses = await conn.fetch("SELECT business_name FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
-                cars = await conn.fetch("SELECT car_name FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
-                if target in [b['business_name'] for b in businesses]:
-                    await conn.execute("DELETE FROM businesses WHERE chat_id=$1 AND user_id=$2 AND business_name=$3", cid, uid, target)
-                    msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ВАШ БИЗНЕС!</b>\n\n👤 {username}, вы не заплатили выкуп.\n🏢 Конфискован: <b>{target}</b>\n\n💡 В следующий раз платите вовремя..."
-                elif target in [c['car_name'] for c in cars]:
-                    await conn.execute("DELETE FROM garage WHERE chat_id=$1 AND user_id=$2 AND car_name=$3", cid, uid, target)
-                    msg = f"🔫 <b>МАФИЯ УКРАЛА ВАШУ МАШИНУ!</b>\n\n👤 {username}, вы не заплатили выкуп.\n🚗 Украдена: <b>{target}</b>\n\n💡 В следующий раз платите вовремя..."
+            
+            # 🎲 БРОСОК КУБИКА: определяем исход
+            roll = random.random()
+            
+            if roll < 0.20:
+                # 20% шанс — мафия уходит ни с чем
+                msg = (
+                    f"🕊️ <b>МАФИЯ УШЛА НИ С ЧЕМ!</b>\n\n"
+                    f"👤 {username}, вы не заплатили выкуп, но мафия решила не трогать вас.\n"
+                    f"Видимо, у них были дела поважнее...\n\n"
+                    f" Вам повезло! Но в следующий раз лучше платить вовремя."
+                )
+                
+            elif roll < 0.60:
+                # 40% шанс — забирают актив (бизнес или машину)
+                if threat_type == 'asset':
+                    businesses = await conn.fetch("SELECT business_name FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
+                    cars = await conn.fetch("SELECT car_name FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
+                    
+                    if target in [b['business_name'] for b in businesses]:
+                        await conn.execute("DELETE FROM businesses WHERE chat_id=$1 AND user_id=$2 AND business_name=$3", cid, uid, target)
+                        msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ВАШ БИЗНЕС!</b>\n\n👤 {username}, вы не заплатили выкуп.\n🏢 Конфискован: <b>{target}</b>\n\n В следующий раз платите вовремя..."
+                    elif target in [c['car_name'] for c in cars]:
+                        await conn.execute("DELETE FROM garage WHERE chat_id=$1 AND user_id=$2 AND car_name=$3", cid, uid, target)
+                        msg = f"🔫 <b>МАФИЯ УКРАЛА ВАШУ МАШИНУ!</b>\n\n👤 {username}, вы не заплатили выкуп.\n🚗 Украдена: <b>{target}</b>\n\n💡 В следующий раз платите вовремя..."
+                    else:
+                        # Если актива нет — забираем деньги как запасной вариант
+                        user = await get_user(cid, uid)
+                        bank = await get_bank(cid, uid)
+                        penalty = int((user['balance'] + bank['deposit']) * MAFIA_PENALTY_RATE)
+                        paid_from_balance = min(penalty, user['balance'])
+                        remaining = penalty - paid_from_balance
+                        if paid_from_balance > 0:
+                            await update_balance(cid, uid, -paid_from_balance)
+                        if remaining > 0 and bank['deposit'] > 0:
+                            await update_bank(cid, uid, -min(remaining, bank['deposit']))
+                        msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ДЕНЬГИ!</b>\n\n👤 {username}, вы не заплатили выкуп.\n💸 Списано: <b>{fmt_money(penalty)}</b>\n\n💡 В следующий раз платите вовремя..."
                 else:
+                    # Если угроза была по балансу — забираем деньги
                     user = await get_user(cid, uid)
                     bank = await get_bank(cid, uid)
                     penalty = int((user['balance'] + bank['deposit']) * MAFIA_PENALTY_RATE)
@@ -614,8 +643,10 @@ async def execute_mafia_threats():
                         await update_balance(cid, uid, -paid_from_balance)
                     if remaining > 0 and bank['deposit'] > 0:
                         await update_bank(cid, uid, -min(remaining, bank['deposit']))
-                    msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ДЕНЬГИ!</b>\n\n {username}, вы не заплатили выкуп.\n💸 Списано: <b>{fmt_money(penalty)}</b>\n\n💡 В следующий раз платите вовремя..."
+                    msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ДЕНЬГИ!</b>\n\n👤 {username}, вы не заплатили выкуп.\n💸 Списано: <b>{fmt_money(penalty)}</b>\n\n💡 В следующий раз платите вовремя..."
+                    
             else:
+                # 40% шанс — забирают 30% баланса
                 user = await get_user(cid, uid)
                 bank = await get_bank(cid, uid)
                 penalty = int((user['balance'] + bank['deposit']) * MAFIA_PENALTY_RATE)
@@ -625,7 +656,8 @@ async def execute_mafia_threats():
                     await update_balance(cid, uid, -paid_from_balance)
                 if remaining > 0 and bank['deposit'] > 0:
                     await update_bank(cid, uid, -min(remaining, bank['deposit']))
-                msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ДЕНЬГИ!</b>\n\n {username}, вы не заплатили выкуп.\n💸 Списано: <b>{fmt_money(penalty)}</b>\n\n💡 В следующий раз платите вовремя..."
+                msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ДЕНЬГИ!</b>\n\n👤 {username}, вы не заплатили выкуп.\n💸 Списано: <b>{fmt_money(penalty)}</b> (30% от капитала)\n\n💡 В следующий раз платите вовремя..."
+            
             await conn.execute("UPDATE mafia_threats SET paid=TRUE WHERE id=$1", threat['id'])
             try:
                 await bot.send_message(cid, msg, parse_mode="HTML")
