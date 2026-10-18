@@ -1443,7 +1443,7 @@ async def cmd_collect(m: Message):
     async with pool.acquire() as conn:
         bz = await conn.fetch("SELECT * FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
         if not bz:
-            return await m.answer("❌ У вас нет бизнесов.\n🏪 Купите в /market")
+            return await m.answer(" У вас нет бизнесов.\n🏪 Купите в /market")
         
         for b in bz:
             time_since = now - b['last_collect_time']
@@ -1455,9 +1455,10 @@ async def cmd_collect(m: Message):
                 remaining = 86400 - time_since
                 hours = int(remaining // 3600)
                 minutes = int((remaining % 3600) // 60)
-                waiting.append(f" {b['business_name']} — через {hours}ч {minutes}мин")
+                waiting.append(f"⏳ {b['business_name']} — через {hours}ч {minutes}мин")
     
     if tot > 0:
+        await update_balance(cid, uid, tot)  # ✅ ВОТ ЭТА СТРОКА!
         msg = f"💼 <b>Прибыль собрана!</b>\n\n" + "\n".join(collected) + f"\n\n💰 Итого: <b>+{fmt_money(tot)}</b>"
         if waiting:
             msg += f"\n\n⏳ <b>Следующий сбор:</b>\n" + "\n".join(waiting)
