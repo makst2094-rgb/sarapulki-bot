@@ -944,7 +944,7 @@ async def cmd_sell(m: Message):
                 return await m.answer("❌ Тип: inv, car или biz")
     except Exception as e:
         logging.error(f"sell error: {e}")
-        await m.answer("❌ Ошибка при продаже")
+        await m.answer(f" Ошибка при продаже: {str(e)}")
 
 @dp.message(Command("buy_item"))
 async def cmd_buy_item(m: Message):
@@ -1061,8 +1061,8 @@ async def cmd_issue_stock(m: Message):
             dividend = max(1, biz['income'] // 10)
             
             await conn.execute(
-                "INSERT INTO stocks (chat_id, business_id, owner_id, shares_issued, shares_available, price_per_share, dividend_per_share, last_price_change) VALUES ($1,$2,$3,10,10,$4,$5,$4)",
-                cid, biz['id'], uid, price, dividend
+                "INSERT INTO stocks (chat_id, business_id, owner_id, shares_issued, shares_available, price_per_share, dividend_per_share, last_price_change) VALUES ($1,$2,$3,10,10,$4,$5,$6)",
+                cid, biz['id'], uid, price, dividend, float(price)
             )
             
             await m.answer(
