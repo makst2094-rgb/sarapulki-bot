@@ -1015,19 +1015,26 @@ async def cmd_stocks(m: Message):
         
         t = "📈 <b>Биржа акций:</b>\n\n"
         for stock in stocks:
-            owner_name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, stock['owner_id']) or f"User{stock['owner_id']}"
-            biz = await conn.fetchrow("SELECT business_name FROM businesses WHERE id=$1", stock['business_id'])
-            biz_name = biz['business_name'] if biz else "Удалён"
-            change_pct = int((stock['price_per_share'] - stock['last_price_change']) / max(stock['last_price_change'], 1) * 100)
-            arrow = "📈" if change_pct >= 0 else "📉"
-            
-            t += (
-                f"🏢 <b>{biz_name}</b> ({owner_name})\n"
-                f"💰 Цена: {fmt_money(stock['price_per_share'])}/акция {arrow} {change_pct}%\n"
-                f"💵 Дивиденды: {fmt_money(stock['dividend_per_share'])}/день\n"
-                f"📊 Доступно: {stock['shares_available']}/{stock['shares_issued']}\n"
-                f"🛒 /buy_stock {stock['id']} <кол-во>\n\n"
-            )
+            try:
+                owner_name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, stock['owner_id']) or f"User{stock['owner_id']}"
+                biz = await conn.fetchrow("SELECT business_name FROM businesses WHERE id=$1", stock['business_id'])
+                biz_name = biz['business_name'] if biz else "Удалён"
+                
+                # Защита от деления на ноль
+                last_change = stock['last_price_change'] if stock['last_price_change'] and stock['last_price_change'] != 0 else stock['price_per_share']
+                change_pct = int((stock['price_per_share'] - last_change) / max(abs(last_change), 1) * 100)
+                arrow = "" if change_pct >= 0 else ""
+                
+                t += (
+                    f"🏢 <b>{biz_name}</b> ({owner_name})\n"
+                    f"💰 Цена: {fmt_money(stock['price_per_share'])}/акция {arrow} {change_pct}%\n"
+                    f"💵 Дивиденды: {fmt_money(stock['dividend_per_share'])}/день\n"
+                    f"📊 Доступно: {stock['shares_available']}/{stock['shares_issued']}\n"
+                    f" /buy_stock {stock['id']} <кол-во>\n\n"
+                )
+            except Exception as e:
+                logging.error(f"stocks display error for stock {stock['id']}: {e}")
+                continue
         
         t += "💡 Чтобы выпустить акции своего бизнеса: /issue_stock <название>"
         await m.answer(t, parse_mode="HTML")
