@@ -409,29 +409,72 @@ async def auto_cleanup_timer(case_id):
         await cleanup_old_cases()
 
 async def arrest_player(cid, uid):
+    """Конфискует имущество и возвращает (список, стоимость_конфискованного)"""
     arrested = []
+    total_value = 0
+    
+    # 1. Забираем банк
     bank_data = await get_bank(cid, uid)
     if bank_data['deposit'] > 0:
+        total_value += bank_data['deposit']
         arrested.append(f"💰 Банк: {fmt_money(bank_data['deposit'])}")
         async with pool.acquire() as conn:
             await conn.execute("UPDATE bank SET deposit=0, last_interest_time=$1 WHERE chat_id=$2 AND user_id=$3", time.time(), cid, uid)
-    car = await get_car(cid, uid)
-    if car:
-        arrested.append(f"🚗 Машины: {car}")
-        async with pool.acquire() as conn:
-            await conn.execute("DELETE FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
+    
+    # 2. Забираем машины (по ценам из CARS)
     async with pool.acquire() as conn:
-        businesses = await conn.fetch("SELECT business_name FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
+        cars = await conn.fetch("SELECT car_key FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
+        if cars:
+            car_names = []
+            for car in cars:
+                car_key = car['car_key']
+                if car_key in CARS:
+                    total_value += CARS[car_key]['price']
+                car_names.append(CARS.get(car_key, {}).get('name', car_key))
+            arrested.append(f"🚗 Машины: {', '.join(car_names)}")
+            await conn.execute("DELETE FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
+    
+    # 3. Забираем бизнесы (по ценам из MARKET)
+    async with pool.acquire() as conn:
+        businesses = await conn.fetch("SELECT business_name, income FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
         if businesses:
-            arrested.append(f"🏢 Бизнесы: {', '.join([b['business_name'] for b in businesses])}")
+            biz_names = []
+            for biz in businesses:
+                # Находим цену бизнеса по доходу (обратный поиск)
+                biz_price = 0
+                for k, v in MARKET.items():
+                    if v['type'] == 'business' and v['income'] == biz['income']:
+                        biz_price = v['price']
+                        break
+                if biz_price == 0:
+                    biz_price = biz['income'] * 6  # примерная оценка
+                total_value += biz_price
+                biz_names.append(biz['business_name'])
+            arrested.append(f"🏢 Бизнесы: {', '.join(biz_names)}")
             await conn.execute("DELETE FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
-        items = await conn.fetch("SELECT item_name FROM inventory WHERE chat_id=$1 AND user_id=$2", cid, uid)
+    
+    # 4. Забираем инвентарь (примерная оценка)
+    async with pool.acquire() as conn:
+        items = await conn.fetch("SELECT item_name, rarity FROM inventory WHERE chat_id=$1 AND user_id=$2", cid, uid)
         if items:
-            arrested.append(f"🎒 Предметы: {', '.join([i['item_name'] for i in items])}")
+            item_names = []
+            for item in items:
+                rarity_value = {'legendary': 5000, 'rare': 1000, 'common': 100}
+                total_value += rarity_value.get(item['rarity'], 100)
+                item_names.append(item['item_name'])
+            arrested.append(f"🎒 Предметы: {', '.join(item_names)}")
             await conn.execute("DELETE FROM inventory WHERE chat_id=$1 AND user_id=$2", cid, uid)
+    
+    # 5. Сбрасываем профессию (оценка: 5000 за каждый уровень выше 1)
+    p = await get_profile(cid, uid)
+    if p['level'] > 1:
+        profession_value = (p['level'] - 1) * 5000
+        total_value += profession_value
+        arrested.append(f"💼 Профессия сброшена (был Ур.{p['level']})")
+    async with pool.acquire() as conn:
         await conn.execute("UPDATE profiles SET job_key='novice', level=1 WHERE chat_id=$1 AND user_id=$2", cid, uid)
-    arrested.append("💼 Профессия сброшена")
-    return arrested
+    
+    return arrested, total_value
 
 # ==================== ДОСТИЖЕНИЯ ====================
 async def check_achievements(cid, uid):
@@ -526,10 +569,36 @@ async def loan_interest_loop():
                 cid, uid = loan['chat_id'], loan['user_id']
                 if time.time() > loan['due_date']:
                     total_debt = loan['amount'] + loan['interest']
-                    arrested = await arrest_player(cid, uid)
+                    
+                    # Конфискуем имущество и получаем его стоимость
+                    arrested, confiscated_value = await arrest_player(cid, uid)
+                    
+                    # Вычисляем остаток долга
+                    remaining_debt = total_debt - confiscated_value
+                    
+                    # Если имущество не покрыло весь долг — остаток идёт в минус баланса
+                    if remaining_debt > 0:
+                        user = await get_user(cid, uid)
+                        new_balance = user['balance'] - remaining_debt
+                        async with pool.acquire() as conn2:
+                            await conn2.execute("UPDATE users SET balance=$1 WHERE chat_id=$2 AND user_id=$3", new_balance, cid, uid)
+                    
                     await clear_loan(cid, uid)
+                    
+                    # Формируем сообщение
+                    msg = f"🚔 <b>АРЕСТ ИМУЩЕСТВА!</b>\n\n"
+                    msg += f"💰 Долг: <b>{fmt_money(total_debt)}</b>\n"
+                    msg += f"📦 Конфисковано на: <b>{fmt_money(confiscated_value)}</b>\n\n"
+                    msg += f"<b>Конфисковано:</b>\n" + "\n".join([f"• {item}" for item in arrested])
+                    
+                    if remaining_debt > 0:
+                        msg += f"\n\n <b>Имущество не покрыло весь долг!</b>\n"
+                        msg += f"Остаток долга: <b>{fmt_money(remaining_debt)}</b>\n"
+                        msg += f"Ваш баланс ушёл в минус.\n"
+                        msg += f"Работайте и гасите долг через /repay"
+                    
                     try:
-                        await bot.send_message(cid, f"🚔 <b>АРЕСТ ИМУЩЕСТВА!</b>\n\nДолг: <b>{fmt_money(total_debt)}</b>\n\nКонфисковано:\n" + "\n".join([f"• {item}" for item in arrested]), parse_mode="HTML")
+                        await bot.send_message(cid, msg, parse_mode="HTML")
                     except:
                         pass
                 else:
@@ -1279,7 +1348,13 @@ async def cmd_balance(m: Message):
     bd = await get_bank(m.chat.id, m.from_user.id)
     in_jail = await is_in_jail(m.chat.id, m.from_user.id)
     jail_text = "\n🔒 <b>В ТЮРЬМЕ!</b>" if in_jail else ""
-    debt_text = f"\n⛔ <b>ДОЛГ: {fmt_money(abs(u['balance']))}</b>" if u['balance'] < 0 else ""
+    
+    # Красивое отображение долга
+    if u['balance'] < 0:
+        debt_text = f"\n⛔ <b>ДОЛГ: {fmt_money(abs(u['balance']))}</b>\n💡 Работайте (/work) — 50% зарплаты идёт на погашение"
+    else:
+        debt_text = ""
+    
     await m.answer(
         f"💰 <b>Баланс:</b> {fmt_money(u['balance'])}\n"
         f"🏦 <b>Банк:</b> {fmt_money(bd['deposit'])}\n"
@@ -1294,10 +1369,30 @@ async def cmd_work(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     if await is_in_jail(cid, uid):
         info = await get_jail_info(cid, uid)
-        return await m.answer(f"🔒 Вы в тюрьме! Осталось: {format_time(int(info['release_time'] - time.time()))}\n💸 Используйте /jail_pay")
+        return await m.answer(f"🔒 Вы в тюрьме! Осталось: {format_time(int(info['release_time'] - time.time()))}\n Используйте /jail_pay")
+    
     user = await get_user(cid, uid)
-    if user['balance'] < 0:
-        return await m.answer(f"⛔ У вас долг {fmt_money(abs(user['balance']))}! Пополните баланс через /pay или ждите ареста.")
+    
+    # Проверяем кредит
+    loan = await get_loan(cid, uid)
+    if loan['amount'] > 0 and time.time() > loan['due_date']:
+        total_debt = loan['amount'] + loan['interest']
+        arrested, confiscated_value = await arrest_player(cid, uid)
+        remaining_debt = total_debt - confiscated_value
+        if remaining_debt > 0:
+            new_balance = user['balance'] - remaining_debt
+            async with pool.acquire() as conn:
+                await conn.execute("UPDATE users SET balance=$1 WHERE chat_id=$2 AND user_id=$3", new_balance, cid, uid)
+        await clear_loan(cid, uid)
+        msg = f"🚔 <b>АРЕСТ ИМУЩЕСТВА!</b>\n\n💰 Долг: <b>{fmt_money(total_debt)}</b>\n📦 Конфисковано на: <b>{fmt_money(confiscated_value)}</b>\n\n"
+        msg += "<b>Конфисковано:</b>\n" + "\n".join([f"• {item}" for item in arrested])
+        if remaining_debt > 0:
+            msg += f"\n\n⛔ Остаток долга: <b>{fmt_money(remaining_debt)}</b> (ушёл в минус баланса)\nРаботайте и гасите через /repay"
+        try:
+            await bot.send_message(cid, msg, parse_mode="HTML")
+        except: pass
+        return await m.answer(f"⛔ Ваше имущество конфисковано за неуплату кредита!\nНачните работать через /work", parse_mode="HTML")
+    
     await save_username(cid, uid, m.from_user.full_name)
     p = await get_profile(cid, uid)
     jk = p['job_key']
@@ -1317,14 +1412,35 @@ async def cmd_work(m: Message):
     
     if ct - p['last_work_time'] < cd:
         return await m.answer(f"⏳ Отдых {int((cd - (ct - p['last_work_time'])) // 60)} мин.")
+    
     sal = j['base_pay'] * p['level'] + random.randint(0, 5)
     edu = await get_education(cid, uid)
     if edu['has_mba']:
         sal = int(sal * 1.5)
+    
+    # АВТО-СПИСАНИЕ ДОЛГА С ЗАРПЛАТЫ
+    debt_deduction = 0
+    deduction_msg = ""
+    
+    if user['balance'] < 0:
+        # Забираем 50% зарплаты на погашение долга
+        debt_deduction = int(sal * 0.5)
+        debt_deduction = min(debt_deduction, abs(user['balance']))  # не больше долга
+        
+        if debt_deduction > 0:
+            sal -= debt_deduction
+            deduction_msg = f"\n💸 Автоматически погашено долга: <b>{fmt_money(debt_deduction)}</b>"
+    
     await update_balance(cid, uid, sal)
     async with pool.acquire() as conn:
         await conn.execute("UPDATE profiles SET last_work_time=$1 WHERE chat_id=$2 AND user_id=$3", ct, cid, uid)
-    await m.answer(f"💼 <b>{j['name']}</b> (Ур.{p['level']}): +<b>{fmt_money(sal)}</b>", parse_mode="HTML")
+    
+    response = f"💼 <b>{j['name']}</b> (Ур.{p['level']}): +<b>{fmt_money(sal)}</b>"
+    if deduction_msg:
+        response += deduction_msg
+    
+    await m.answer(response, parse_mode="HTML")
+    
     new_achs = await check_achievements(cid, uid)
     await notify_achievements(cid, uid, new_achs)
 
