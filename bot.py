@@ -281,8 +281,11 @@ async def init_db():
         )""")
         print("✅ Таблица achievements создана")
         
-        # Торговая площадка
-        await conn.execute("""CREATE TABLE IF NOT EXISTS marketplace (
+        # Торговая площадка — ПРИНУДИТЕЛЬНО пересоздаём
+        await conn.execute("DROP TABLE IF EXISTS marketplace")
+        print("️ Старая таблица marketplace удалена")
+        
+        await conn.execute("""CREATE TABLE marketplace (
             id SERIAL PRIMARY KEY,
             chat_id BIGINT,
             seller_id BIGINT,
@@ -292,10 +295,14 @@ async def init_db():
             price INTEGER,
             created_at REAL DEFAULT 0
         )""")
-        print("✅ Таблица marketplace создана")
+        print("✅ Таблица marketplace создана заново")
         
-        # Биржа акций (БЕЗ FOREIGN KEY для стабильности)
-        await conn.execute("""CREATE TABLE IF NOT EXISTS stocks (
+        # Биржа акций — ПРИНУДИТЕЛЬНО пересоздаём
+        await conn.execute("DROP TABLE IF EXISTS stock_holdings")
+        await conn.execute("DROP TABLE IF EXISTS stocks")
+        print("🗑️ Старые таблицы биржи удалены")
+        
+        await conn.execute("""CREATE TABLE stocks (
             id SERIAL PRIMARY KEY,
             chat_id BIGINT,
             business_id INTEGER,
@@ -306,15 +313,15 @@ async def init_db():
             dividend_per_share INTEGER DEFAULT 10,
             last_price_change REAL DEFAULT 0
         )""")
-        print("✅ Таблица stocks создана")
+        print("✅ Таблица stocks создана заново")
         
-        await conn.execute("""CREATE TABLE IF NOT EXISTS stock_holdings (
+        await conn.execute("""CREATE TABLE stock_holdings (
             id SERIAL PRIMARY KEY,
             stock_id INTEGER,
             user_id BIGINT,
             shares_owned INTEGER DEFAULT 0
         )""")
-        print("✅ Таблица stock_holdings создана")
+        print("✅ Таблица stock_holdings создана заново")
         
     print("✅ База данных готова")
 
