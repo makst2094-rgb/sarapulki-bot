@@ -1246,33 +1246,33 @@ async def stock_dividend_loop():
     print("💵 Цикл дивидендов запущен")
     while True:
         await asyncio.sleep(86400)
-        async with pool.acquire() as conn:
-            holdings = await conn.fetch("""
-                SELECT sh.user_id, sh.shares_owned, s.dividend_per_share, s.chat_id
-                FROM stock_holdings sh
-                JOIN stocks s ON sh.stock_id = s.id
-            """)
-            
-            user_dividends = {}
-            for d in holdings:
-                uid = d['user_id']
-                cid = d['chat_id']
-                amount = d['shares_owned'] * d['dividend_per_share']
-                if uid not in user_dividends:
-                    user_dividends[uid] = {'cid': cid, 'total': 0}
-                user_dividends[uid]['total'] += amount
-            
-            for uid, data in user_dividends.items():
-                if data['total'] > 0:
-                    await update_balance(data['cid'], uid, data['total'])
+        try:
+            async with pool.acquire() as conn:
+                holdings = await conn.fetch("SELECT sh.user_id, sh.shares_owned, s.dividend_per_share, s.chat_id FROM stock_holdings sh JOIN stocks s ON sh.stock_id = s.id")
+                
+                user_dividends = {}
+                for h in holdings:
                     try:
-                        await bot.send_message(
-                            data['cid'],
-                            f"💵 <b>Дивиденды получены!</b>\n\n+{fmt_money(data['total'])}",
-                            parse_mode="HTML"
-                        )
-                    except:
-                        pass
+                        uid = h['user_id']
+                        cid = h['chat_id']
+                        amount = (h['shares_owned'] or 0) * (h['dividend_per_share'] or 0)
+                        if uid not in user_dividends:
+                            user_dividends[uid] = {'cid': cid, 'total': 0}
+                        user_dividends[uid]['total'] += amount
+                    except Exception as e:
+                        logging.error(f"dividend calc error: {e}")
+                        continue
+                
+                for uid, data in user_dividends.items():
+                    if data['total'] > 0:
+                        try:
+                            await update_balance(data['cid'], uid, data['total'])
+                            await bot.send_message(data['cid'], f"💵 <b>Дивиденды получены!</b>\n\n+{fmt_money(data['total'])}", parse_mode="HTML")
+                        except Exception as e:
+                            logging.error(f"dividend send error: {e}")
+                            continue
+        except Exception as e:
+            logging.error(f"stock_dividend_loop error: {e}")
 
 # ==================== ОСНОВНЫЕ КОМАНДЫ (СОХРАНЕНЫ ИЗ ВЕРСИИ 29.0) ====================
 
