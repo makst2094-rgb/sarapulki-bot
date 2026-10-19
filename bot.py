@@ -1025,9 +1025,9 @@ async def cmd_stocks(m: Message):
                 
                 try:
                     biz = await conn.fetchrow("SELECT business_name FROM businesses WHERE id=$1", stock['business_id'])
-                    biz_name = biz['business_name'] if biz else "❓ Удалён"
+                    biz_name = biz['business_name'] if biz else "Удалён"
                 except:
-                    biz_name = "❓ Удалён"
+                    biz_name = "Удалён"
                 
                 price = stock['price_per_share'] if stock['price_per_share'] else 0
                 last_change = stock['last_price_change'] if stock['last_price_change'] else price
@@ -1041,7 +1041,7 @@ async def cmd_stocks(m: Message):
                 shares_issued = stock['shares_issued'] if stock['shares_issued'] else 0
                 dividend = stock['dividend_per_share'] if stock['dividend_per_share'] else 0
                 
-                t += f"🏢 <b>{biz_name}</b> ({owner_name})\n💰 Цена: {fmt_money(price)}/акция {arrow} {change_pct}%\n💵 Дивиденды: {fmt_money(dividend)}/день\n📊 Доступно: {shares_avail}/{shares_issued}\n🛒 /buy_stock {stock['id']} <кол-во>\n\n"
+                t += f"🏢 <b>{biz_name}</b> ({owner_name})\n Цена: {fmt_money(price)}/акция {arrow} {change_pct}%\n💵 Дивиденды: {fmt_money(dividend)}/день\n📊 Доступно: {shares_avail}/{shares_issued}\n🛒 /buy_stock {stock['id']} (кол-во)\n\n"
                 count += 1
             except Exception as e:
                 logging.error(f"stocks display error for stock {stock['id']}: {e}")
@@ -1050,7 +1050,7 @@ async def cmd_stocks(m: Message):
         if count == 0:
             return await m.answer("📈 <b>Нет доступных акций!</b>", parse_mode="HTML")
         
-        t += "💡 Выпустить акции: /issue_stock <название бизнеса>"
+        t += "💡 Выпустить акции: /issue_stock (название бизнеса)"
         await m.answer(t, parse_mode="HTML")
     except Exception as e:
         logging.error(f"stocks error: {e}")
