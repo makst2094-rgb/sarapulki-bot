@@ -1062,7 +1062,7 @@ async def cmd_issue_stock(m: Message):
         cid, uid = m.chat.id, m.from_user.id
         args = m.text.split()
         if len(args) < 2:
-            return await m.answer("📈 <b>/issue_stock <название бизнеса></b>\n\nВыпускает 10 акций вашего бизнеса")
+            return await m.answer(" <b>/issue_stock (название бизнеса)</b>\n\nВыпускает 10 акций вашего бизнеса", parse_mode="HTML")
         
         biz_name = " ".join(args[1:])
         
@@ -1088,66 +1088,17 @@ async def cmd_issue_stock(m: Message):
             
             await m.answer(
                 f"📈 <b>Акции выпущены!</b>\n\n"
-                f"🏢 Бизнес: {biz['business_name']}\n"
+                f" Бизнес: {biz['business_name']}\n"
                 f"💰 Цена: {fmt_money(price)}/акция\n"
-                f"💵 Дивиденды: {fmt_money(dividend)}/день\n"
+                f" Дивиденды: {fmt_money(dividend)}/день\n"
                 f"📊 Выпущено: 10 акций\n\n"
                 f"Игроки могут купить их через /stocks",
                 parse_mode="HTML"
             )
     except Exception as e:
         logging.error(f"issue_stock error: {e}")
-        await m.answer("❌ Ошибка при выпуске акций")
-
-@dp.message(Command("buy_stock"))
-async def cmd_buy_stock(m: Message):
-    try:
-        cid, uid = m.chat.id, m.from_user.id
-        args = m.text.split()
-        if len(args) < 3:
-            return await m.answer("📈 <b>/buy_stock ID_акции количество</b>")
+        await m.answer(f"❌ Ошибка при выпуске акций: {str(e)}")
         
-        try:
-            stock_id = int(args[1])
-            qty = int(args[2])
-        except:
-            return await m.answer("❌ ID и количество должны быть числами!")
-        
-        if qty < 1:
-            return await m.answer("❌ Минимум 1 акция!")
-        
-        async with pool.acquire() as conn:
-            stock = await conn.fetchrow("SELECT * FROM stocks WHERE id=$1", stock_id)
-            if not stock:
-                return await m.answer("❌ Акция не найдена!")
-            
-            if stock['shares_available'] < qty:
-                return await m.answer(f"❌ Доступно только {stock['shares_available']} акций!")
-            
-            total_cost = stock['price_per_share'] * qty
-            buyer = await get_user(cid, uid)
-            if buyer['balance'] < total_cost:
-                return await m.answer(f"❌ Нужно {fmt_money(total_cost)}. У вас: {fmt_money(buyer['balance'])}")
-            
-            await update_balance(cid, uid, -total_cost)
-            await conn.execute("UPDATE stocks SET shares_available = shares_available - $1 WHERE id=$2", qty, stock_id)
-            
-            existing = await conn.fetchrow("SELECT * FROM stock_holdings WHERE stock_id=$1 AND user_id=$2", stock_id, uid)
-            if existing:
-                await conn.execute("UPDATE stock_holdings SET shares_owned = shares_owned + $1 WHERE id=$2", qty, existing['id'])
-            else:
-                await conn.execute("INSERT INTO stock_holdings (stock_id, user_id, shares_owned) VALUES ($1,$2,$3)", stock_id, uid, qty)
-            
-            await m.answer(
-                f"✅ Куплено <b>{qty} акций</b>!\n\n"
-                f"💰 Потрачено: {fmt_money(total_cost)}\n"
-                f"💵 Дивиденды: {fmt_money(stock['dividend_per_share'] * qty)}/день",
-                parse_mode="HTML"
-            )
-    except Exception as e:
-        logging.error(f"buy_stock error: {e}")
-        await m.answer("❌ Ошибка при покупке акций")
-
 @dp.message(Command("my_stocks"))
 async def cmd_my_stocks(m: Message):
     try:
