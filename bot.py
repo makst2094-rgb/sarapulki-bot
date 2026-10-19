@@ -1014,33 +1014,47 @@ async def cmd_stocks(m: Message):
             return await m.answer("📈 <b>Биржа пуста!</b>\n\nВладельцы бизнесов могут выпустить акции: /issue_stock", parse_mode="HTML")
         
         t = "📈 <b>Биржа акций:</b>\n\n"
+        count = 0
+        
         for stock in stocks:
             try:
-                owner_name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, stock['owner_id']) or f"User{stock['owner_id']}"
-                biz = await conn.fetchrow("SELECT business_name FROM businesses WHERE id=$1", stock['business_id'])
-                biz_name = biz['business_name'] if biz else "Удалён"
+                try:
+                    owner_name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, stock['owner_id']) or f"User{stock['owner_id']}"
+                except:
+                    owner_name = f"User{stock['owner_id']}"
                 
-                # Защита от деления на ноль
-                last_change = stock['last_price_change'] if stock['last_price_change'] and stock['last_price_change'] != 0 else stock['price_per_share']
-                change_pct = int((stock['price_per_share'] - last_change) / max(abs(last_change), 1) * 100)
-                arrow = "" if change_pct >= 0 else ""
+                try:
+                    biz = await conn.fetchrow("SELECT business_name FROM businesses WHERE id=$1", stock['business_id'])
+                    biz_name = biz['business_name'] if biz else "❓ Удалён"
+                except:
+                    biz_name = "❓ Удалён"
                 
-                t += (
-                    f"🏢 <b>{biz_name}</b> ({owner_name})\n"
-                    f"💰 Цена: {fmt_money(stock['price_per_share'])}/акция {arrow} {change_pct}%\n"
-                    f"💵 Дивиденды: {fmt_money(stock['dividend_per_share'])}/день\n"
-                    f"📊 Доступно: {stock['shares_available']}/{stock['shares_issued']}\n"
-                    f" /buy_stock {stock['id']} <кол-во>\n\n"
-                )
+                price = stock['price_per_share'] if stock['price_per_share'] else 0
+                last_change = stock['last_price_change'] if stock['last_price_change'] else price
+                if last_change == 0:
+                    last_change = 1
+                
+                change_pct = int((price - last_change) / abs(last_change) * 100)
+                arrow = "📈" if change_pct >= 0 else "📉"
+                
+                shares_avail = stock['shares_available'] if stock['shares_available'] else 0
+                shares_issued = stock['shares_issued'] if stock['shares_issued'] else 0
+                dividend = stock['dividend_per_share'] if stock['dividend_per_share'] else 0
+                
+                t += f"🏢 <b>{biz_name}</b> ({owner_name})\n💰 Цена: {fmt_money(price)}/акция {arrow} {change_pct}%\n💵 Дивиденды: {fmt_money(dividend)}/день\n📊 Доступно: {shares_avail}/{shares_issued}\n🛒 /buy_stock {stock['id']} <кол-во>\n\n"
+                count += 1
             except Exception as e:
                 logging.error(f"stocks display error for stock {stock['id']}: {e}")
                 continue
         
-        t += "💡 Чтобы выпустить акции своего бизнеса: /issue_stock <название>"
+        if count == 0:
+            return await m.answer("📈 <b>Нет доступных акций!</b>", parse_mode="HTML")
+        
+        t += "💡 Выпустить акции: /issue_stock <название бизнеса>"
         await m.answer(t, parse_mode="HTML")
     except Exception as e:
         logging.error(f"stocks error: {e}")
-        await m.answer("❌ Ошибка при загрузке биржи")
+        await m.answer(f"❌ Ошибка при загрузке биржи: {str(e)}")
 
 @dp.message(Command("issue_stock"))
 async def cmd_issue_stock(m: Message):
