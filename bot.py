@@ -1098,46 +1098,6 @@ async def cmd_issue_stock(m: Message):
     except Exception as e:
         logging.error(f"issue_stock error: {e}")
         await m.answer(f"❌ Ошибка при выпуске акций: {str(e)}")
-        
-@dp.message(Command("my_stocks"))
-async def cmd_my_stocks(m: Message):
-    try:
-        cid, uid = m.chat.id, m.from_user.id
-        async with pool.acquire() as conn:
-            holdings = await conn.fetch("""
-                SELECT sh.shares_owned, s.price_per_share, s.dividend_per_share, s.business_id
-                FROM stock_holdings sh
-                JOIN stocks s ON sh.stock_id = s.id
-                WHERE sh.user_id = $1 AND s.chat_id = $2
-            """, uid, cid)
-        
-        if not holdings:
-            return await m.answer("📈 <b>У вас нет акций.</b>\n\nКупите на бирже: /stocks", parse_mode="HTML")
-        
-        t = "📊 <b>Мои акции:</b>\n\n"
-        total_value = 0
-        total_dividends = 0
-        
-        for h in holdings:
-            biz = await conn.fetchrow("SELECT business_name FROM businesses WHERE id=$1", h['business_id'])
-            biz_name = biz['business_name'] if biz else "Удалён"
-            value = h['shares_owned'] * h['price_per_share']
-            dividends = h['shares_owned'] * h['dividend_per_share']
-            total_value += value
-            total_dividends += dividends
-            
-            t += (
-                f"🏢 <b>{biz_name}</b>\n"
-                f"   📊 Акции: {h['shares_owned']}\n"
-                f"   💰 Стоимость: {fmt_money(value)}\n"
-                f"   💵 Дивиденды: {fmt_money(dividends)}/день\n\n"
-            )
-        
-        t += f"━━━━━━━━━━━━━━━━━━━━\n💰 Общая стоимость: <b>{fmt_money(total_value)}</b>\n💵 Дивиденды/день: <b>{fmt_money(total_dividends)}</b>"
-        await m.answer(t, parse_mode="HTML")
-    except Exception as e:
-        logging.error(f"my_stocks error: {e}")
-        await m.answer("❌ Ошибка")
 
 @dp.message(Command("sell_stock"))
 async def cmd_sell_stock(m: Message):
