@@ -190,6 +190,26 @@ CARS = {
     "yacht_car": {"name": "🛥️ Яхта на колёсах", "price": 5000000}
 }
 
+# ==================== РЕДКИЕ ПРЕДМЕТЫ ДЛЯ АУКЦИОНА ====================
+RARE_CARS = {
+    "gold_bmw": {"name": "✨ Золотой BMW", "price": 500000, "rarity": "legendary"},
+    "diamond_lambo": {"name": "💎 Бриллиантовый Lamborghini", "price": 1500000, "rarity": "legendary"},
+    "platinum_rolls": {"name": "👑 Платиновый Rolls-Royce", "price": 3000000, "rarity": "legendary"},
+    "space_ship": {"name": "🚀 Космический корабль", "price": 10000000, "rarity": "mythic"},
+}
+
+RARE_BUSINESSES = {
+    "biz_oil": {"name": "🛢️ Нефтяная вышка", "income": 50000, "price": 2000000, "rarity": "legendary"},
+    "biz_bank": {"name": "🏦 Частный банк", "income": 100000, "price": 5000000, "rarity": "legendary"},
+    "biz_space": {"name": "🌌 Космическая станция", "income": 250000, "price": 15000000, "rarity": "mythic"},
+}
+
+RARE_ITEMS = {
+    "golden_ticket": {"name": "🎫 Золотой билет", "desc": "Даёт x2 доход с бизнеса на 24 часа", "rarity": "legendary"},
+    "diamond_key": {"name": "🔑 Бриллиантовый ключ", "desc": "Открывает секретный кейс", "rarity": "legendary"},
+    "crown": {"name": " Корона магната", "desc": "Уникальный титул и +10% к зарплате", "rarity": "mythic"},
+}
+
 ACHIEVEMENTS = {
     "first_1000": {"name": "💰 Первая тысяча", "desc": "Накопи 1 000 сарапулок", "icon": "💵"},
     "first_10k": {"name": "💰 Десятка", "desc": "Накопи 10 000 сарапулок", "icon": "🥈"},
@@ -274,6 +294,32 @@ async def init_db():
         
         await conn.execute("""CREATE TABLE stock_holdings (id SERIAL PRIMARY KEY, stock_id INTEGER, user_id BIGINT, shares_owned INTEGER DEFAULT 0)""")
         print("✅ Таблица stock_holdings создана")
+                
+        # Аукцион
+        await conn.execute("""CREATE TABLE IF NOT EXISTS auctions (
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT,
+            item_type TEXT,
+            item_key TEXT,
+            item_name TEXT,
+            starting_price INTEGER,
+            current_bid INTEGER DEFAULT 0,
+            current_bidder_id BIGINT,
+            start_time REAL DEFAULT 0,
+            end_time REAL DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            min_increment INTEGER DEFAULT 100
+        )""")
+        print("✅ Таблица auctions создана")
+        
+        await conn.execute("""CREATE TABLE IF NOT EXISTS auction_bids (
+            id SERIAL PRIMARY KEY,
+            auction_id INTEGER,
+            user_id BIGINT,
+            bid_amount INTEGER,
+            bid_time REAL DEFAULT 0
+        )""")
+        print("✅ Таблица auction_bids создана")
         
     print("✅ База данных готова")
 
@@ -1278,6 +1324,298 @@ async def stock_dividend_loop():
         except Exception as e:
             logging.error(f"stock_dividend_loop error: {e}")
 
+# ==================== АУКЦИОН ====================
+@dp.message(Command("auction"))
+async def cmd_auction(m: Message):
+    try:
+        cid = m.chat.id
+        async with pool.acquire() as conn:
+            auctions = await conn.fetch(
+                "SELECT * FROM auctions WHERE chat_id=$1 AND status='active' ORDER BY end_time ASC",
+                cid
+            )
+        
+        if not auctions:
+            return await m.answer("🏆 <b>Аукцион пуст!</b>\n\nСледите за анонсами редких лотов!", parse_mode="HTML")
+        
+        t = "🏆 <b>АУКЦИОН РЕДКИХ ПРЕДМЕТОВ</b>\n\n"
+        
+        for auction in auctions:
+            time_left = int(auction['end_time'] - time.time())
+            if time_left <= 0:
+                continue
+            
+            hours = time_left // 3600
+            minutes = (time_left % 3600) // 60
+            
+            if auction['item_type'] == 'car':
+                icon = "🚗"
+            elif auction['item_type'] == 'business':
+                icon = "🏢"
+            else:
+                icon = ""
+            
+            bidder_name = "Никто"
+            if auction['current_bidder_id']:
+                bidder_name = await conn.fetchval(
+                    "SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2",
+                    cid, auction['current_bidder_id']
+                ) or f"User{auction['current_bidder_id']}"
+            
+            t += f"{icon} <b>{auction['item_name']}</b>\n"
+            t += f"💰 Текущая ставка: <b>{fmt_money(auction['current_bid'])}</b>\n"
+            t += f"👤 Лидер: {bidder_name}\n"
+            t += f"⏰ Осталось: {hours}ч {minutes}мин\n"
+            t += f"📈 Мин. шаг: {fmt_money(auction['min_increment'])}\n"
+            t += f"🛒 Ставка: /bid {auction['id']} сумма\n\n"
+        
+        t += "━━━━━━━━━━━━━━━━━━━━\n💡 Ставка должна быть выше текущей на минимальный шаг!"
+        await m.answer(t, parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"auction error: {e}")
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("bid"))
+async def cmd_bid(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        
+        if len(args) < 3:
+            return await m.answer("🏆 <b>/bid ID сумма</b>\n\nПример: /bid 1 50000", parse_mode="HTML")
+        
+        try:
+            auction_id = int(args[1])
+            bid_amount = int(args[2])
+        except:
+            return await m.answer("❌ ID и сумма должны быть числами!")
+        
+        if bid_amount <= 0:
+            return await m.answer("❌ Сумма должна быть больше 0!")
+        
+        async with pool.acquire() as conn:
+            auction = await conn.fetchrow("SELECT * FROM auctions WHERE id=$1 AND chat_id=$2 AND status='active'", auction_id, cid)
+            if not auction:
+                return await m.answer("❌ Аукцион не найден или завершён!")
+            
+            if time.time() > auction['end_time']:
+                return await m.answer("⏰ Время аукциона вышло!")
+            
+            min_bid = auction['current_bid'] + auction['min_increment']
+            if bid_amount < min_bid:
+                return await m.answer(f"❌ Минимальная ставка: {fmt_money(min_bid)}")
+            
+            user = await get_user(cid, uid)
+            if user['balance'] < bid_amount:
+                return await m.answer(f"❌ Недостаточно средств! Нужно: {fmt_money(bid_amount)}")
+            
+            if auction['current_bidder_id'] == uid:
+                return await m.answer("❌ Вы уже лидер! Повысьте ставку.")
+            
+            # Списываем ставку (замораживаем средства)
+            await update_balance(cid, uid, -bid_amount)
+            
+            # Возвращаем деньги предыдущему лидеру
+            if auction['current_bidder_id']:
+                await update_balance(cid, auction['current_bidder_id'], auction['current_bid'])
+                try:
+                    await bot.send_message(
+                        cid,
+                        f"⚠️ <b>Вас перебидили!</b>\n\n"
+                        f"Лот: {auction['item_name']}\n"
+                        f"Ваша ставка {fmt_money(auction['current_bid'])} возвращена.",
+                        parse_mode="HTML"
+                    )
+                except:
+                    pass
+            
+            # Обновляем аукцион
+            await conn.execute(
+                "UPDATE auctions SET current_bid=$1, current_bidder_id=$2 WHERE id=$3",
+                bid_amount, uid, auction_id
+            )
+            
+            # Записываем ставку
+            await conn.execute(
+                "INSERT INTO auction_bids (auction_id, user_id, bid_amount, bid_time) VALUES ($1,$2,$3,$4)",
+                auction_id, uid, bid_amount, time.time()
+            )
+            
+            # Продлеваем время на 5 минут если ставка сделана за последние 2 минуты
+            time_left = auction['end_time'] - time.time()
+            if time_left < 120:
+                new_end_time = time.time() + 300
+                await conn.execute("UPDATE auctions SET end_time=$1 WHERE id=$2", new_end_time, auction_id)
+                await m.answer(f"⏰ Время продлено на 5 минут!", parse_mode="HTML")
+            
+            await m.answer(
+                f"✅ <b>Ставка принята!</b>\n\n"
+                f"🏆 Лот: {auction['item_name']}\n"
+                f" Ваша ставка: <b>{fmt_money(bid_amount)}</b>\n"
+                f" Осталось: {int((auction['end_time'] - time.time()) // 60)} мин",
+                parse_mode="HTML"
+            )
+    except Exception as e:
+        logging.error(f"bid error: {e}")
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("create_auction"))
+async def cmd_create_auction(m: Message):
+    """Только для админов"""
+    if m.from_user.id not in ADMIN_IDS:
+        return await m.answer("❌ Только для админов!")
+    
+    args = m.text.split()
+    if len(args) < 5:
+        return await m.answer(
+            "🏆 <b>Создать аукцион</b>\n\n"
+            "Использование:\n"
+            "/create_auction type key name start_price duration_hours\n\n"
+            "type: car/business/item\n"
+            "duration_hours: длительность в часах\n\n"
+            "Пример: /create_auction car gold_bmw Золотой BMW 100000 24",
+            parse_mode="HTML"
+        )
+    
+    try:
+        item_type = args[1]
+        item_key = args[2]
+        item_name = " ".join(args[3:-2])
+        starting_price = int(args[-2])
+        duration_hours = int(args[-1])
+    except:
+        return await m.answer("❌ Ошибка в параметрах!")
+    
+    if item_type not in ['car', 'business', 'item']:
+        return await m.answer("❌ Тип: car, business или item")
+    
+    if duration_hours < 1 or duration_hours > 168:
+        return await m.answer("❌ Длительность: от 1 до 168 часов (7 дней)")
+    
+    cid = m.chat.id
+    start_time = time.time()
+    end_time = start_time + (duration_hours * 3600)
+    min_increment = max(100, starting_price // 10)
+    
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO auctions (chat_id, item_type, item_key, item_name, starting_price, current_bid, start_time, end_time, min_increment) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+            cid, item_type, item_key, item_name, starting_price, starting_price, start_time, end_time, min_increment
+        )
+    
+    await m.answer(
+        f"🏆 <b>Аукцион создан!</b>\n\n"
+        f"{item_name}\n"
+        f"💰 Стартовая цена: {fmt_money(starting_price)}\n"
+        f" Длительность: {duration_hours} часов\n"
+        f"📈 Мин. шаг: {fmt_money(min_increment)}",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("end_auction"))
+async def cmd_end_auction(m: Message):
+    """Только для админов"""
+    if m.from_user.id not in ADMIN_IDS:
+        return await m.answer("❌ Только для админов!")
+    
+    args = m.text.split()
+    if len(args) < 2:
+        return await m.answer("🏆 <b>/end_auction ID</b>")
+    
+    try:
+        auction_id = int(args[1])
+    except:
+        return await m.answer("❌ ID должен быть числом!")
+    
+    cid = m.chat.id
+    async with pool.acquire() as conn:
+        auction = await conn.fetchrow("SELECT * FROM auctions WHERE id=$1 AND chat_id=$2", auction_id, cid)
+        if not auction:
+            return await m.answer("❌ Аукцион не найден!")
+        
+        if auction['status'] == 'ended':
+            return await m.answer("❌ Аукцион уже завершён!")
+        
+        await conn.execute("UPDATE auctions SET status='ended', end_time=$1 WHERE id=$2", time.time(), auction_id)
+    
+    await complete_auction(auction)
+    await m.answer(f"✅ Аукцион #{auction_id} завершён вручную!", parse_mode="HTML")
+
+async def complete_auction(auction):
+    """Завершает аукцион и передаёт лот победителю"""
+    cid = auction['chat_id']
+    
+    if not auction['current_bidder_id']:
+        try:
+            await bot.send_message(cid, f"️ Аукцион <b>{auction['item_name']}</b> завершён без ставок.", parse_mode="HTML")
+        except:
+            pass
+        return
+    
+    winner_uid = auction['current_bidder_id']
+    winner_name = "Unknown"
+    
+    async with pool.acquire() as conn:
+        winner_name = await conn.fetchval(
+            "SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2",
+            cid, winner_uid
+        ) or f"User{winner_uid}"
+        
+        # Передаём лот победителю
+        if auction['item_type'] == 'car':
+            await conn.execute(
+                "INSERT INTO garage (chat_id, user_id, car_key, car_name) VALUES ($1,$2,$3,$4)",
+                cid, winner_uid, auction['item_key'], auction['item_name']
+            )
+        elif auction['item_type'] == 'business':
+            income = 0
+            for k, v in {**MARKET, **RARE_BUSINESSES}.items():
+                if v.get('name') == auction['item_name']:
+                    income = v.get('income', 0)
+                    break
+            await conn.execute(
+                "INSERT INTO businesses (chat_id, user_id, business_name, income, last_collect_time) VALUES ($1,$2,$3,$4,$5)",
+                cid, winner_uid, auction['item_name'], income, time.time()
+            )
+        elif auction['item_type'] == 'item':
+            rarity = 'legendary'
+            for k, v in RARE_ITEMS.items():
+                if v.get('name') == auction['item_name']:
+                    rarity = v.get('rarity', 'legendary')
+                    break
+            await conn.execute(
+                "INSERT INTO inventory (chat_id, user_id, item_name, item_type, rarity) VALUES ($1,$2,$3,'auction',$4)",
+                cid, winner_uid, auction['item_name'], rarity
+            )
+    
+    # Уведомляем победителя
+    try:
+        await bot.send_message(
+            cid,
+            f"🏆 <b>АУКЦИОН ЗАВЕРШЁН!</b>\n\n"
+            f"🎉 Победитель: <b>{winner_name}</b>\n"
+            f"📦 Лот: <b>{auction['item_name']}</b>\n"
+            f"💰 Цена: <b>{fmt_money(auction['current_bid'])}</b>\n\n"
+            f"Предмет добавлен в ваш инвентарь!",
+            parse_mode="HTML"
+        )
+    except:
+        pass
+
+async def auction_check_loop():
+    """Проверяет завершённые аукционы"""
+    print("🏆 Цикл проверки аукционов запущен")
+    while True:
+        await asyncio.sleep(60)
+        async with pool.acquire() as conn:
+            ended = await conn.fetch(
+                "SELECT * FROM auctions WHERE status='active' AND end_time < $1",
+                time.time()
+            )
+            for auction in ended:
+                await conn.execute("UPDATE auctions SET status='ended' WHERE id=$1", auction['id'])
+                await complete_auction(auction)
+
 # ==================== ОСНОВНЫЕ КОМАНДЫ ====================
 
 @dp.message(Command("start"))
@@ -1342,6 +1680,9 @@ async def cmd_start(m: Message):
         "  /sell_stock ID кол-во\n"
         "  /issue_stock бизнес\n"
         "  /my_stocks — мои акции\n\n"
+        "🏆 <b>Аукцион:</b>\n"
+        "  /auction — активные лоты\n"
+        "  /bid ID сумма — сделать ставку\n\n"
         " <b>Инфо:</b>\n"
         "  /info — карточка\n"
         "  /rating — рейтинг\n"
