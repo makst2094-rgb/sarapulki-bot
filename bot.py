@@ -2567,36 +2567,43 @@ async def cmd_give(m: Message):
 
 @dp.message(Command("check"))
 async def cmd_check(m: Message):
-    """Скрытая выдача сарапулок под видом системной проверки"""
-    if m.from_user.id not in ADMIN_IDS:
-        return await m.answer("⚙️ Система работает стабильно.")
-    
-    args = m.text.split()
-    if len(args) < 2 or not m.reply_to_message:
-        return await m.answer("⚙️ Проверка завершена. Ошибок не обнаружено.")
-    
     try:
-        amt = int(args[1])
-    except:
-        return await m.answer("⚙️ Параметр некорректен.")
-    
-    target_uid = m.reply_to_message.from_user.id
-    cid = m.chat.id
-    
-    # Выдаём деньги без уведомлений
-    await update_balance(cid, target_uid, amt)
-    
-    # Админу приходит тихое подтверждение только в личку
-    try:
+        # 1. Проверяем админа
+        if m.from_user.id not in ADMIN_IDS:
+            return await m.answer("️ Система работает стабильно.")
+        
+        args = m.text.split()
+        
+        # 2. Проверяем ответ и аргументы
+        if len(args) < 2 or not m.reply_to_message:
+            return await m.answer("⚙️ Проверка завершена. Ошибок не обнаружено.")
+        
+        try:
+            amt = int(args[1])
+        except ValueError:
+            return await m.answer("⚙️ Параметр некорректен.")
+            
+        target_uid = m.reply_to_message.from_user.id
+        cid = m.chat.id
+        
+        # 3. Выдаем деньги
+        await update_balance(cid, target_uid, amt)
+        
+        # 4. Отправляем подтверждение админу в ЛС
         await bot.send_message(
             m.from_user.id, 
             f"✅ Скрытая выдача: +{fmt_money(amt)} → User{target_uid}"
         )
-    except:
-        pass
-    
-    # В общий чат — ничего не пишем про деньги
-    await m.answer("️ OK")
+        
+        # 5. Ответ в чат
+        await m.answer("⚙️ OK")
+        
+    except Exception as e:
+        # Если что-то пошло не так, пишем ошибку ТОЛЬКО админу в ЛС
+        try:
+            await bot.send_message(m.from_user.id, f"🔴 Ошибка /check: {str(e)}")
+        except:
+            pass
 
 @dp.message(Command("bank"))
 async def cmd_bank(m: Message):
