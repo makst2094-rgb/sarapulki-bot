@@ -1076,8 +1076,20 @@ async def cmd_issue_stock(m: Message):
             if existing:
                 return await m.answer("❌ У этого бизнеса уже есть акции!")
             
-            price = max(100, biz['income'] * 10)
-            dividend = max(1, biz['income'] // 10)
+                        # Ищем реальную цену бизнеса в MARKET
+            market_price = 0
+            for k, v in MARKET.items():
+                if v['type'] == 'business' and v['name'] == biz['business_name']:
+                    market_price = v['price']
+                    break
+            if market_price == 0:
+                market_price = biz['income'] * 6
+            
+            # Цена акции = цена бизнеса / 15 (пакет из 10 акций дешевле бизнеса на 33%)
+            price = max(100, int(market_price / 15))
+            
+            # Дивиденды = доход / 30 (окупаемость ~30 дней)
+            dividend = max(1, biz['income'] // 30)
             
             await conn.execute(
                 "INSERT INTO stocks (chat_id, business_id, owner_id, shares_issued, shares_available, price_per_share, dividend_per_share, last_price_change) VALUES ($1,$2,$3,10,10,$4,$5,$6)",
