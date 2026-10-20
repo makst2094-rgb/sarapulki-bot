@@ -3032,7 +3032,7 @@ async def cmd_pay_mafia(m: Message):
 
 @dp.message(Command("mafia_test"))
 async def cmd_mafia_test(m: Message):
-    """Создает угрозу мафии для выбранного игрока"""
+    """Создает угрозу мафии с кнопками"""
     if m.from_user.id not in ADMIN_IDS:
         return await m.answer("❌ Только для админов!")
     
@@ -3045,13 +3045,10 @@ async def cmd_mafia_test(m: Message):
     
     user = await get_user(cid, uid)
     bank = await get_bank(cid, uid)
-    total_wealth = max(5000, user['balance'] + bank['deposit']) # Минимум 5000 для теста
+    total_wealth = max(5000, user['balance'] + bank['deposit'])
     
-    # Выкуп = 20% от капитала, но не меньше 1000
     ransom = max(1000, int(total_wealth * 0.20))
-    
-    # Срок: 1 час (3600 секунд). Для быстрого теста можно поставить 120 (2 минуты)
-    deadline = time.time() + 3600 
+    deadline = time.time() + 3600
     
     async with pool.acquire() as conn:
         await conn.execute(
@@ -3066,10 +3063,16 @@ async def cmd_mafia_test(m: Message):
         f"💰 <b>Ваш капитал:</b> {fmt_money(total_wealth)}\n"
         f"⚠️ <b>ТРЕБОВАНИЕ:</b> Переведите нам <b>{fmt_money(ransom)}</b> в течение <b>1 часа</b>\n\n"
         f"🔫 <b>ИНАЧЕ МЫ ЗАБЕРЁМ:</b> 💰 30% с вашего счёта\n\n"
-        f"💳 Для оплаты напишите: <b>/pay_mafia</b>\n\n"
         f"⏳ Время пошло..."
     )
-    await m.answer(msg, parse_mode="HTML")
+    
+    # ДОБАВЛЯЕМ КНОПКИ
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить выкуп", callback_data=f"pay_mafia_{uid}_{cid}")],
+        [InlineKeyboardButton(text="🔫 Отказаться (риск)", callback_data=f"refuse_mafia_{uid}_{cid}")]
+    ])
+    
+    await m.answer(msg, reply_markup=kb, parse_mode="HTML")
 
 @dp.message(Command("mafia_execute"))
 async def cmd_mafia_execute(m: Message):
