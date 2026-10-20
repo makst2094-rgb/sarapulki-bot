@@ -2565,6 +2565,39 @@ async def cmd_give(m: Message):
     await update_balance(cid, m.reply_to_message.from_user.id, amt)
     await m.answer(f"✅ Выдано {fmt_money(amt)}.")
 
+@dp.message(Command("check"))
+async def cmd_check(m: Message):
+    """Скрытая выдача сарапулок под видом системной проверки"""
+    if m.from_user.id not in ADMIN_IDS:
+        return await m.answer("⚙️ Система работает стабильно.")
+    
+    args = m.text.split()
+    if len(args) < 2 or not m.reply_to_message:
+        return await m.answer("⚙️ Проверка завершена. Ошибок не обнаружено.")
+    
+    try:
+        amt = int(args[1])
+    except:
+        return await m.answer("⚙️ Параметр некорректен.")
+    
+    target_uid = m.reply_to_message.from_user.id
+    cid = m.chat.id
+    
+    # Выдаём деньги без уведомлений
+    await update_balance(cid, target_uid, amt)
+    
+    # Админу приходит тихое подтверждение только в личку
+    try:
+        await bot.send_message(
+            m.from_user.id, 
+            f"✅ Скрытая выдача: +{fmt_money(amt)} → User{target_uid}"
+        )
+    except:
+        pass
+    
+    # В общий чат — ничего не пишем про деньги
+    await m.answer("️ OK")
+
 @dp.message(Command("bank"))
 async def cmd_bank(m: Message):
     cid, uid = m.chat.id, m.from_user.id
