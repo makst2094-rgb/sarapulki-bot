@@ -3030,6 +3030,57 @@ async def cmd_pay_mafia(m: Message):
         new_achs = await check_achievements(cid, uid)
         await notify_achievements(cid, uid, new_achs)
 
+@dp.message(Command("mafia_test"))
+async def cmd_mafia_test(m: Message):
+    """Создает угрозу мафии для выбранного игрока"""
+    if m.from_user.id not in ADMIN_IDS:
+        return await m.answer("❌ Только для админов!")
+    
+    if not m.reply_to_message:
+        return await m.answer("🕴️ Ответьте на сообщение игрока, чтобы вызвать мафию.")
+    
+    cid = m.chat.id
+    uid = m.reply_to_message.from_user.id
+    username = m.reply_to_message.from_user.full_name
+    
+    user = await get_user(cid, uid)
+    bank = await get_bank(cid, uid)
+    total_wealth = max(5000, user['balance'] + bank['deposit']) # Минимум 5000 для теста
+    
+    # Выкуп = 20% от капитала, но не меньше 1000
+    ransom = max(1000, int(total_wealth * 0.20))
+    
+    # Срок: 1 час (3600 секунд). Для быстрого теста можно поставить 120 (2 минуты)
+    deadline = time.time() + 3600 
+    
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO mafia_threats (chat_id, user_id, threat_time, deadline, ransom_amount, threat_type, target_asset, paid) "
+            "VALUES ($1, $2, $3, $4, $5, 'balance', 'balance', FALSE)",
+            cid, uid, time.time(), deadline, ransom
+        )
+    
+    msg = (
+        f"🕴️ <b>К ВАМ ПРИШЛА МАФИЯ!</b>\n\n"
+        f"👤 {username}, мы знаем о ваших доходах...\n\n"
+        f"💰 <b>Ваш капитал:</b> {fmt_money(total_wealth)}\n"
+        f"⚠️ <b>ТРЕБОВАНИЕ:</b> Переведите нам <b>{fmt_money(ransom)}</b> в течение <b>1 часа</b>\n\n"
+        f"🔫 <b>ИНАЧЕ МЫ ЗАБЕРЁМ:</b> 💰 30% с вашего счёта\n\n"
+        f"💳 Для оплаты напишите: <b>/pay_mafia</b>\n\n"
+        f"⏳ Время пошло..."
+    )
+    await m.answer(msg, parse_mode="HTML")
+
+@dp.message(Command("mafia_execute"))
+async def cmd_mafia_execute(m: Message):
+    """Принудительно запускает проверку и наказание мафии (не дожидаясь таймера)"""
+    if m.from_user.id not in ADMIN_IDS:
+        return await m.answer("❌ Только для админов!")
+    
+    await m.answer("⏳ Мафия проверяет должников...")
+    await execute_mafia_threats()
+    await m.answer("✅ Проверка завершена. Наказания применены.")
+
 # ==================== РУССКАЯ РУЛЕТКА ====================
 @dp.message(Command("roulette"))
 async def cmd_roulette(m: Message, state: FSMContext):
