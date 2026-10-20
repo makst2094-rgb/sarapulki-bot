@@ -3062,11 +3062,11 @@ async def cmd_mafia_test(m: Message):
         f"👤 {username}, мы знаем о ваших доходах...\n\n"
         f"💰 <b>Ваш капитал:</b> {fmt_money(total_wealth)}\n"
         f"⚠️ <b>ТРЕБОВАНИЕ:</b> Переведите нам <b>{fmt_money(ransom)}</b> в течение <b>1 часа</b>\n\n"
-        f"🔫 <b>ИНАЧЕ МЫ ЗАБЕРЁМ:</b> 💰 30% с вашего счёта\n\n"
+        f"🔫 <b>ИНАЧЕ ВАМ НЕ ПОЗДОРОВИТСЯ...</b>\n\n"
         f"⏳ Время пошло..."
     )
     
-    # ДОБАВЛЯЕМ КНОПКИ
+    # Кнопки
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 Оплатить выкуп", callback_data=f"pay_mafia_{uid}_{cid}")],
         [InlineKeyboardButton(text="🔫 Отказаться (риск)", callback_data=f"refuse_mafia_{uid}_{cid}")]
@@ -3094,12 +3094,53 @@ async def cb_pay_mafia(cb: types.CallbackQuery):
     if cb.from_user.id != uid:
         return await cb.answer("❌ Это не ваша угроза!", show_alert=True)
     
-    # Вызываем стандартную команду оплаты
-    fake_msg = cb.message
-    fake_msg.from_user = cb.from_user
-    fake_msg.chat = cb.message.chat
-    await cmd_pay_mafia(fake_msg)
-    await cb.answer()
+    # Получаем данные угрозы
+    async with pool.acquire() as conn:
+        threat = await conn.fetchrow(
+            "SELECT * FROM mafia_threats WHERE chat_id=$1 AND user_id=$2 AND paid=FALSE",
+            cid, uid
+        )
+        
+        if not threat:
+            return await cb.answer("❌ Угроза уже обработана!", show_alert=True)
+        
+        ransom = threat['ransom_amount']
+    
+    # Проверяем баланс
+    user = await get_user(cid, uid)
+    bank = await get_bank(cid, uid)
+    total_available = user['balance'] + bank['deposit']
+    
+    if total_available < ransom:
+        return await cb.answer(f"❌ Недостаточно средств! Нужно: {fmt_money(ransom)}", show_alert=True)
+    
+    # Списываем деньги (сначала с баланса, потом с банка)
+    paid_from_balance = min(ransom, user['balance'])
+    remaining = ransom - paid_from_balance
+    
+    if paid_from_balance > 0:
+        await update_balance(cid, uid, -paid_from_balance)
+    if remaining > 0 and bank['deposit'] > 0:
+        await update_bank(cid, uid, -min(remaining, bank['deposit']))
+    
+    # Помечаем угрозу как оплаченную
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE mafia_threats SET paid=TRUE WHERE id=$1", threat['id'])
+    
+    # Отправляем подтверждение
+    msg = (
+        f"✅ <b>ВЫКУП ОПЛАЧЕН!</b>\n\n"
+        f"💰 Списано: <b>{fmt_money(ransom)}</b>\n"
+        f"🕴️ Мафия ушла довольной...\n\n"
+        f"💡 Совет: храните деньги в банке, чтобы снизить риск повторного визита!"
+    )
+    
+    try:
+        await cb.message.edit_text(msg, parse_mode="HTML")
+    except:
+        await cb.message.answer(msg, parse_mode="HTML")
+    
+    await cb.answer("✅ Выкуп оплачен!")
 
 @dp.callback_query(lambda c: c.data.startswith("refuse_mafia_"))
 async def cb_refuse_mafia(cb: types.CallbackQuery):
