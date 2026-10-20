@@ -169,12 +169,12 @@ MARKET = {
     "biz_coffee": {"name": "☕ Кофейня", "price": 5000, "type": "business", "income": 833},
     "biz_crypto": {"name": "💻 Крипто-ферма", "price": 15000, "type": "business", "income": 2500},
     "biz_hotel": {"name": "🏨 Отель", "price": 50000, "type": "business", "income": 8333},
-    "biz_pizza": {"name": "🍕 Пиццерия", "price": 10000, "type": "business", "income": 1600},
-    "biz_taxi": {"name": "🚕 Таксопарк", "price": 30000, "type": "business", "income": 5000},
-    "biz_pharmacy": {"name": "💊 Аптека", "price": 75000, "type": "business", "income": 12500},
-    "biz_construction": {"name": "🏗️ Стройфирма", "price": 150000, "type": "business", "income": 25000},
-    "biz_spaceport": {"name": "🚀 Космодром", "price": 500000, "type": "business", "income": 85000},
-    "biz_casino": {"name": "🎰 Казино", "price": 1000000, "type": "business", "income": 166667}
+    "biz_pizza": {"name": "🍕 Пиццерия", "price": 10000, "type": "business", "income": 1900},
+    "biz_taxi": {"name": "🚕 Таксопарк", "price": 30000, "type": "business", "income": 7899},
+    "biz_pharmacy": {"name": "💊 Аптека", "price": 75000, "type": "business", "income": 18789},
+    "biz_construction": {"name": "🏗️ Стройфирма", "price": 150000, "type": "business", "income": 35000},
+    "biz_spaceport": {"name": "🚀 Космодром", "price": 500000, "type": "business", "income": 120000},
+    "biz_casino": {"name": "🎰 Казино", "price": 1000000, "type": "business", "income": 300000}
 }
 
 CARS = {
