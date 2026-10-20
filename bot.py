@@ -3081,6 +3081,105 @@ async def cmd_mafia_execute(m: Message):
     await execute_mafia_threats()
     await m.answer("✅ Проверка завершена. Наказания применены.")
 
+@dp.callback_query(lambda c: c.data.startswith("pay_mafia_"))
+async def cb_pay_mafia(cb: types.CallbackQuery):
+    """Обработка кнопки оплаты выкупа"""
+    parts = cb.data.split("_")
+    uid = int(parts[2])
+    cid = int(parts[3])
+    
+    if cb.from_user.id != uid:
+        return await cb.answer("❌ Это не ваша угроза!", show_alert=True)
+    
+    # Вызываем стандартную команду оплаты
+    fake_msg = cb.message
+    fake_msg.from_user = cb.from_user
+    fake_msg.chat = cb.message.chat
+    await cmd_pay_mafia(fake_msg)
+    await cb.answer()
+
+@dp.callback_query(lambda c: c.data.startswith("refuse_mafia_"))
+async def cb_refuse_mafia(cb: types.CallbackQuery):
+    """Обработка кнопки отказа — ПОЛНАЯ система конфискации по приоритету"""
+    parts = cb.data.split("_")
+    uid = int(parts[2])
+    cid = int(parts[3])
+    
+    if cb.from_user.id != uid:
+        return await cb.answer("❌ Это не ваша угроза!", show_alert=True)
+    
+    # Помечаем угрозу как обработанную
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE mafia_threats SET paid=TRUE WHERE chat_id=$1 AND user_id=$2 AND paid=FALSE",
+            cid, uid
+        )
+    
+    username = cb.from_user.full_name
+    user = await get_user(cid, uid)
+    bank = await get_bank(cid, uid)
+    total_wealth = user['balance'] + bank['deposit']
+    
+    # Рандомное событие
+    roll = random.random()
+    
+    if roll < 0.20:
+        # 20% — мафия уходит ни с чем
+        msg = (
+            f"🕊️ <b>МАФИЯ УШЛА НИ С ЧЕМ!</b>\n\n"
+            f"👤 {username}, вы отказались платить, но мафия решила не трогать вас.\n"
+            f"Видимо, у них были дела поважнее...\n\n"
+            f"🍀 Вам повезло! Но в следующий раз лучше платить вовремя."
+        )
+        
+    else:
+        # 80% — Применяем конфискацию ПО ПРИОРИТЕТУ
+        async with pool.acquire() as conn:
+            businesses = await conn.fetch("SELECT business_name FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            cars = await conn.fetch("SELECT car_name FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            profile = await conn.fetchrow("SELECT job_key, level FROM profiles WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            
+            if businesses:
+                # ПРИОРИТЕТ 1: Забираем случайный бизнес
+                target_biz = random.choice(businesses)['business_name']
+                await conn.execute("DELETE FROM businesses WHERE chat_id=$1 AND user_id=$2 AND business_name=$3", cid, uid, target_biz)
+                msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ВАШ БИЗНЕС!</b>\n\n👤 {username}, вы отказались платить.\n🏢 Конфискован: <b>{target_biz}</b>"
+                
+            elif cars:
+                # ПРИОРИТЕТ 2: Забираем случайную машину
+                target_car = random.choice(cars)['car_name']
+                await conn.execute("DELETE FROM garage WHERE chat_id=$1 AND user_id=$2 AND car_name=$3", cid, uid, target_car)
+                msg = f"🔫 <b>МАФИЯ УКРАЛА ВАШУ МАШИНУ!</b>\n\n👤 {username}, вы отказались платить.\n🚗 Украдена: <b>{target_car}</b>"
+                
+            elif profile and profile['level'] > 1:
+                # ПРИОРИТЕТ 3: Сбрасываем профессию
+                old_job = profile['job_key']
+                old_level = profile['level']
+                await conn.execute("UPDATE profiles SET job_key='novice', level=1 WHERE chat_id=$1 AND user_id=$2", cid, uid)
+                msg = f" <b>МАФИЯ ЗАБРАЛА ВАШУ ПРОФЕССИЮ!</b>\n\n👤 {username}, вы отказались платить.\n💼 Сброшено: <b>{old_job} Ур.{old_level}</b> → Новичок Ур.1"
+                
+            else:
+                # ПРИОРИТЕТ 4: Забираем 30% денег (сначала баланс, потом банк)
+                penalty = int(total_wealth * 0.30)
+                
+                paid_from_balance = min(penalty, user['balance'])
+                remaining = penalty - paid_from_balance
+                
+                if paid_from_balance > 0:
+                    await update_balance(cid, uid, -paid_from_balance)
+                if remaining > 0 and bank['deposit'] > 0:
+                    await update_bank(cid, uid, -min(remaining, bank['deposit']))
+                    
+                msg = f" <b>МАФИЯ ЗАБРАЛА ДЕНЬГИ!</b>\n\n👤 {username}, вы отказались платить.\n💸 Списано: <b>{fmt_money(penalty)}</b> (30% от капитала)"
+    
+    # Отправляем результат
+    try:
+        await cb.message.edit_text(msg, parse_mode="HTML")
+    except:
+        await cb.message.answer(msg, parse_mode="HTML")
+    
+    await cb.answer()
+
 # ==================== РУССКАЯ РУЛЕТКА ====================
 @dp.message(Command("roulette"))
 async def cmd_roulette(m: Message, state: FSMContext):
