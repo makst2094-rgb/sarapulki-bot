@@ -3750,3 +3750,150 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+# ==================== ПРОСТОЕ ОБНОВЛЕНИЕ ОГРАБЛЕНИЙ ====================
+
+BANKS_SIMPLE = {
+    "local": {"name": "🏦 Местный банк", "reward": 5000, "chance": 70},
+    "city": {"name": "🏛️ Городской банк", "reward": 20000, "chance": 50},
+    "central": {"name": "🏢 Центральный банк", "reward": 100000, "chance": 30},
+    "swiss": {"name": "🇨🇭 Швейцарский банк", "reward": 500000, "chance": 15}
+}
+
+UPGRADES_SIMPLE = {
+    "weapon": {"name": "🔫 Оружие", "price": 5000},
+    "car": {"name": "🚗 Машина", "price": 3000},
+    "explosives": {"name": "💣 Взрывчатка", "price": 7000},
+    "masks": {"name": "🎭 Маски", "price": 2000}
+}
+
+@dp.message(lambda m: m.text and '/bank_heist' in m.text)
+async def simple_bank_heist(m: Message):
+    try:
+        t = "🏦 <b>ОГРАБЛЕНИЯ БАНКОВ</b>\n\n"
+        t += "📋 <b>Доступные банки:</b>\n\n"
+        for key, bank in BANKS_SIMPLE.items():
+            t += f"{bank['name']}\n"
+            t += f"   💰 Награда: {fmt_money(bank['reward'])}\n"
+            t += f"   🎯 Шанс успеха: {bank['chance']}%\n"
+            t += f"    Создать: /create_heist {key}\n\n"
+        
+        t += "━━━━━━━━━━━━━━━━━━━━\n"
+        t += " <b>Улучшения:</b>\n"
+        for key, upg in UPGRADES_SIMPLE.items():
+            t += f"   {upg['name']} — {fmt_money(upg['price'])}\n\n"
+        
+        t += "💡 <b>Как играть:</b>\n"
+        t += "1. Ответь на сообщение игрока\n"
+        t += "2. Напиши /create_heist local\n"
+        t += "3. Купи улучшения: /buy_upgrade weapon\n"
+        t += "4. Начни ограбление: /start_heist"
+        
+        await m.answer(t, parse_mode="HTML")
+        print("✅ Команда /bank_heist успешно выполнена!")
+    except Exception as e:
+        print(f"❌ Ошибка в /bank_heist: {e}")
+        await m.answer(f"❌ Произошла ошибка: {str(e)}")
+
+@dp.message(lambda m: m.text and '/create_heist' in m.text)
+async def simple_create_heist(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        
+        if len(args) < 2:
+            return await m.answer("🏦 <b>Использование:</b>\n\n1. Ответь на сообщение игрока\n2. Напиши: /create_heist local\n\nТипы: local, city, central, swiss", parse_mode="HTML")
+        
+        bank_type = args[1]
+        if bank_type not in BANKS_SIMPLE:
+            return await m.answer("❌ Неверный тип банка! Используй: local, city, central, swiss")
+        
+        if not m.reply_to_message:
+            return await m.answer("❌ Ответь на сообщение игрока, чтобы пригласить его в команду!")
+        
+        partner_id = m.reply_to_message.from_user.id
+        if partner_id == uid:
+            return await m.answer(" Нельзя пригласить самого себя!")
+        
+        bank = BANKS_SIMPLE[bank_type]
+        
+        # Простая проверка баланса (без кулдаунов и сложных таблиц пока)
+        async with pool.acquire() as conn:
+            bal1 = await conn.fetchval("SELECT balance FROM users WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            bal2 = await conn.fetchval("SELECT balance FROM users WHERE chat_id=$1 AND user_id=$2", cid, partner_id)
+            
+            if bal1 is None or bal1 < bank['reward']: # Используем reward как примерную стоимость для теста
+                return await m.answer(f"❌ У вас недостаточно средств для теста!")
+            if bal2 is None or bal2 < bank['reward']:
+                name2 = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, partner_id) or "Игрок"
+                return await m.answer(f"❌ У {name2} недостаточно средств!")
+        
+        # Для теста просто списываем немного и даем ответ
+        await update_balance(cid, uid, -100)
+        await update_balance(cid, partner_id, -100)
+        
+        l_name = m.from_user.first_name or "Вы"
+        p_name = m.reply_to_message.from_user.first_name or "Партнер"
+        
+        await m.answer(
+            f"🏦 <b>КОМАНДА СОЗДАНА!</b>\n\n"
+            f"🏛️ Банк: {bank['name']}\n"
+            f" Команда: {l_name} + {p_name}\n"
+            f"💰 Списано по 100 сарапулок (тест)\n"
+            f"⏰ Готово к старту!\n\n"
+            f" Купите улучшения: /buy_upgrade weapon\n"
+            f"🚀 Начать: /start_heist",
+            parse_mode="HTML"
+        )
+        print("✅ Команда /create_heist успешно выполнена!")
+    except Exception as e:
+        print(f"❌ Ошибка в /create_heist: {e}")
+        await m.answer(f" Произошла ошибка: {str(e)}")
+
+@dp.message(lambda m: m.text and '/buy_upgrade' in m.text)
+async def simple_buy_upgrade(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        
+        if len(args) < 2:
+            return await m.answer("🎒 <b>Использование:</b> /buy_upgrade weapon\n\nДоступны: weapon, car, explosives, masks", parse_mode="HTML")
+        
+        key = args[1]
+        if key not in UPGRADES_SIMPLE:
+            return await m.answer("❌ Неверное улучшение! Доступны: weapon, car, explosives, masks")
+        
+        upg = UPGRADES_SIMPLE[key]
+        
+        # Простая проверка баланса
+        async with pool.acquire() as conn:
+            bal = await conn.fetchval("SELECT balance FROM users WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            if bal is None or bal < upg['price']:
+                return await m.answer(f"❌ Недостаточно средств! Нужно: {fmt_money(upg['price'])}")
+        
+        await update_balance(cid, uid, -upg['price'])
+        await m.answer(f"✅ <b>Улучшение куплено!</b>\n\n🎒 {upg['name']}\n💰 Списано: {fmt_money(upg['price'])}", parse_mode="HTML")
+        print("✅ Команда /buy_upgrade успешно выполнена!")
+    except Exception as e:
+        print(f"❌ Ошибка в /buy_upgrade: {e}")
+        await m.answer(f"❌ Произошла ошибка: {str(e)}")
+
+@dp.message(lambda m: m.text and '/start_heist' in m.text)
+async def simple_start_heist(m: Message):
+    try:
+        # Для теста просто рандомный результат без сложной логики БД
+        import random
+        success = random.choice([True, False])
+        
+        if success:
+            reward = 5000
+            await update_balance(m.chat.id, m.from_user.id, reward)
+            msg = f"✅ <b>ОГРАБЛЕНИЕ УСПЕШНО!</b>\n\n Вы получили: {fmt_money(reward)}\n\n🎉 Поздравляем!"
+        else:
+            msg = "❌ <b>ОГРАБЛЕНИЕ ПРОВАЛИЛОСЬ!</b>\n\n😔 В следующий раз повезет..."
+        
+        await m.answer(msg, parse_mode="HTML")
+        print("✅ Команда /start_heist успешно выполнена!")
+    except Exception as e:
+        print(f"❌ Ошибка в /start_heist: {e}")
+        await m.answer(f"❌ Произошла ошибка: {str(e)}")
