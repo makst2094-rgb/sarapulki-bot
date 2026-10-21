@@ -313,6 +313,31 @@ async def init_db():
             bid_time REAL DEFAULT 0
         )""")
         print("✅ Таблица auction_bids создана")
+
+            
+        # Ограбления банков
+        await conn.execute("""CREATE TABLE IF NOT EXISTS bank_heists (
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT,
+            leader_id BIGINT,
+            bank_type TEXT,
+            team_members BIGINT[],
+            upgrades TEXT[],
+            status TEXT DEFAULT 'preparing',
+            created_at REAL DEFAULT 0,
+            start_time REAL DEFAULT 0,
+            result TEXT DEFAULT '',
+            reward INTEGER DEFAULT 0
+        )""")
+        print("✅ Таблица bank_heists создана")
+        
+        await conn.execute("""CREATE TABLE IF NOT EXISTS heist_cooldowns (
+            chat_id BIGINT,
+            user_id BIGINT,
+            last_heist REAL DEFAULT 0,
+            PRIMARY KEY (chat_id, user_id)
+        )""")
+        print("✅ Таблица heist_cooldowns создана")
         
     print("✅ База данных готова")
 
