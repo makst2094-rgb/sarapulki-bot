@@ -3781,6 +3781,7 @@ async def on_user_join(m: Message):
 # ==================== ОГРАБЛЕНИЯ БАНКОВ ====================
 @dp.message(Command("bank_heist"))
 async def cmd_bank_heist(m: Message):
+    print("=== БАНК_ХЕЙСТ ЗАРЕГЕСТРОВАН И ВЫЗВАН ===")
     try:
         t = "🏦 <b>ОГРАБЛЕНИЯ БАНКОВ</b>\n\n"
         t += "📋 <b>Доступные банки:</b>\n\n"
