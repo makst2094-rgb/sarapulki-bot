@@ -3732,8 +3732,11 @@ async def on_user_join(m: Message):
             continue
         await get_user(cid, user.id)
         await save_username(cid, user.id, user.full_name)
-
+        
+from heist_commands import register_heist_commands
 async def main():
+    register_heist_commands(dp, pool, update_balance, fmt_money)
+    print("✅ Команды ограблений загружены")
     await init_db()
     print("🤖 Бот запущен!")
     await start_web_server()
