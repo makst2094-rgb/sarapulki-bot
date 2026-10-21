@@ -12,6 +12,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 from aiohttp import web
+from heist import register_heists
 
 API_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "0").split(",") if x.strip().isdigit()]
@@ -3735,6 +3736,7 @@ async def on_user_join(m: Message):
 
 async def main():
     await init_db()
+    register_heists(dp, pool, update_balance, fmt_money)
     print("🤖 Бот запущен!")
     await start_web_server()
     asyncio.create_task(polling_health_check())
