@@ -203,6 +203,57 @@ RARE_ITEMS = {
     "crown": {"name": " Корона магната", "desc": "Уникальный титул и +10% к зарплате", "rarity": "mythic"},
 }
 
+# ==================== ОГРАБЛЕНИЯ БАНКОВ ====================
+BANK_TYPES = {
+    "local": {
+        "name": "🏦 Местный банк",
+        "difficulty": "easy",
+        "base_reward": 5000,
+        "base_chance": 70,
+        "min_players": 2,
+        "max_players": 3,
+        "jail_time": 4,
+        "entry_fee": 5000
+    },
+    "city": {
+        "name": "🏛️ Городской банк",
+        "difficulty": "medium",
+        "base_reward": 20000,
+        "base_chance": 50,
+        "min_players": 3,
+        "max_players": 4,
+        "jail_time": 6,
+        "entry_fee": 10000
+    },
+    "central": {
+        "name": " Центральный банк",
+        "difficulty": "hard",
+        "base_reward": 100000,
+        "base_chance": 30,
+        "min_players": 4,
+        "max_players": 5,
+        "jail_time": 8,
+        "entry_fee": 25000
+    },
+    "swiss": {
+        "name": "🇨🇭 Швейцарский банк",
+        "difficulty": "extreme",
+        "base_reward": 500000,
+        "base_chance": 15,
+        "min_players": 5,
+        "max_players": 5,
+        "jail_time": 12,
+        "entry_fee": 50000
+    }
+}
+
+HEIST_UPGRADES = {
+    "weapon": {"name": " Оружие", "price": 5000, "chance_bonus": 20},
+    "car": {"name": "🚗 Машина для побега", "price": 3000, "cooldown_reduce": 1},
+    "explosives": {"name": "💣 Взрывчатка", "price": 7000, "reward_bonus": 30},
+    "masks": {"name": "🎭 Маски", "price": 2000, "jail_reduce": 2}
+}
+
 ACHIEVEMENTS = {
     "first_1000": {"name": "💰 Первая тысяча", "desc": "Накопи 1 000 сарапулок", "icon": "💵"},
     "first_10k": {"name": "💰 Десятка", "desc": "Накопи 10 000 сарапулок", "icon": "🥈"},
