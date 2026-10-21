@@ -203,6 +203,21 @@ RARE_ITEMS = {
     "crown": {"name": " Корона магната", "desc": "Уникальный титул и +10% к зарплате", "rarity": "mythic"},
 }
 
+# ==================== ОГРАБЛЕНИЯ БАНКОВ ====================
+BANK_TYPES = {
+    "local": {"name": "🏦 Местный банк", "reward": 5000, "chance": 70, "min_players": 2, "max_players": 3, "jail_hours": 4, "fee": 5000},
+    "city": {"name": "️ Городской банк", "reward": 20000, "chance": 50, "min_players": 3, "max_players": 4, "jail_hours": 6, "fee": 10000},
+    "central": {"name": "🏢 Центральный банк", "reward": 100000, "chance": 30, "min_players": 4, "max_players": 5, "jail_hours": 8, "fee": 25000},
+    "swiss": {"name": "🇨🇭 Швейцарский банк", "reward": 500000, "chance": 15, "min_players": 5, "max_players": 5, "jail_hours": 12, "fee": 50000}
+}
+
+UPGRADES = {
+    "weapon": {"name": "🔫 Оружие", "price": 5000, "bonus": 20},
+    "car": {"name": "🚗 Машина", "price": 3000, "cooldown": 3600},
+    "explosives": {"name": "💣 Взрывчатка", "price": 7000, "reward_bonus": 30},
+    "masks": {"name": "🎭 Маски", "price": 2000, "jail_reduce": 2}
+}
+
 ACHIEVEMENTS = {
     "first_1000": {"name": "💰 Первая тысяча", "desc": "Накопи 1 000 сарапулок", "icon": "💵"},
     "first_10k": {"name": "💰 Десятка", "desc": "Накопи 10 000 сарапулок", "icon": "🥈"},
@@ -313,6 +328,31 @@ async def init_db():
             bid_time REAL DEFAULT 0
         )""")
         print("✅ Таблица auction_bids создана")
+
+            
+        # Ограбления банков
+        await conn.execute("""CREATE TABLE IF NOT EXISTS bank_heists (
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT,
+            leader_id BIGINT,
+            bank_type TEXT,
+            team_members BIGINT[],
+            upgrades TEXT[],
+            status TEXT DEFAULT 'preparing',
+            created_at REAL DEFAULT 0,
+            start_time REAL DEFAULT 0,
+            result TEXT DEFAULT '',
+            reward INTEGER DEFAULT 0
+        )""")
+        print("✅ Таблица bank_heists создана")
+        
+        await conn.execute("""CREATE TABLE IF NOT EXISTS heist_cooldowns (
+            chat_id BIGINT,
+            user_id BIGINT,
+            last_heist REAL DEFAULT 0,
+            PRIMARY KEY (chat_id, user_id)
+        )""")
+        print("✅ Таблица heist_cooldowns создана")
         
     print("✅ База данных готова")
 
@@ -3732,6 +3772,161 @@ async def on_user_join(m: Message):
             continue
         await get_user(cid, user.id)
         await save_username(cid, user.id, user.full_name)
+
+# ==================== ОГРАБЛЕНИЯ БАНКОВ ====================
+@dp.message(Command("bank_heist"))
+async def cmd_bank_heist(m: Message):
+    try:
+        t = "🏦 <b>ОГРАБЛЕНИЯ БАНКОВ</b>\n\n"
+        t += "📋 <b>Доступные банки:</b>\n\n"
+        for key, bank in BANK_TYPES.items():
+            t += f"{bank['name']}\n"
+            t += f"   💰 Награда: {fmt_money(bank['reward'])}\n"
+            t += f"   🎯 Шанс успеха: {bank['chance']}%\n"
+            t += f"   👥 Игроков: {bank['min_players']}-{bank['max_players']}\n"
+            t += f"   🔒 Тюрьма при провале: {bank['jail_hours']}ч\n"
+            t += f"   💵 Взнос: {fmt_money(bank['fee'])}\n"
+            t += f"   🛒 Создать: /create_heist {key}\n\n"
+        t += "━━━━━━━━━━━━━━━━━━━━\n"
+        t += " <b>Улучшения:</b>\n"
+        for key, upg in UPGRADES.items():
+            t += f"   {upg['name']} — {fmt_money(upg['price'])}\n\n"
+        t += "💡 <b>Как играть:</b>\n"
+        t += "1. Ответь на сообщение игрока\n"
+        t += "2. Напиши /create_heist local\n"
+        t += "3. Купи улучшения: /buy_upgrade weapon\n"
+        t += "4. Начни ограбление: /start_heist"
+        await m.answer(t, parse_mode="HTML")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("create_heist"))
+async def cmd_create_heist(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        if len(args) < 2:
+            return await m.answer("🏦 <b>Использование:</b>\n\n1. Ответь на сообщение игрока\n2. Напиши: /create_heist local\n\nТипы: local, city, central, swiss", parse_mode="HTML")
+        bank_type = args[1]
+        if bank_type not in BANK_TYPES:
+            return await m.answer(" Неверный тип банка! Используй: local, city, central, swiss")
+        if not m.reply_to_message:
+            return await m.answer(" Ответь на сообщение игрока, чтобы пригласить его в команду!")
+        partner_id = m.reply_to_message.from_user.id
+        if partner_id == uid:
+            return await m.answer("❌ Нельзя пригласить самого себя!")
+        bank = BANK_TYPES[bank_type]
+        team = [uid, partner_id]
+        if len(team) < bank['min_players']:
+            return await m.answer(f" Нужно минимум {bank['min_players']} игроков! Сейчас: {len(team)}")
+        if len(team) > bank['max_players']:
+            return await m.answer(f"❌ Максимум {bank['max_players']} игроков! Сейчас: {len(team)}")
+        async with pool.acquire() as conn:
+            for member_id in team:
+                balance = await conn.fetchval("SELECT balance FROM users WHERE chat_id=$1 AND user_id=$2", cid, member_id)
+                if balance is None or balance < bank['fee']:
+                    name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, member_id) or f"User{member_id}"
+                    return await m.answer(f"❌ У {name} недостаточно средств! Нужно: {fmt_money(bank['fee'])}")
+                last_heist = await conn.fetchval("SELECT last_heist FROM heist_cooldowns WHERE chat_id=$1 AND user_id=$2", cid, member_id)
+                if last_heist and time.time() - last_heist < 86400:
+                    name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, member_id) or f"User{member_id}"
+                    remaining = int(86400 - (time.time() - last_heist))
+                    hours = remaining // 3600
+                    minutes = (remaining % 3600) // 60
+                    return await m.answer(f"❌ {name} в кулдауне! Осталось: {hours}ч {minutes}мин")
+        for member_id in team:
+            await update_balance(cid, member_id, -bank['fee'])
+        async with pool.acquire() as conn:
+            await conn.execute("INSERT INTO bank_heists (chat_id, leader_id, bank_type, team_members, status, created_at, start_time) VALUES ($1, $2, $3, $4, 'preparing', $5, $6)", cid, uid, bank_type, team, time.time(), time.time() + 300)
+        leader_name = m.from_user.first_name
+        partner_name = m.reply_to_message.from_user.first_name
+        await m.answer(f"🏦 <b>ОГРАБЛЕНИЕ СОЗДАНО!</b>\n\n🏛️ Банк: {bank['name']}\n Команда: {leader_name} + {partner_name}\n💰 Взнос с каждого: {fmt_money(bank['fee'])}\n⏰ Начало через: 5 минут\n\n🎒 Купите улучшения: /buy_upgrade weapon\n🚀 Начать: /start_heist", parse_mode="HTML")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("buy_upgrade"))
+async def cmd_buy_upgrade(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        if len(args) < 2:
+            return await m.answer("🎒 <b>Использование:</b> /buy_upgrade weapon\n\nДоступны: weapon, car, explosives, masks", parse_mode="HTML")
+        upgrade_key = args[1]
+        if upgrade_key not in UPGRADES:
+            return await m.answer("❌ Неверное улучшение! Доступны: weapon, car, explosives, masks")
+        upgrade = UPGRADES[upgrade_key]
+        async with pool.acquire() as conn:
+            user_balance = await conn.fetchval("SELECT balance FROM users WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            if user_balance is None or user_balance < upgrade['price']:
+                return await m.answer(f"❌ Недостаточно средств! Нужно: {fmt_money(upgrade['price'])}")
+            heist = await conn.fetchrow("SELECT * FROM bank_heists WHERE chat_id=$1 AND $2 = ANY(team_members) AND status='preparing'", cid, uid)
+            if not heist:
+                return await m.answer("❌ У вас нет активного ограбления!")
+            upgrades = heist['upgrades'] or []
+            if upgrade_key in upgrades:
+                return await m.answer("❌ Это улучшение уже куплено!")
+            upgrades.append(upgrade_key)
+            await conn.execute("UPDATE bank_heists SET upgrades=$1 WHERE id=$2", upgrades, heist['id'])
+        await update_balance(cid, uid, -upgrade['price'])
+        await m.answer(f"✅ <b>Улучшение куплено!</b>\n\n🎒 {upgrade['name']}\n💰 Списано: {fmt_money(upgrade['price'])}", parse_mode="HTML")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("start_heist"))
+async def cmd_start_heist(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        async with pool.acquire() as conn:
+            heist = await conn.fetchrow("SELECT * FROM bank_heists WHERE chat_id=$1 AND leader_id=$2 AND status='preparing'", cid, uid)
+            if not heist:
+                return await m.answer("❌ У вас нет активного ограбления!")
+            if time.time() < heist['start_time']:
+                remaining = int(heist['start_time'] - time.time())
+                return await m.answer(f"⏰ Ограбление начнется через {remaining} секунд!")
+            bank = BANK_TYPES[heist['bank_type']]
+            chance = bank['chance']
+            upgrades = heist['upgrades'] or []
+            if 'weapon' in upgrades:
+                chance += UPGRADES['weapon']['bonus']
+            chance += random.randint(-20, 20)
+            chance = max(5, min(95, chance))
+            roll = random.randint(1, 100)
+            if roll <= chance:
+                reward = bank['reward']
+                if 'explosives' in upgrades:
+                    reward = int(reward * (1 + UPGRADES['explosives']['reward_bonus'] / 100))
+                reward_per_player = reward // len(heist['team_members'])
+                for member_id in heist['team_members']:
+                    await update_balance(cid, member_id, reward_per_player)
+                    cooldown = 86400
+                    if 'car' in upgrades:
+                        cooldown -= UPGRADES['car']['cooldown']
+                    await conn.execute("INSERT INTO heist_cooldowns (chat_id, user_id, last_heist) VALUES ($1, $2, $3) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_heist=$3", cid, member_id, time.time())
+                await conn.execute("UPDATE bank_heists SET status='success', result='success', reward=$1 WHERE id=$2", reward, heist['id'])
+                team_names = []
+                for member_id in heist['team_members']:
+                    name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, member_id) or f"User{member_id}"
+                    team_names.append(name)
+                msg = f"✅ <b>ОГРАБЛЕНИЕ УСПЕШНО!</b>\n\n🏦 Банк: {bank['name']}\n👥 Команда: {', '.join(team_names)}\n💰 Общая награда: {fmt_money(reward)}\n💵 На каждого: {fmt_money(reward_per_player)}\n\n🎉 Поздравляем!"
+                await m.answer(msg, parse_mode="HTML")
+            else:
+                jail_time = bank['jail_hours']
+                if 'masks' in upgrades:
+                    jail_time -= UPGRADES['masks']['jail_reduce']
+                jail_time = max(2, jail_time)
+                for member_id in heist['team_members']:
+                    release_time = time.time() + (jail_time * 3600)
+                    await conn.execute("INSERT INTO jail (chat_id, user_id, release_time, reason) VALUES ($1, $2, $3, $4) ON CONFLICT (chat_id, user_id) DO UPDATE SET release_time=$3, reason=$4", cid, member_id, release_time, "Провал ограбления банка")
+                    await conn.execute("INSERT INTO heist_cooldowns (chat_id, user_id, last_heist) VALUES ($1, $2, $3) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_heist=$3", cid, member_id, time.time() - 86400)
+                await conn.execute("UPDATE bank_heists SET status='failed', result='failed' WHERE id=$1", heist['id'])
+                team_names = []
+                for member_id in heist['team_members']:
+                    name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, member_id) or f"User{member_id}"
+                    team_names.append(name)
+                msg = f"❌ <b>ОГРАБЛЕНИЕ ПРОВАЛИЛОСЬ!</b>\n\n🏦 Банк: {bank['name']}\n👥 Команда: {', '.join(team_names)}\n🔒 Все в тюрьме на {jail_time} часов!\n⏰ Кулдаун: 48 часов\n\n😔 В следующий раз повезет..."
+                await m.answer(msg, parse_mode="HTML")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
 
 async def main():
     await init_db()
