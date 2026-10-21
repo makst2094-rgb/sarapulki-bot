@@ -3751,6 +3751,7 @@ UPGRADES = {
 
 @dp.message(Command("bank_heist"))
 async def cmd_bank_heist(m: Message):
+    print("🔥🔥 БАНК_ХЕЙСТ ПОЛУЧЕН 🔥🔥🔥")  # ← ЭТУ СТРОКУ ДОБАВИТЬ
     try:
         t = "🏦 <b>ОГРАБЛЕНИЯ БАНКОВ</b>\n\n"
         t += "📋 <b>Доступные банки:</b>\n\n"
