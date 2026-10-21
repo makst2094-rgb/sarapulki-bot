@@ -1846,6 +1846,11 @@ async def cmd_start(m: Message):
         "  /achievements — награды\n\n"
         "🕴️ <b>Мафия:</b>\n"
         "  /pay_mafia — оплатить выкуп\n"
+        "🏦 <b>Ограбления:</b>\n"
+        "  /bank_heist — список банков\n"
+        "  /create_heist тип — создать команду\n"
+        "  /buy_upgrade — купить улучшение\n"
+        "  /start_heist — начать ограбление\n\n"
         "━━━━━━━━━━━━━━━━━━━━",
         parse_mode="HTML"
     )
