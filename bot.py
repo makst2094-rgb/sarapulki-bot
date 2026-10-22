@@ -1707,7 +1707,7 @@ async def cmd_start(m: Message):
         " <b>Ограбления банков:</b>\n"
         "  /bank_heist — список банков\n"
         "  /buy_tool — магазин инструментов\n"
-        "  /create_heist тип — создать лобби (3 игрока)\n\n"
+        "  /heist_create тип — создать лобби (3 игрока)\n\n"
         " <b>Инфо:</b>\n"
         "  /info — карточка\n"
         "  /rating — рейтинг\n"
@@ -2182,7 +2182,7 @@ async def cmd_bank_heist(m: Message):
         t += f"   💰 Награда каждому: {fmt_money(bank['reward'])}\n"
         t += f"   🎯 Базовый шанс: {bank['chance']}%\n"
         t += f"   🔒 Тюрьма при провале: {bank['jail']}ч\n"
-        t += f"   🛠️ Создать лобби: /create_heist {key}\n\n"
+        t += f"   🛠️ Создать лобби: /heist_create {key}\n\n"
     t += "━━━━━━━━━━━━━━━━━━━━\n"
     t += "🛠️ <b>Магазин инструментов (бонусы):</b>\n"
     for key, tool in TOOLS.items():
@@ -2226,13 +2226,13 @@ async def cmd_buy_tool(m: Message):
         f"{tool['name']}\n"
         f"💰 Списано: {fmt_money(tool['price'])}\n"
         f" {tool['desc']}\n\n"
-        f"💡 Используйте /create_heist local для создания лобби!\n"
+        f"💡 Используйте /heist_create local для создания лобби!\n"
         f"⚠️ Если не купите — будете грабить голыми руками.",
         parse_mode="HTML"
     )
 
-@dp.message(Command("create_heist"))
-async def cmd_create_heist(m: Message):
+@dp.message(Command("heist_create"))
+async def cmd_heist_create(m: Message):
     """Создание лобби для ограбления (ровно 3 игрока, инструмент опционален)"""
     cid, uid = m.chat.id, m.from_user.id
     if await is_in_jail(cid, uid):
@@ -2240,7 +2240,7 @@ async def cmd_create_heist(m: Message):
     
     args = m.text.split()
     if len(args) < 2 or args[1] not in BANKS:
-        return await m.answer("Используй: /create_heist local\nТипы: local, city, central, swiss")
+        return await m.answer("Используй: /heist_create local\nТипы: local, city, central, swiss")
     
     bank_key = args[1]
     bank = BANKS[bank_key]
