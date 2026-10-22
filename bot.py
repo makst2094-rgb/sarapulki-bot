@@ -1696,6 +1696,10 @@ async def cmd_start(m: Message):
         "🏆 <b>Аукцион:</b>\n"
         "  /auction — активные лоты\n"
         "  /bid ID сумма — сделать ставку\n\n"
+        "🏦 <b>Ограбления:</b>\n"
+        "  /bank_heist — список банков\n"
+        "  /create_heist тип — создать команду\n"
+        "  /start_heist — начать\n\n"
         " <b>Инфо:</b>\n"
         "  /info — карточка\n"
         "  /rating — рейтинг\n"
@@ -2101,6 +2105,106 @@ async def cmd_jail(m: Message):
         f"Или ждите окончания срока",
         parse_mode="HTML"
     )
+
+# ═══════════════════════════════════════════
+#  ОГРАБЛЕНИЯ БАНКОВ
+# ═══════════════════════════════════════════
+
+BANKS = {
+    "local": {"name": "🏦 Местный банк", "reward": 5000, "chance": 70, "min": 2, "max": 3, "jail": 4, "fee": 5000},
+    "city": {"name": "🏛️ Городской банк", "reward": 20000, "chance": 50, "min": 3, "max": 4, "jail": 6, "fee": 10000},
+    "central": {"name": "🏢 Центральный банк", "reward": 100000, "chance": 30, "min": 4, "max": 5, "jail": 8, "fee": 25000},
+    "swiss": {"name": "🇨🇭 Швейцарский банк", "reward": 500000, "chance": 15, "min": 5, "max": 5, "jail": 12, "fee": 50000}
+}
+
+@dp.message(Command("bank_heist"))
+async def cmd_bank_heist(m: Message):
+    """Показать список банков для ограбления"""
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid):
+        return await m.answer(" Вы в тюрьме!")
+    
+    t = "🏦 <b>ОГРАБЛЕНИЯ БАНКОВ</b>\n\n"
+    t += "━━━━━━━━━━━━━━━━━━━━\n"
+    t += "📋 <b>ДОСТУПНЫЕ БАНКИ:</b>\n\n"
+    
+    for key, bank in BANKS.items():
+        t += f"{bank['name']}\n"
+        t += f"   💰 Награда: {fmt_money(bank['reward'])}\n"
+        t += f"   🎯 Шанс: {bank['chance']}%\n"
+        t += f"   👥 Игроков: {bank['min']}-{bank['max']}\n"
+        t += f"   🔒 Тюрьма: {bank['jail']}ч\n"
+        t += f"   💵 Взнос: {fmt_money(bank['fee'])}\n\n"
+    
+    t += "━━━━━━━━━━━━━━━━━━━━\n"
+    t += "💡 <b>Как играть:</b>\n"
+    t += "1️⃣ Ответь на сообщение игрока\n"
+    t += "2️ Напиши /create_heist local\n"
+    t += "3️⃣ Начни: /start_heist\n\n"
+    t += "⚠️ При провале вся команда в тюрьме!"
+    
+    await m.answer(t, parse_mode="HTML")
+
+@dp.message(Command("create_heist"))
+async def cmd_create_heist(m: Message):
+    """Создать команду для ограбления"""
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid):
+        return await m.answer(" Вы в тюрьме!")
+    
+    if not m.reply_to_message:
+        return await m.answer("❌ Ответь на сообщение игрока!")
+    
+    args = m.text.split()
+    if len(args) < 2 or args[1] not in BANKS:
+        return await m.answer("Используй: /create_heist local\nТипы: local, city, central, swiss")
+    
+    bank = BANKS[args[1]]
+    leader = m.from_user.full_name
+    partner = m.reply_to_message.from_user.full_name
+    
+    await m.answer(
+        f"🏦 <b>КОМАНДА СОЗДАНА!</b>\n\n"
+        f"🏛️ Банк: {bank['name']}\n"
+        f" {leader} + {partner}\n"
+        f"💰 Награда: {fmt_money(bank['reward'])}\n"
+        f"🎯 Шанс: {bank['chance']}%\n\n"
+        f"Теперь напиши /start_heist",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("start_heist"))
+async def cmd_start_heist(m: Message):
+    """Начать ограбление банка"""
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid):
+        return await m.answer(" Вы в тюрьме!")
+    
+    import random
+    
+    # Симуляция ограбления (упрощённая версия)
+    bank = BANKS["local"]  # По умолчанию местный банк
+    success = random.random() * 100 < bank['chance']
+    
+    if success:
+        reward = bank['reward']
+        await update_balance(cid, uid, reward)
+        await m.answer(
+            f"✅ <b>ОГРАБЛЕНИЕ УСПЕШНО!</b>\n\n"
+            f" Банк: {bank['name']}\n"
+            f"💰 Ты получил {fmt_money(reward)}!\n\n"
+            f" Поздравляем!",
+            parse_mode="HTML"
+        )
+    else:
+        await send_to_jail(cid, uid, bank['jail'])
+        await m.answer(
+            f"❌ <b>ОГРАБЛЕНИЕ ПРОВАЛИЛОСЬ!</b>\n\n"
+            f"🏦 Банк: {bank['name']}\n"
+            f" Тюрьма: {bank['jail']} часов\n\n"
+            f"😔 В следующий раз повезёт!",
+            parse_mode="HTML"
+        )
 
 @dp.message(Command("jail_pay"))
 async def cmd_jail_pay(m: Message):
