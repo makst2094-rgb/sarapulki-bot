@@ -2121,10 +2121,10 @@ BANKS = {
 }
 
 TOOLS = {
-    "lockpick": {"name": "🔑 Отмычка", "price": 1000, "bonus": 15, "desc": "+15% к шансу"},
-    "mask": {"name": "🎭 Маска", "price": 500, "bonus": 0, "jail_reduce": 1, "desc": "-1 час тюрьмы всем"},
-    "crowbar": {"name": "🔧 Монтировка", "price": 2000, "bonus": 25, "desc": "+25% к шансу"},
-    "c4": {"name": " Взрывчатка C4", "price": 5000, "bonus": 40, "desc": "+40% к шансу"}
+    "lockpick": {"name": "🔑 Отмычка", "price": 5000, "bonus": 15, "desc": "+15% к шансу"},
+    "mask": {"name": "🎭 Маска", "price": 2500, "bonus": 0, "jail_reduce": 1, "desc": "-1 час тюрьмы всем"},
+    "crowbar": {"name": "🔧 Монтировка", "price": 20000, "bonus": 25, "desc": "+25% к шансу"},
+    "c4": {"name": " Взрывчатка C4", "price": 60000, "bonus": 40, "desc": "+40% к шансу"}
 }
 
 @dp.message(Command("bank_heist"))
