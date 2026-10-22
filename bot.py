@@ -2618,19 +2618,19 @@ async def cmd_check(m: Message):
         except:
             pass
 
-# ═══════════════════════════════════════════
+    # ═══════════════════════════════════════════
 #  АДМИНСКИЕ КОМАНДЫ ТЮРЬМЫ
 # ═══════════════════════════════════════════
 
 @dp.message(Command("admin_jail"))
 async def cmd_admin_jail(m: Message):
-    """Админ сажает игрока в тюрьму — сообщения удаляются автоматически"""
+    """Админ сажает игрока в тюрьму"""
     if m.from_user.id not in ADMIN_IDS:
         return await m.answer("❌ Только для админов!")
     
     if not m.reply_to_message:
         return await m.answer(
-            "⚖️ <b>Использование:</b>\n\n"
+            "️ <b>Использование:</b>\n\n"
             "Ответь на сообщение игрока и напиши:\n"
             "<code>/admin_jail часы</code>\n\n"
             "Пример: <code>/admin_jail 24</code>\n"
@@ -2655,27 +2655,11 @@ async def cmd_admin_jail(m: Message):
     
     release_time = await send_to_jail(cid, target_uid, hours)
     
-    # Уведомляем игрока в личку
-    try:
-        await bot.send_message(
-            target_uid,
-            f"🔒 <b>ВЫ ПОСАЖЕНЫ В ТЮРЬМУ!</b>\n\n"
-            f"👤 Администратор: {m.from_user.full_name}\n"
-            f"⏰ Срок: <b>{hours} ч</b>\n"
-            f"🕐 Освобождение: {format_date(release_time)}\n\n"
-            f"️ Ваши сообщения в чате будут удаляться.\n"
-            f"Используйте /jail_pay для досрочного выхода.",
-            parse_mode="HTML"
-        )
-    except:
-        pass
-    
     await m.answer(
         f" <b>ИГРОК ПОСАЖЕН В ТЮРЬМУ!</b>\n\n"
         f"👤 {target_name}\n"
         f"⏰ Срок: <b>{hours} ч</b>\n"
-        f"🕐 Освобождение: {format_date(release_time)}\n\n"
-        f"⚠️ Сообщения игрока будут удаляться автоматически!",
+        f"🕐 Освобождение: {format_date(release_time)}",
         parse_mode="HTML"
     )
 
@@ -2687,7 +2671,7 @@ async def cmd_admin_unjail(m: Message):
     
     if not m.reply_to_message:
         return await m.answer(
-            "️ <b>Использование:</b>\n\n"
+            "⚖️ <b>Использование:</b>\n\n"
             "Ответь на сообщение игрока:\n"
             "<code>/admin_unjail</code>",
             parse_mode="HTML"
@@ -2701,8 +2685,8 @@ async def cmd_admin_unjail(m: Message):
     
     await m.answer(
         f"✅ <b>ИГРОК ОСВОБОЖДЁН!</b>\n\n"
-        f" {target_name}\n"
-        f" Тюрьма снята!",
+        f"👤 {target_name}\n"
+        f"🔓 Тюрьма снята!",
         parse_mode="HTML"
     )
 
@@ -2725,7 +2709,7 @@ async def cmd_admin_check_jail(m: Message):
     if not jailed:
         return await m.answer("✅ В тюрьме никого нет!")
     
-    t = " <b>В тюрьме сейчас:</b>\n\n"
+    t = "🔒 <b>В тюрьме сейчас:</b>\n\n"
     for row in jailed:
         name = row['username'] or f"User{row['user_id']}"
         remaining = int(row['release_time'] - time.time())
