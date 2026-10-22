@@ -3734,47 +3734,24 @@ async def on_user_join(m: Message):
         await save_username(cid, user.id, user.full_name)
 
 # === ОБНОВА ОГРАБЛЕНИЙ ===
-BANKS = {
-    "local": {"name": "🏦 Местный", "reward": 5000},
-    "city": {"name": "🏛️ Городской", "reward": 20000},
-    "central": {"name": "🏢 Центральный", "reward": 100000},
-    "swiss": {"name": "🇭 Швейцарский", "reward": 500000}
-}
+BANKS = {"local": {"name": " Местный", "reward": 5000}, "city": {"name": "🏛️ Городской", "reward": 20000}}
 
 @dp.message(lambda m: m.text and '/bank_heist' in m.text)
 async def cmd_bank_heist(m: Message):
-    text = " <b>ОГРАБЛЕНИЯ</b>\n\n"
-    for key, bank in BANKS.items():
-        text += f"{bank['name']}: {fmt_money(bank['reward'])}\n"
-        text += f"  Команда: /create_heist {key}\n\n"
-    text += "Как играть:\n1. Ответь на игрока\n2. /create_heist local\n3. /start_heist"
-    await m.answer(text, parse_mode="HTML")
+    await m.answer("🏦 <b>ОГРАБЛЕНИЯ</b>\n\n🏦 Местный: 5000\n🏛️ Городской: 20000\n\nПиши /create_heist local", parse_mode="HTML")
 
 @dp.message(lambda m: m.text and '/create_heist' in m.text)
 async def cmd_create_heist(m: Message):
-    if not m.reply_to_message:
-        return await m.answer("❌ Ответь на сообщение игрока!")
-    args = m.text.split()
-    if len(args) < 2 or args[1] not in BANKS:
-        return await m.answer("Используй: /create_heist local\nТипы: local, city, central, swiss")
-    bank = BANKS[args[1]]
-    leader = m.from_user.first_name or "Вы"
-    partner = m.reply_to_message.from_user.first_name or "Партнёр"
-    await m.answer(f"🏦 <b>КОМАНДА СОЗДАНА!</b>\n\n🏛️ Банк: {bank['name']}\n👥 {leader} + {partner}\n💰 Награда: {fmt_money(bank['reward'])}\n\nТеперь напиши /start_heist", parse_mode="HTML")
+    if not m.reply_to_message: return await m.answer("❌ Ответь на игрока!")
+    await m.answer("✅ Команда создана! Пиши /start_heist")
 
 @dp.message(lambda m: m.text and '/start_heist' in m.text)
 async def cmd_start_heist(m: Message):
     import random
     if random.choice([True, False]):
-        reward = 5000
-        await update_balance(m.chat.id, m.from_user.id, reward)
-        await m.answer(f"✅ <b>ОГРАБЛЕНИЕ УСПЕШНО!</b>\n\n💰 Ты получил {fmt_money(reward)}!\n\n🎉 Поздравляем!", parse_mode="HTML")
+        await m.answer("✅ УСПЕХ! +5000 сарапулок!")
     else:
-        await m.answer("❌ <b>ОГРАБЛЕНИЕ ПРОВАЛИЛОСЬ!</b>\n\n Тюрьма 4 часа\n😔 В следующий раз повезёт!", parse_mode="HTML")
-
-@dp.message(lambda m: m.text and '/buy_upgrade' in m.text)
-async def cmd_buy_upgrade(m: Message):
-    await m.answer(" <b>Улучшения:</b>\n\n🔫 Оружие — 5000 (+20% шанс)\n🚗 Машина — 3000 (быстрый отход)\n💣 Взрывчатка — 7000 (+30% награда)\n🎭 Маски — 2000 (-2 часа тюрьмы)\n\nИспользуй: /buy_upgrade weapon", parse_mode="HTML")
+        await m.answer("❌ ПРОВАЛ! Тюрьма 4 часа.")
 
 async def main():
     await init_db()
@@ -3791,5 +3768,5 @@ async def main():
     asyncio.create_task(stock_dividend_loop())
     await dp.start_polling(bot, timeout=30, drop_pending_updates=True, allowed_updates=["message", "callback_query", "my_chat_member"])
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     asyncio.run(main())
