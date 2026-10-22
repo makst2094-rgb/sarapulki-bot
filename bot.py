@@ -3733,26 +3733,6 @@ async def on_user_join(m: Message):
         await get_user(cid, user.id)
         await save_username(cid, user.id, user.full_name)
 
-# === ОБНОВА ОГРАБЛЕНИЙ ===
-BANKS = {"local": {"name": " Местный", "reward": 5000}, "city": {"name": "🏛️ Городской", "reward": 20000}}
-
-@dp.message(lambda m: m.text and '/bank_heist' in m.text)
-async def cmd_bank_heist(m: Message):
-    await m.answer("🏦 <b>ОГРАБЛЕНИЯ</b>\n\n🏦 Местный: 5000\n🏛️ Городской: 20000\n\nПиши /create_heist local", parse_mode="HTML")
-
-@dp.message(lambda m: m.text and '/create_heist' in m.text)
-async def cmd_create_heist(m: Message):
-    if not m.reply_to_message: return await m.answer("❌ Ответь на игрока!")
-    await m.answer("✅ Команда создана! Пиши /start_heist")
-
-@dp.message(lambda m: m.text and '/start_heist' in m.text)
-async def cmd_start_heist(m: Message):
-    import random
-    if random.choice([True, False]):
-        await m.answer("✅ УСПЕХ! +5000 сарапулок!")
-    else:
-        await m.answer("❌ ПРОВАЛ! Тюрьма 4 часа.")
-
 async def main():
     await init_db()
     print("🤖 Бот запущен!")
@@ -3768,5 +3748,5 @@ async def main():
     asyncio.create_task(stock_dividend_loop())
     await dp.start_polling(bot, timeout=30, drop_pending_updates=True, allowed_updates=["message", "callback_query", "my_chat_member"])
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
