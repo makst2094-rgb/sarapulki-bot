@@ -2107,92 +2107,26 @@ async def cmd_jail(m: Message):
     )
 
 # ═══════════════════════════════════════════
-#  ОГРАБЛЕНИЯ БАНКОВ
-# ═══════════════════════════════════════════
-
-BANKS = {
-    "local": {"name": "🏦 Местный банк", "reward": 5000, "chance": 70, "min": 2, "max": 3, "jail": 4, "fee": 5000},
-    "city": {"name": "🏛️ Городской банк", "reward": 20000, "chance": 50, "min": 3, "max": 4, "jail": 6, "fee": 10000},
-    "central": {"name": "🏢 Центральный банк", "reward": 100000, "chance": 30, "min": 4, "max": 5, "jail": 8, "fee": 25000},
-    "swiss": {"name": "🇨🇭 Швейцарский банк", "reward": 500000, "chance": 15, "min": 5, "max": 5, "jail": 12, "fee": 50000}
-}
-
-@dp.message(Command("bank_heist"))
-async def cmd_bank_heist(m: Message):
-    """Показать список банков для ограбления"""
-    cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer(" Вы в тюрьме!")
-    
-    t = "🏦 <b>ОГРАБЛЕНИЯ БАНКОВ</b>\n\n"
-    t += "━━━━━━━━━━━━━━━━━━━━\n"
-    t += "📋 <b>ДОСТУПНЫЕ БАНКИ:</b>\n\n"
-    
-    for key, bank in BANKS.items():
-        t += f"{bank['name']}\n"
-        t += f"   💰 Награда: {fmt_money(bank['reward'])}\n"
-        t += f"   🎯 Шанс: {bank['chance']}%\n"
-        t += f"   👥 Игроков: {bank['min']}-{bank['max']}\n"
-        t += f"   🔒 Тюрьма: {bank['jail']}ч\n"
-        t += f"   💵 Взнос: {fmt_money(bank['fee'])}\n\n"
-    
-    t += "━━━━━━━━━━━━━━━━━━━━\n"
-    t += "💡 <b>Как играть:</b>\n"
-    t += "1️⃣ Ответь на сообщение игрока\n"
-    t += "2️ Напиши /create_heist local\n"
-    t += "3️⃣ Начни: /start_heist\n\n"
-    t += "⚠️ При провале вся команда в тюрьме!"
-    
-    await m.answer(t, parse_mode="HTML")
-
-@dp.message(Command("create_heist"))
-async def cmd_create_heist(m: Message):
-    """Создать команду для ограбления"""
-    cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer(" Вы в тюрьме!")
-    
-    if not m.reply_to_message:
-        return await m.answer("❌ Ответь на сообщение игрока!")
-    
-    args = m.text.split()
-    if len(args) < 2 or args[1] not in BANKS:
-        return await m.answer("Используй: /create_heist local\nТипы: local, city, central, swiss")
-    
-    bank = BANKS[args[1]]
-    leader = m.from_user.full_name
-    partner = m.reply_to_message.from_user.full_name
-    
-    await m.answer(
-        f"🏦 <b>КОМАНДА СОЗДАНА!</b>\n\n"
-        f"🏛️ Банк: {bank['name']}\n"
-        f" {leader} + {partner}\n"
-        f"💰 Награда: {fmt_money(bank['reward'])}\n"
-        f"🎯 Шанс: {bank['chance']}%\n\n"
-        f"Теперь напиши /start_heist",
-        parse_mode="HTML"
-    )
-
-# ═══════════════════════════════════════════
-#  ОГРАБЛЕНИЯ БАНКОВ — ИНТЕРАКТИВНАЯ ВЕРСИЯ
-# ═══════════════════════════════════════════
+#  ОГРАБЛЕНИЯ БАНКОВ — ИНТЕРАКТИВНЫЕ
+# ══════════════════════════════════════════
 
 BANKS = {
     "local": {"name": "🏦 Местный банк", "reward": 5000, "chance": 70, "jail": 4},
     "city": {"name": "🏛️ Городской банк", "reward": 20000, "chance": 50, "jail": 6},
     "central": {"name": "🏢 Центральный банк", "reward": 100000, "chance": 30, "jail": 8},
-    "swiss": {"name": "🇨 Швейцарский банк", "reward": 500000, "chance": 15, "jail": 12}
+    "swiss": {"name": "🇨🇭 Швейцарский банк", "reward": 500000, "chance": 15, "jail": 12}
 }
 
 TOOLS = {
     "lockpick": {"name": "🔑 Отмычка", "price": 1000, "bonus": 15, "desc": "+15% к шансу"},
-    "mask": {"name": "🎭 Маска", "price": 500, "bonus": 0, "desc": "-1 час тюрьмы при провале"},
+    "mask": {"name": "🎭 Маска", "price": 500, "bonus": 0, "jail_reduce": 1, "desc": "-1 час тюрьмы"},
     "crowbar": {"name": " Монтировка", "price": 2000, "bonus": 25, "desc": "+25% к шансу"},
     "c4": {"name": "💣 Взрывчатка C4", "price": 5000, "bonus": 40, "desc": "+40% к шансу"}
 }
 
 @dp.message(Command("bank_heist"))
 async def cmd_bank_heist(m: Message):
+    """Показать список банков"""
     cid, uid = m.chat.id, m.from_user.id
     if await is_in_jail(cid, uid):
         return await m.answer("🔒 Вы в тюрьме!")
@@ -2203,20 +2137,27 @@ async def cmd_bank_heist(m: Message):
         t += f"{bank['name']}\n"
         t += f"   💰 Награда: {fmt_money(bank['reward'])}\n"
         t += f"   🎯 Базовый шанс: {bank['chance']}%\n"
-        t += f"   🔒 Тюрьма: {bank['jail']}ч\n"
+        t += f"   🔒 Тюрьма при провале: {bank['jail']}ч\n"
         t += f"   🛠️ Начать: /prepare_heist {key}\n\n"
-    t += " Сначала выберите инструмент через /buy_tool!"
+    t += "━━━━━━━━━━━━━━━━━━━━\n"
+    t += "💡 <b>Сначала купите инструмент:</b>\n"
+    t += "/buy_tool — показать инструменты\n"
+    t += "/buy_tool lockpick — отмычка (1000₽)\n"
+    t += "/buy_tool mask — маска (500₽)\n"
+    t += "/buy_tool crowbar — монтировка (2000₽)\n"
+    t += "/buy_tool c4 — взрывчатка (5000₽)"
     await m.answer(t, parse_mode="HTML")
 
 @dp.message(Command("buy_tool"))
 async def cmd_buy_tool(m: Message):
+    """Купить инструмент для ограбления"""
     cid, uid = m.chat.id, m.from_user.id
     if await is_in_jail(cid, uid):
         return await m.answer("🔒 Вы в тюрьме!")
     
     args = m.text.split()
     if len(args) < 2 or args[1] not in TOOLS:
-        t = "️ <b>МАГАЗИН ИНСТРУМЕНТОВ</b>\n\n"
+        t = "🛠️ <b>ИНСТРУМЕНТЫ ДЛЯ ОГРАБЛЕНИЙ</b>\n\n"
         for key, tool in TOOLS.items():
             t += f"{tool['name']} — {fmt_money(tool['price'])}\n"
             t += f"   {tool['desc']}\n"
@@ -2229,18 +2170,19 @@ async def cmd_buy_tool(m: Message):
     user = await get_user(cid, uid)
     
     if user['balance'] < tool['price']:
-        return await m.answer(f" Нужно {fmt_money(tool['price'])}. У вас: {fmt_money(user['balance'])}")
+        return await m.answer(f"❌ Нужно {fmt_money(tool['price'])}. У вас: {fmt_money(user['balance'])}")
     
-    await update_balance(cid, uid, -tool['price'])
-    # Сохраняем купленный инструмент во временное хранилище (в памяти бота)
+    # Сохраняем купленный инструмент
     if not hasattr(bot, 'heist_tools'):
         bot.heist_tools = {}
     bot.heist_tools[uid] = tool_key
     
+    await update_balance(cid, uid, -tool['price'])
+    
     await m.answer(
         f"✅ <b>Инструмент куплен!</b>\n\n"
         f"{tool['name']}\n"
-        f" Списано: {fmt_money(tool['price'])}\n"
+        f"💰 Списано: {fmt_money(tool['price'])}\n"
         f"📝 {tool['desc']}\n\n"
         f"💡 Используйте /prepare_heist local для начала!",
         parse_mode="HTML"
@@ -2248,7 +2190,7 @@ async def cmd_buy_tool(m: Message):
 
 @dp.message(Command("prepare_heist"))
 async def cmd_prepare_heist(m: Message):
-    """Выбор банка и начало анимации"""
+    """Подготовка к ограблению с анимацией"""
     cid, uid = m.chat.id, m.from_user.id
     if await is_in_jail(cid, uid):
         return await m.answer("🔒 Вы в тюрьме!")
@@ -2260,34 +2202,33 @@ async def cmd_prepare_heist(m: Message):
     bank_key = args[1]
     bank = BANKS[bank_key]
     
-    # Проверяем, есть ли инструмент
+    # Проверяем инструмент
     current_tool = getattr(bot, 'heist_tools', {}).get(uid)
     if not current_tool:
         return await m.answer(
             f"❌ <b>Нужен инструмент!</b>\n\n"
-            f"Для ограбления «{bank['name']}» нужен инструмент.\n"
-            f"Купите его: /buy_tool\n\n"
-            f"Доступны: отмычка, маска, монтировка, C4",
+            f"Купите: /buy_tool\n"
+            f"Доступны: lockpick, mask, crowbar, c4",
             parse_mode="HTML"
         )
     
     tool = TOOLS[current_tool]
     final_chance = min(95, bank['chance'] + tool['bonus'])
     
-    # Интерактивная подготовка
+    # Анимация подготовки
     msg = await m.answer(
         f"🏦 <b>ПОДГОТОВКА К ДЕЛУ...</b>\n\n"
-        f"️ Цель: {bank['name']}\n"
-        f"🛠️ Инструмент: {tool['name']}\n"
+        f"🏛️ Цель: {bank['name']}\n"
+        f"️ Инструмент: {tool['name']}\n"
         f"🎯 Шанс успеха: {final_chance}%\n\n"
         f"⏳ Изучаем план здания...",
         parse_mode="HTML"
     )
     
-    await asyncio.sleep(3)  # Пауза 3 сек
+    await asyncio.sleep(3)
     
     await msg.edit_text(
-        f"🏦 <b>ПОДГОТОВКА К ДЕЛУ...</b>\n\n"
+        f" <b>ПОДГОТОВКА К ДЕЛУ...</b>\n\n"
         f"🏛️ Цель: {bank['name']}\n"
         f"🛠️ Инструмент: {tool['name']}\n"
         f"🎯 Шанс успеха: {final_chance}%\n\n"
@@ -2295,11 +2236,11 @@ async def cmd_prepare_heist(m: Message):
         parse_mode="HTML"
     )
     
-    await asyncio.sleep(3)  # Пауза 3 сек
+    await asyncio.sleep(3)
     
     # Случайное событие
     event_roll = random.random()
-    if event_roll < 0.2:  # 20% шанс на осложнение
+    if event_roll < 0.2:
         await msg.edit_text(
             f"🚨 <b>ВНИМАНИЕ!</b>\n\n"
             f"🏛️ Цель: {bank['name']}\n"
@@ -2326,7 +2267,7 @@ async def cmd_prepare_heist(m: Message):
     roll = random.randint(1, 100)
     success = roll <= final_chance
     
-    # Удаляем использованный инструмент
+    # Удаляем инструмент
     if uid in getattr(bot, 'heist_tools', {}):
         del bot.heist_tools[uid]
     
@@ -2352,9 +2293,9 @@ async def cmd_prepare_heist(m: Message):
         await send_to_jail(cid, uid, jail_time)
         await msg.edit_text(
             f"❌ <b>ОГРАБЛЕНИЕ ПРОВАЛИЛОСЬ!</b>\n\n"
-            f" Банк: {bank['name']}\n"
+            f"🏦 Банк: {bank['name']}\n"
             f"🛠️ Инструмент: {tool['name']}\n"
-            f" Тюрьма: <b>{jail_time} часов</b>\n"
+            f"🔒 Тюрьма: <b>{jail_time} часов</b>\n"
             f"🎲 Выпало: {roll} из 100\n"
             f"🎯 Шанс был: {final_chance}%\n\n"
             f"😔 Вас поймали! Следующий раз повезёт...",
