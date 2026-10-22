@@ -304,6 +304,14 @@ async def init_db():
             min_increment INTEGER DEFAULT 100
         )""")
         print("✅ Таблица auctions создана")
+
+        await conn.execute("""CREATE TABLE IF NOT EXISTS heist_cooldowns (
+            chat_id BIGINT,
+            user_id BIGINT,
+            last_heist_time REAL DEFAULT 0,
+            PRIMARY KEY (chat_id, user_id)
+        )""")
+        print("✅ Таблица heist_cooldowns создана")
         
         await conn.execute("""CREATE TABLE IF NOT EXISTS auction_bids (
             id SERIAL PRIMARY KEY,
@@ -1696,10 +1704,10 @@ async def cmd_start(m: Message):
         "🏆 <b>Аукцион:</b>\n"
         "  /auction — активные лоты\n"
         "  /bid ID сумма — сделать ставку\n\n"
-        "🏦 <b>Ограбления:</b>\n"
+        " <b>Ограбления банков:</b>\n"
         "  /bank_heist — список банков\n"
-        "  /buy_tool — купить инструмент\n"
-        "  /prepare_heist тип — начать дело\n\n"
+        "  /buy_tool — магазин инструментов\n"
+        "  /create_heist тип — создать лобби (3 игрока)\n\n"
         " <b>Инфо:</b>\n"
         "  /info — карточка\n"
         "  /rating — рейтинг\n"
