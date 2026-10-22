@@ -1698,8 +1698,8 @@ async def cmd_start(m: Message):
         "  /bid ID сумма — сделать ставку\n\n"
         "🏦 <b>Ограбления:</b>\n"
         "  /bank_heist — список банков\n"
-        "  /create_heist тип — создать команду\n"
-        "  /start_heist — начать\n\n"
+        "  /buy_tool — купить инструмент\n"
+        "  /prepare_heist тип — начать дело\n\n"
         " <b>Инфо:</b>\n"
         "  /info — карточка\n"
         "  /rating — рейтинг\n"
@@ -2173,36 +2173,191 @@ async def cmd_create_heist(m: Message):
         parse_mode="HTML"
     )
 
-@dp.message(Command("start_heist"))
-async def cmd_start_heist(m: Message):
-    """Начать ограбление банка"""
+# ═══════════════════════════════════════════
+#  ОГРАБЛЕНИЯ БАНКОВ — ИНТЕРАКТИВНАЯ ВЕРСИЯ
+# ═══════════════════════════════════════════
+
+BANKS = {
+    "local": {"name": "🏦 Местный банк", "reward": 5000, "chance": 70, "jail": 4},
+    "city": {"name": "🏛️ Городской банк", "reward": 20000, "chance": 50, "jail": 6},
+    "central": {"name": "🏢 Центральный банк", "reward": 100000, "chance": 30, "jail": 8},
+    "swiss": {"name": "🇨 Швейцарский банк", "reward": 500000, "chance": 15, "jail": 12}
+}
+
+TOOLS = {
+    "lockpick": {"name": "🔑 Отмычка", "price": 1000, "bonus": 15, "desc": "+15% к шансу"},
+    "mask": {"name": "🎭 Маска", "price": 500, "bonus": 0, "desc": "-1 час тюрьмы при провале"},
+    "crowbar": {"name": " Монтировка", "price": 2000, "bonus": 25, "desc": "+25% к шансу"},
+    "c4": {"name": "💣 Взрывчатка C4", "price": 5000, "bonus": 40, "desc": "+40% к шансу"}
+}
+
+@dp.message(Command("bank_heist"))
+async def cmd_bank_heist(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     if await is_in_jail(cid, uid):
-        return await m.answer(" Вы в тюрьме!")
+        return await m.answer("🔒 Вы в тюрьме!")
     
-    import random
+    t = "🏦 <b>ОГРАБЛЕНИЯ БАНКОВ</b>\n\n"
+    t += "━━━━━━━━━━━━━━━━━━━━\n"
+    for key, bank in BANKS.items():
+        t += f"{bank['name']}\n"
+        t += f"   💰 Награда: {fmt_money(bank['reward'])}\n"
+        t += f"   🎯 Базовый шанс: {bank['chance']}%\n"
+        t += f"   🔒 Тюрьма: {bank['jail']}ч\n"
+        t += f"   🛠️ Начать: /prepare_heist {key}\n\n"
+    t += " Сначала выберите инструмент через /buy_tool!"
+    await m.answer(t, parse_mode="HTML")
+
+@dp.message(Command("buy_tool"))
+async def cmd_buy_tool(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid):
+        return await m.answer("🔒 Вы в тюрьме!")
     
-    # Симуляция ограбления (упрощённая версия)
-    bank = BANKS["local"]  # По умолчанию местный банк
-    success = random.random() * 100 < bank['chance']
+    args = m.text.split()
+    if len(args) < 2 or args[1] not in TOOLS:
+        t = "️ <b>МАГАЗИН ИНСТРУМЕНТОВ</b>\n\n"
+        for key, tool in TOOLS.items():
+            t += f"{tool['name']} — {fmt_money(tool['price'])}\n"
+            t += f"   {tool['desc']}\n"
+            t += f"   🛒 /buy_tool {key}\n\n"
+        t += "⚠️ Инструмент расходуется после ограбления!"
+        return await m.answer(t, parse_mode="HTML")
+    
+    tool_key = args[1]
+    tool = TOOLS[tool_key]
+    user = await get_user(cid, uid)
+    
+    if user['balance'] < tool['price']:
+        return await m.answer(f" Нужно {fmt_money(tool['price'])}. У вас: {fmt_money(user['balance'])}")
+    
+    await update_balance(cid, uid, -tool['price'])
+    # Сохраняем купленный инструмент во временное хранилище (в памяти бота)
+    if not hasattr(bot, 'heist_tools'):
+        bot.heist_tools = {}
+    bot.heist_tools[uid] = tool_key
+    
+    await m.answer(
+        f"✅ <b>Инструмент куплен!</b>\n\n"
+        f"{tool['name']}\n"
+        f" Списано: {fmt_money(tool['price'])}\n"
+        f"📝 {tool['desc']}\n\n"
+        f"💡 Используйте /prepare_heist local для начала!",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("prepare_heist"))
+async def cmd_prepare_heist(m: Message):
+    """Выбор банка и начало анимации"""
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid):
+        return await m.answer("🔒 Вы в тюрьме!")
+    
+    args = m.text.split()
+    if len(args) < 2 or args[1] not in BANKS:
+        return await m.answer("Используй: /prepare_heist local\nТипы: local, city, central, swiss")
+    
+    bank_key = args[1]
+    bank = BANKS[bank_key]
+    
+    # Проверяем, есть ли инструмент
+    current_tool = getattr(bot, 'heist_tools', {}).get(uid)
+    if not current_tool:
+        return await m.answer(
+            f"❌ <b>Нужен инструмент!</b>\n\n"
+            f"Для ограбления «{bank['name']}» нужен инструмент.\n"
+            f"Купите его: /buy_tool\n\n"
+            f"Доступны: отмычка, маска, монтировка, C4",
+            parse_mode="HTML"
+        )
+    
+    tool = TOOLS[current_tool]
+    final_chance = min(95, bank['chance'] + tool['bonus'])
+    
+    # Интерактивная подготовка
+    msg = await m.answer(
+        f"🏦 <b>ПОДГОТОВКА К ДЕЛУ...</b>\n\n"
+        f"️ Цель: {bank['name']}\n"
+        f"🛠️ Инструмент: {tool['name']}\n"
+        f"🎯 Шанс успеха: {final_chance}%\n\n"
+        f"⏳ Изучаем план здания...",
+        parse_mode="HTML"
+    )
+    
+    await asyncio.sleep(3)  # Пауза 3 сек
+    
+    await msg.edit_text(
+        f"🏦 <b>ПОДГОТОВКА К ДЕЛУ...</b>\n\n"
+        f"🏛️ Цель: {bank['name']}\n"
+        f"🛠️ Инструмент: {tool['name']}\n"
+        f"🎯 Шанс успеха: {final_chance}%\n\n"
+        f"⏳ Подбираем коды к сейфу...",
+        parse_mode="HTML"
+    )
+    
+    await asyncio.sleep(3)  # Пауза 3 сек
+    
+    # Случайное событие
+    event_roll = random.random()
+    if event_roll < 0.2:  # 20% шанс на осложнение
+        await msg.edit_text(
+            f"🚨 <b>ВНИМАНИЕ!</b>\n\n"
+            f"🏛️ Цель: {bank['name']}\n"
+            f"🛠️ Инструмент: {tool['name']}\n"
+            f"🎯 Шанс упал до: {max(5, final_chance - 15)}%\n\n"
+            f"⚠️ Внезапная проверка охраны!\n"
+            f"⏳ Начинаем немедленно...",
+            parse_mode="HTML"
+        )
+        final_chance = max(5, final_chance - 15)
+        await asyncio.sleep(2)
+    else:
+        await msg.edit_text(
+            f"✅ <b>ВСЁ ГОТОВО!</b>\n\n"
+            f"🏛️ Цель: {bank['name']}\n"
+            f"🛠️ Инструмент: {tool['name']}\n"
+            f"🎯 Финальный шанс: {final_chance}%\n\n"
+            f"🚀 Запускаем операцию...",
+            parse_mode="HTML"
+        )
+        await asyncio.sleep(2)
+    
+    # Финальный бросок
+    roll = random.randint(1, 100)
+    success = roll <= final_chance
+    
+    # Удаляем использованный инструмент
+    if uid in getattr(bot, 'heist_tools', {}):
+        del bot.heist_tools[uid]
     
     if success:
         reward = bank['reward']
         await update_balance(cid, uid, reward)
-        await m.answer(
+        await msg.edit_text(
             f"✅ <b>ОГРАБЛЕНИЕ УСПЕШНО!</b>\n\n"
-            f" Банк: {bank['name']}\n"
-            f"💰 Ты получил {fmt_money(reward)}!\n\n"
-            f" Поздравляем!",
+            f"🏦 Банк: {bank['name']}\n"
+            f"🛠️ Инструмент: {tool['name']}\n"
+            f"💰 Награда: <b>{fmt_money(reward)}</b>\n"
+            f"🎲 Выпало: {roll} из 100\n"
+            f"🎯 Шанс был: {final_chance}%\n\n"
+            f"🎉 Поздравляем! Вы скрылись незаметно!",
             parse_mode="HTML"
         )
     else:
-        await send_to_jail(cid, uid, bank['jail'])
-        await m.answer(
+        jail_time = bank['jail']
+        if current_tool == 'mask':
+            jail_time -= 1
+        jail_time = max(1, jail_time)
+        
+        await send_to_jail(cid, uid, jail_time)
+        await msg.edit_text(
             f"❌ <b>ОГРАБЛЕНИЕ ПРОВАЛИЛОСЬ!</b>\n\n"
-            f"🏦 Банк: {bank['name']}\n"
-            f" Тюрьма: {bank['jail']} часов\n\n"
-            f"😔 В следующий раз повезёт!",
+            f" Банк: {bank['name']}\n"
+            f"🛠️ Инструмент: {tool['name']}\n"
+            f" Тюрьма: <b>{jail_time} часов</b>\n"
+            f"🎲 Выпало: {roll} из 100\n"
+            f"🎯 Шанс был: {final_chance}%\n\n"
+            f"😔 Вас поймали! Следующий раз повезёт...",
             parse_mode="HTML"
         )
 
