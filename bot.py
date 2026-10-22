@@ -2618,105 +2618,6 @@ async def cmd_check(m: Message):
         except:
             pass
 
-    # ═══════════════════════════════════════════
-#  АДМИНСКИЕ КОМАНДЫ ТЮРЬМЫ
-# ═══════════════════════════════════════════
-
-@dp.message(Command("admin_jail"))
-async def cmd_admin_jail(m: Message):
-    """Админ сажает игрока в тюрьму"""
-    if m.from_user.id not in ADMIN_IDS:
-        return await m.answer("❌ Только для админов!")
-    
-    if not m.reply_to_message:
-        return await m.answer(
-            "️ <b>Использование:</b>\n\n"
-            "Ответь на сообщение игрока и напиши:\n"
-            "<code>/admin_jail часы</code>\n\n"
-            "Пример: <code>/admin_jail 24</code>\n"
-            "По умолчанию: 2 часа",
-            parse_mode="HTML"
-        )
-    
-    args = m.text.split()
-    hours = 2
-    
-    if len(args) >= 2:
-        try:
-            hours = int(args[1])
-            if hours < 1 or hours > 720:
-                return await m.answer("❌ Часы: от 1 до 720")
-        except:
-            return await m.answer("❌ Число часов!")
-    
-    target_uid = m.reply_to_message.from_user.id
-    cid = m.chat.id
-    target_name = m.reply_to_message.from_user.full_name
-    
-    release_time = await send_to_jail(cid, target_uid, hours)
-    
-    await m.answer(
-        f" <b>ИГРОК ПОСАЖЕН В ТЮРЬМУ!</b>\n\n"
-        f"👤 {target_name}\n"
-        f"⏰ Срок: <b>{hours} ч</b>\n"
-        f"🕐 Освобождение: {format_date(release_time)}",
-        parse_mode="HTML"
-    )
-
-@dp.message(Command("admin_unjail"))
-async def cmd_admin_unjail(m: Message):
-    """Админ освобождает игрока из тюрьмы"""
-    if m.from_user.id not in ADMIN_IDS:
-        return await m.answer("❌ Только для админов!")
-    
-    if not m.reply_to_message:
-        return await m.answer(
-            "⚖️ <b>Использование:</b>\n\n"
-            "Ответь на сообщение игрока:\n"
-            "<code>/admin_unjail</code>",
-            parse_mode="HTML"
-        )
-    
-    target_uid = m.reply_to_message.from_user.id
-    cid = m.chat.id
-    target_name = m.reply_to_message.from_user.full_name
-    
-    await release_from_jail(cid, target_uid)
-    
-    await m.answer(
-        f"✅ <b>ИГРОК ОСВОБОЖДЁН!</b>\n\n"
-        f"👤 {target_name}\n"
-        f"🔓 Тюрьма снята!",
-        parse_mode="HTML"
-    )
-
-@dp.message(Command("admin_check_jail"))
-async def cmd_admin_check_jail(m: Message):
-    """Проверить, кто сейчас в тюрьме"""
-    if m.from_user.id not in ADMIN_IDS:
-        return await m.answer("❌ Только для админов!")
-    
-    cid = m.chat.id
-    async with pool.acquire() as conn:
-        jailed = await conn.fetch(
-            "SELECT u.user_id, u.username, j.release_time "
-            "FROM jail j "
-            "JOIN usernames u ON j.chat_id=u.chat_id AND j.user_id=u.user_id "
-            "WHERE j.chat_id=$1 AND j.release_time > $2",
-            cid, time.time()
-        )
-    
-    if not jailed:
-        return await m.answer("✅ В тюрьме никого нет!")
-    
-    t = "🔒 <b>В тюрьме сейчас:</b>\n\n"
-    for row in jailed:
-        name = row['username'] or f"User{row['user_id']}"
-        remaining = int(row['release_time'] - time.time())
-        t += f"👤 {name}\n   ⏰ Осталось: {format_time(remaining)}\n\n"
-    
-    await m.answer(t, parse_mode="HTML")
-
 @dp.message(Command("bank"))
 async def cmd_bank(m: Message):
     cid, uid = m.chat.id, m.from_user.id
@@ -3814,16 +3715,6 @@ async def blackjack_dealer_play(cid, state):
     await bot.send_message(cid, f"🎩 <b>{fn}</b>\n\n🤖 Карты: {show_cards(t['dealer'])} ({ds})\n\n Результаты:\n" + "\n".join(res), parse_mode="HTML")
     del bj_tables[cid]
     await state.clear()
-
-@dp.message(lambda m: m.text and not m.text.startswith('/'))
-async def jail_mute_filter(m: Message):
-    cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        try:
-            await m.delete()
-        except:
-            pass
-        return
 
 @dp.message()
 async def auto_register(m: Message):
