@@ -3815,22 +3815,15 @@ async def blackjack_dealer_play(cid, state):
     del bj_tables[cid]
     await state.clear()
 
-# ═══════════════════════════════════════════
-#  МУТ ЗАКЛЮЧЁННЫХ — удаляет сообщения
-# ═══════════════════════════════════════════
-
 @dp.message(lambda m: m.text and not m.text.startswith('/'))
 async def jail_mute_filter(m: Message):
-    """Удаляет сообщения игроков в тюрьме"""
     cid, uid = m.chat.id, m.from_user.id
-    
     if await is_in_jail(cid, uid):
         try:
             await m.delete()
         except:
             pass
         return
-
 
 @dp.message()
 async def auto_register(m: Message):
