@@ -1707,7 +1707,7 @@ async def cmd_start(m: Message):
         " <b>Ограбления банков:</b>\n"
         "  /bank_heist — список банков\n"
         "  /buy_tool — магазин инструментов\n"
-        "  /create_heist тип — создать лобби (3 игрока)\n\n"
+        "  /heist_create тип — создать лобби (3 игрока)\n\n"
         " <b>Инфо:</b>\n"
         "  /info — карточка\n"
         "  /rating — рейтинг\n"
