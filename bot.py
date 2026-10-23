@@ -2722,14 +2722,8 @@ async def cb_heist_stage3(cb: types.CallbackQuery):
     await cb.answer()
 
 async def finish_heist(cid, lobby, success, reason):
-    # Удаляем лобби из словаря
-lobby_id = f"{cid}_{lobby['creator']}_{int(time.time())}"
-if lobby_id in heist_lobbies:
-    del heist_lobbies[lobby_id]
-else:
-    # Если не нашли по ID, ищем по создателю
-    for lid, l in list(heist_lobbies.items()):
-        if l["creator"] == lobby["creator"]:
+    for lid, l in list(heist_lobbies.items()):    
+        if l is lobby:
             del heist_lobbies[lid]
             break
     bank = lobby["bank"]
