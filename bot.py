@@ -2417,7 +2417,7 @@ async def cb_heist_start(cb: types.CallbackQuery):
         pass
     
     await run_heist(cid, lobby)
-    #del heist_lobbies[lobby_id]
+    del heist_lobbies[lobby_id]
 
 @dp.callback_query(lambda c: c.data.startswith("heist_cancel_"))
 async def cb_heist_cancel(cb: types.CallbackQuery):
@@ -2722,10 +2722,6 @@ async def cb_heist_stage3(cb: types.CallbackQuery):
     await cb.answer()
 
 async def finish_heist(cid, lobby, success, reason):
-        for lid, l in list(heist_lobbies.items()):
-            if l is lobby:
-                del heist_lobbies[lid]
-                break
     bank = lobby["bank"]
     tool_key = lobby["tool_key"]
     tool = TOOLS[tool_key] if tool_key else BASE_TOOL
