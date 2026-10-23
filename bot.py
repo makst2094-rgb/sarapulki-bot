@@ -2310,7 +2310,7 @@ async def cmd_heist_create(m: Message):
 
 @dp.callback_query(lambda c: c.data.startswith("heist_join_"))
 async def cb_heist_join(cb: types.CallbackQuery):
-    lobby_id = cb.data.split("_")[2]
+    lobby_id = cb.data.split("_", 2)[2]
     if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
@@ -2399,7 +2399,7 @@ async def cb_heist_join(cb: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data.startswith("heist_start_"))
 async def cb_heist_start(cb: types.CallbackQuery):
-    lobby_id = cb.data.split("_")[2]
+    lobby_id = cb.data.split("_", 2)[2]
     if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
@@ -2421,7 +2421,7 @@ async def cb_heist_start(cb: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data.startswith("heist_cancel_"))
 async def cb_heist_cancel(cb: types.CallbackQuery):
-    lobby_id = cb.data.split("_")[2]
+    lobby_id = cb.data.split("_", 2)[2]
     if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
