@@ -2441,7 +2441,6 @@ async def cb_heist_cancel(cb: types.CallbackQuery):
     await cb.answer("✅ Лобби отменено!")
 
 async def run_heist(cid, lobby):
-    """Запуск ограбления"""
     bank = lobby["bank"]
     tool_key = lobby["tool_key"]
     tool = TOOLS[tool_key] if tool_key else BASE_TOOL
@@ -2454,6 +2453,11 @@ async def run_heist(cid, lobby):
         elif role == "sapper": sapper_uid = uid
     
     final_chance = min(95, bank['chance'] + tool['bonus_chance'])
+    lobby_id = None
+    for lid, l in heist_lobbies.items():
+        if l is lobby:
+            lobby_id = lid
+            break
     
     try:
         hacker_name = (await bot.get_chat_member(cid, hacker_uid)).user.full_name
@@ -2461,31 +2465,37 @@ async def run_heist(cid, lobby):
         hacker_name = f"User{hacker_uid}"
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔓 Взломать дверь", callback_data=f"heist_stage1_{hacker_uid}_{final_chance}")]
+        [InlineKeyboardButton(text="🔓 Взломать дверь", callback_data=f"heist_s1-{lobby_id}-{hacker_uid}-{final_chance}")]
     ])
     
     await bot.send_message(
         cid,
         f"🏦 <b>ЭТАП 1: ВЗЛОМ ДВЕРИ</b>\n\n"
-        f"👤 Ответственный: {hacker_name} (Взломщик)\n"
-        f"🏛️ Банк: {bank['name']}\n"
+        f" Ответственный: {hacker_name} (Взломщик)\n"
+        f"️ Банк: {bank['name']}\n"
         f"🛠️ Инструмент: {tool['name']}\n"
-        f"🎯 Шанс успеха: {final_chance}%\n\n"
+        f" Шанс успеха: {final_chance}%\n\n"
         f"⏳ Нажми кнопку, чтобы взломать дверь...",
         reply_markup=kb,
         parse_mode="HTML"
     )
 
-@dp.callback_query(lambda c: c.data.startswith("heist_stage1_"))
+@dp.callback_query(lambda c: c.data and c.data.startswith("heist_s1-"))
 async def cb_heist_stage1(cb: types.CallbackQuery):
-    parts = cb.data.split("_")
+    parts = cb.data.split("-")
+    lobby_id = parts[1]
     player_uid = int(parts[2])
-    chance = int(parts[3])
+    chance = int(float(parts[3]))
     
     if cb.from_user.id != player_uid:
         return await cb.answer("❌ Это не твой этап!", show_alert=True)
     
     cid = cb.message.chat.id
+    
+    if lobby_id not in heist_lobbies:
+        return await cb.answer("❌ Лобби не найдено!", show_alert=True)
+    
+    lobby = heist_lobbies[lobby_id]
     
     roll = random.randint(1, 100)
     success = roll <= chance
@@ -2497,15 +2507,6 @@ async def cb_heist_stage1(cb: types.CallbackQuery):
         f"{'✅ Дверь взломана!' if success else '❌ Взлом провалился!'}",
         parse_mode="HTML"
     )
-    
-    lobby = None
-    for lid, l in heist_lobbies.items():
-        if player_uid in l["players"]:
-            lobby = l
-            break
-    
-    if not lobby:
-        return
     
     if success:
         await asyncio.sleep(2)
@@ -2537,13 +2538,19 @@ async def start_stage2(cid, lobby):
     
     max_attempts = 3 + tool['extra_attempts']
     
+    lobby_id = None
+    for lid, l in heist_lobbies.items():
+        if l is lobby:
+            lobby_id = lid
+            break
+    
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="1️⃣", callback_data=f"heist_stage2_{coder_uid}_1"),
-         InlineKeyboardButton(text="2️⃣", callback_data=f"heist_stage2_{coder_uid}_2"),
-         InlineKeyboardButton(text="3️⃣", callback_data=f"heist_stage2_{coder_uid}_3")],
-        [InlineKeyboardButton(text="4️⃣", callback_data=f"heist_stage2_{coder_uid}_4"),
-         InlineKeyboardButton(text="5️⃣", callback_data=f"heist_stage2_{coder_uid}_5"),
-         InlineKeyboardButton(text="6️⃣", callback_data=f"heist_stage2_{coder_uid}_6")]
+        [InlineKeyboardButton(text="1️⃣", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-1"),
+         InlineKeyboardButton(text="2️⃣", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-2"),
+         InlineKeyboardButton(text="3️⃣", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-3")],
+        [InlineKeyboardButton(text="4️⃣", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-4"),
+         InlineKeyboardButton(text="5️", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-5"),
+         InlineKeyboardButton(text="6️⃣", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-6")]
     ])
     
     await bot.send_message(
@@ -2554,7 +2561,7 @@ async def start_stage2(cid, lobby):
         f"🛠️ Инструмент: {tool['name']}\n\n"
         f"💡 Правильных кнопок: {len(correct_buttons)} из 6\n"
         f"⚠️ Нажми на правильные кнопки!\n\n"
-        f"⏳ У тебя есть {max_attempts} попыток...",
+        f" У тебя есть {max_attempts} попыток...",
         reply_markup=kb,
         parse_mode="HTML"
     )
@@ -2562,25 +2569,21 @@ async def start_stage2(cid, lobby):
     lobby["stage2_attempts"] = 0
     lobby["stage2_found"] = []
 
-@dp.callback_query(lambda c: c.data.startswith("heist_stage2_"))
+@dp.callback_query(lambda c: c.data and c.data.startswith("heist_s2-"))
 async def cb_heist_stage2(cb: types.CallbackQuery):
-    parts = cb.data.split("_")
+    parts = cb.data.split("-")
+    lobby_id = parts[1]
     player_uid = int(parts[2])
     button = int(parts[3])
     
     if cb.from_user.id != player_uid:
         return await cb.answer("❌ Это не твой этап!", show_alert=True)
     
-    cid = cb.message.chat.id
-    
-    lobby = None
-    for lid, l in heist_lobbies.items():
-        if player_uid in l["players"]:
-            lobby = l
-            break
-    
-    if not lobby:
+    if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
+    
+    cid = cb.message.chat.id
+    lobby = heist_lobbies[lobby_id]
     
     correct_buttons = lobby["correct_buttons"]
     attempts = lobby["stage2_attempts"]
@@ -2652,15 +2655,20 @@ async def start_stage3(cid, lobby):
     
     available_wires = wire_options[:total_wires]
     
+    lobby_id = None
+    for lid, l in heist_lobbies.items():
+        if l is lobby:
+            lobby_id = lid
+            break
+    
     kb_rows = []
     for i in range(0, len(available_wires), 2):
         row = []
         for name, num in available_wires[i:i+2]:
-            row.append(InlineKeyboardButton(text=name, callback_data=f"heist_stage3_{sapper_uid}_{num}"))
+            row.append(InlineKeyboardButton(text=name, callback_data=f"heist_s3-{lobby_id}-{sapper_uid}-{num}"))
         kb_rows.append(row)
     
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
-    
     chance_wire = round(100/total_wires)
     
     await bot.send_message(
@@ -2668,7 +2676,7 @@ async def start_stage3(cid, lobby):
         f"💣 <b>ЭТАП 3: ОБЕЗВРЕЖИВАНИЕ СИГНАЛИЗАЦИИ</b>\n\n"
         f"👤 Ответственный: {sapper_name} (Сапёр)\n"
         f"🏛️ Банк: {bank['name']}\n"
-        f"🛠️ Инструмент: {tool['name']}\n\n"
+        f"️ Инструмент: {tool['name']}\n\n"
         f"⚠️ Один из {total_wires} проводов правильный!\n"
         f"🎯 Шанс угадать: {chance_wire}%\n\n"
         f"⏳ Выбери провод...",
@@ -2676,37 +2684,32 @@ async def start_stage3(cid, lobby):
         parse_mode="HTML"
     )
 
-@dp.callback_query(lambda c: c.data.startswith("heist_stage3_"))
+@dp.callback_query(lambda c: c.data and c.data.startswith("heist_s3-"))
 async def cb_heist_stage3(cb: types.CallbackQuery):
-    parts = cb.data.split("_")
+    parts = cb.data.split("-")
+    lobby_id = parts[1]
     player_uid = int(parts[2])
     wire = int(parts[3])
     
     if cb.from_user.id != player_uid:
         return await cb.answer("❌ Это не твой этап!", show_alert=True)
     
-    cid = cb.message.chat.id
-    
-    lobby = None
-    for lid, l in heist_lobbies.items():
-        if player_uid in l["players"]:
-            lobby = l
-            break
-    
-    if not lobby:
+    if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
+    cid = cb.message.chat.id
+    lobby = heist_lobbies[lobby_id]
+    
     correct_wire = lobby["correct_wire"]
-    wire_names = {1: "🔴 Красный", 2: "🔵 Синий", 3: "🟢 Зелёный", 4: "🟡 Жёлтый"}
+    wire_names = {1: "🔴 Красный", 2: " Синий", 3: "🟢 Зелёный", 4: "🟡 Жёлтый"}
     
     if wire == correct_wire:
         await cb.message.edit_text(
-            f"💣 <b>СИГНАЛИЗАЦИЯ ОБЕЗВРЕЖЕНА!</b>\n\n"
+            f" <b>СИГНАЛИЗАЦИЯ ОБЕЗВРЕЖЕНА!</b>\n\n"
             f"✅ Правильный провод: {wire_names[wire]}\n"
-            f"🎉 Все системы отключены!",
+            f" Все системы отключены!",
             parse_mode="HTML"
         )
-        
         await asyncio.sleep(2)
         await finish_heist(cid, lobby, True, "Все этапы пройдены!")
     else:
