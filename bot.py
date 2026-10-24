@@ -2485,17 +2485,19 @@ async def run_heist(cid, lobby):
 async def cb_heist_stage1(cb: types.CallbackQuery):
     parts = cb.data.split("-")
     lobby_id = parts[1]
-    player_uid = int(parts[2])
     chance = int(float(parts[3]))
-    
-    if cb.from_user.id != player_uid:
-        return await cb.answer("❌ Это не твой этап!", show_alert=True)
     
     if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
     cid = cb.message.chat.id
     lobby = heist_lobbies[lobby_id]
+    uid = cb.from_user.id
+    
+    # Проверяем роль через лобби, а не через UID в callback_data
+    role = lobby["players"].get(uid)
+    if role != "hacker":
+        return await cb.answer("❌ Это не твой этап! Ты не Взломщик.", show_alert=True)
     
     roll = random.randint(1, 100)
     success = roll <= chance
@@ -2504,7 +2506,7 @@ async def cb_heist_stage1(cb: types.CallbackQuery):
         f"🔓 <b>ВЗЛОМ ДВЕРИ...</b>\n\n"
         f"🎲 Выпало: {roll}\n"
         f"🎯 Нужно было: ≤{chance}\n\n"
-        f"{'✅ Дверь взломана!' if success else ' Взлом провалился!'}",
+        f"{'✅ Дверь взломана!' if success else '❌ Взлом провалился!'}",
         parse_mode="HTML"
     )
     
@@ -2573,17 +2575,19 @@ async def start_stage2(cid, lobby):
 async def cb_heist_stage2(cb: types.CallbackQuery):
     parts = cb.data.split("-")
     lobby_id = parts[1]
-    player_uid = int(parts[2])
     button = int(parts[3])
-    
-    if cb.from_user.id != player_uid:
-        return await cb.answer("❌ Это не твой этап!", show_alert=True)
     
     if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
     cid = cb.message.chat.id
     lobby = heist_lobbies[lobby_id]
+    uid = cb.from_user.id
+    
+    # Проверяем роль через лобби
+    role = lobby["players"].get(uid)
+    if role != "coder":
+        return await cb.answer("❌ Это не твой этап! Ты не Хакер.", show_alert=True)
     
     correct_buttons = lobby["correct_buttons"]
     attempts = lobby["stage2_attempts"]
@@ -2688,24 +2692,26 @@ async def start_stage3(cid, lobby):
 async def cb_heist_stage3(cb: types.CallbackQuery):
     parts = cb.data.split("-")
     lobby_id = parts[1]
-    player_uid = int(parts[2])
     wire = int(parts[3])
-    
-    if cb.from_user.id != player_uid:
-        return await cb.answer("❌ Это не твой этап!", show_alert=True)
     
     if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
     cid = cb.message.chat.id
     lobby = heist_lobbies[lobby_id]
+    uid = cb.from_user.id
+    
+    # Проверяем роль через лобби
+    role = lobby["players"].get(uid)
+    if role != "sapper":
+        return await cb.answer(" Это не твой этап! Ты не Сапёр.", show_alert=True)
     
     correct_wire = lobby["correct_wire"]
-    wire_names = {1: "🔴 Красный", 2: "🔵 Синий", 3: "🟢 Зелёный", 4: "🟡 Жёлтый"}
+    wire_names = {1: "🔴 Красный", 2: " Синий", 3: "🟢 Зелёный", 4: "🟡 Жёлтый"}
     
     if wire == correct_wire:
         await cb.message.edit_text(
-            f"💣 <b>СИГНАЛИЗАЦИЯ ОБЕЗВРЕЖЕНА!</b>\n\n"
+            f" <b>СИГНАЛИЗАЦИЯ ОБЕЗВРЕЖЕНА!</b>\n\n"
             f"✅ Правильный провод: {wire_names[wire]}\n"
             f" Все системы отключены!",
             parse_mode="HTML"
