@@ -321,6 +321,14 @@ async def init_db():
             bid_time REAL DEFAULT 0
         )""")
         print("✅ Таблица auction_bids создана")
+
+    await conn.execute("""CREATE TABLE IF NOT EXISTS heist_cooldowns (
+            chat_id BIGINT,
+            user_id BIGINT,
+            last_heist_time REAL DEFAULT 0,
+            PRIMARY KEY (chat_id, user_id)
+        )""")
+        print("✅ Таблица heist_cooldowns создана")
         
     print("✅ База данных готова")
 
@@ -2114,15 +2122,15 @@ async def cmd_jail(m: Message):
         parse_mode="HTML"
     )
 
-# ═══════════════════════════════════════════
-#  ОГРАБЛЕНИЯ БАНКОВ — ПОЛНАЯ СИСТЕМА
-# ═══════════════════════════════════════════
+# ══════════════════════════════════════════
+#  ОГРАБЛЕНИЯ БАНКОВ — ЧИСТЫЙ КОД
+# ═════════════════════════════════════════
 
-HEIST_COOLDOWN = 86400  # 24 часа
+HEIST_COOLDOWN = 86400
 
 BANKS = {
     "local": {"name": "🏦 Местный банк", "reward": 5000, "chance": 70, "jail": 4},
-    "city": {"name": "🏛️ Городской банк", "reward": 20000, "chance": 50, "jail": 6},
+    "city": {"name": "️ Городской банк", "reward": 20000, "chance": 50, "jail": 6},
     "central": {"name": "🏢 Центральный банк", "reward": 100000, "chance": 30, "jail": 8},
     "swiss": {"name": "🇨🇭 Швейцарский банк", "reward": 500000, "chance": 15, "jail": 12}
 }
@@ -2131,7 +2139,7 @@ TOOLS = {
     "lockpick": {"name": "🔑 Отмычка", "price": 15000, "bonus_chance": 15, "extra_attempts": 1, "wire_reduce": 0, "jail_reduce": 1, "desc": "+15% дверь | +1 попытка сейф | -1ч тюрьма"},
     "crowbar": {"name": "🔧 Монтировка", "price": 35000, "bonus_chance": 25, "extra_attempts": 1, "wire_reduce": 0, "jail_reduce": 1, "desc": "+25% дверь | +1 попытка сейф | -1ч тюрьма"},
     "c4": {"name": "💣 Взрывчатка C4", "price": 85000, "bonus_chance": 40, "extra_attempts": 2, "wire_reduce": 1, "jail_reduce": 2, "desc": "+40% дверь | +2 попытки сейф | убирает 1 провод | -2ч тюрьма"},
-    "mask": {"name": "🎭 Маска", "price": 8000, "bonus_chance": 0, "extra_attempts": 0, "wire_reduce": 0, "jail_reduce": 2, "desc": "-2 часа тюрьмы при провале"}
+    "mask": {"name": " Маска", "price": 8000, "bonus_chance": 0, "extra_attempts": 0, "wire_reduce": 0, "jail_reduce": 2, "desc": "-2 часа тюрьмы при провале"}
 }
 
 BASE_TOOL = {"name": "👊 Голыми руками", "bonus_chance": 0, "extra_attempts": 0, "wire_reduce": 0, "jail_reduce": 0}
@@ -2166,7 +2174,6 @@ async def set_heist_cooldown(cid, uid):
         pass
 
 async def check_cooldown(cid, uid):
-    """Возвращает (есть_кулдаун, сколько_осталось_секунд)"""
     try:
         last = await get_heist_cooldown(cid, uid)
         if last == 0:
@@ -2187,7 +2194,7 @@ async def cmd_bank_heist(m: Message):
     t = "🏦 <b>ОГРАБЛЕНИЯ БАНКОВ</b>\n\n"
     t += "━━━━━━━━━━━━━━━━━━━━\n"
     t += "👥 <b>Команда: ровно 3 игрока</b>\n\n"
-    t += "📋 <b>Роли:</b>\n"
+    t += " <b>Роли:</b>\n"
     t += "🔓 Взломщик — взламывает дверь\n"
     t += "💻 Хакер — подбирает код к сейфу\n"
     t += "💣 Сапёр — обезвреживает сигнализацию\n\n"
@@ -2197,16 +2204,16 @@ async def cmd_bank_heist(m: Message):
     t += "📋 <b>ДОСТУПНЫЕ БАНКИ:</b>\n\n"
     for key, bank in BANKS.items():
         t += f"{bank['name']}\n"
-        t += f"   💰 Награда каждому: {fmt_money(bank['reward'])}\n"
-        t += f"   🎯 Базовый шанс: {bank['chance']}%\n"
+        t += f"    Награда каждому: {fmt_money(bank['reward'])}\n"
+        t += f"    Базовый шанс: {bank['chance']}%\n"
         t += f"   🔒 Тюрьма: {bank['jail']}ч\n"
-        t += f"   🛠️ /heist_create {key}\n\n"
+        t += f"   ️ /heist_create {key}\n\n"
     t += "━━━━━━━━━━━━━━━━━━━━\n"
     t += "🛠️ <b>Магазин инструментов:</b>\n"
     for key, tool in TOOLS.items():
         t += f"/buy_tool {key} — {tool['name']} ({fmt_money(tool['price'])})\n"
         t += f"   {tool['desc']}\n\n"
-    t += f"⏰ Кулдаун: <b>24 часа</b>"
+    t += f" Кулдаун: <b>24 часа</b>"
     await m.answer(t, parse_mode="HTML")
 
 @dp.message(Command("buy_tool"))
@@ -2217,7 +2224,7 @@ async def cmd_buy_tool(m: Message):
     
     args = m.text.split()
     if len(args) < 2 or args[1] not in TOOLS:
-        t = "🛠️ <b>МАГАЗИН ИНСТРУМЕНТОВ</b>\n\n"
+        t = "️ <b>МАГАЗИН ИНСТРУМЕНТОВ</b>\n\n"
         for key, tool in TOOLS.items():
             t += f"{tool['name']} — {fmt_money(tool['price'])}\n"
             t += f"   {tool['desc']}\n"
@@ -2231,7 +2238,7 @@ async def cmd_buy_tool(m: Message):
     user = await get_user(cid, uid)
     
     if user['balance'] < tool['price']:
-        return await m.answer(f"❌ Нужно {fmt_money(tool['price'])}. У вас: {fmt_money(user['balance'])}")
+        return await m.answer(f" Нужно {fmt_money(tool['price'])}. У вас: {fmt_money(user['balance'])}")
     
     if not hasattr(bot, 'heist_tools'):
         bot.heist_tools = {}
@@ -2243,14 +2250,13 @@ async def cmd_buy_tool(m: Message):
         f"✅ <b>Инструмент куплен!</b>\n\n"
         f"{tool['name']}\n"
         f"💰 Списано: {fmt_money(tool['price'])}\n"
-        f"📝 {tool['desc']}\n\n"
+        f" {tool['desc']}\n\n"
         f"💡 Используйте /heist_create local!",
         parse_mode="HTML"
     )
 
 @dp.message(Command("heist_create"))
 async def cmd_heist_create(m: Message):
-    """Создание лобби для ограбления"""
     cid, uid = m.chat.id, m.from_user.id
     if await is_in_jail(cid, uid):
         return await m.answer("🔒 Вы в тюрьме!")
@@ -2262,7 +2268,6 @@ async def cmd_heist_create(m: Message):
     bank_key = args[1]
     bank = BANKS[bank_key]
     
-    # Проверяем кулдаун
     has_cooldown, remaining = await check_cooldown(cid, uid)
     if has_cooldown:
         hours = remaining // 3600
@@ -2287,8 +2292,8 @@ async def cmd_heist_create(m: Message):
     }
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💻 Присоединиться (Хакер)", callback_data=f"heist_join_{lobby_id}")],
-        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"heist_cancel_{lobby_id}")]
+        [InlineKeyboardButton(text="💻 Присоединиться (Хакер)", callback_data=f"hj-{lobby_id}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"hc-{lobby_id}")]
     ])
     
     msg = await m.answer(
@@ -2296,21 +2301,21 @@ async def cmd_heist_create(m: Message):
         f"🏛️ Банк: {bank['name']}\n"
         f"🛠️ Инструмент: {tool_name}\n"
         f"💰 Награда каждому: {fmt_money(bank['reward'])}\n"
-        f"🎯 Базовый шанс: {bank['chance']}%\n"
+        f" Базовый шанс: {bank['chance']}%\n"
         f"👥 Игроков: 1/3\n\n"
         f"👤 <b>Участники:</b>\n"
         f"🔓 Взломщик: {m.from_user.full_name}\n\n"
         f"💡 Нажмите «Присоединиться»!\n"
-        f"⚠️ Нужно ровно 3 игрока",
+        f"️ Нужно ровно 3 игрока",
         reply_markup=kb,
         parse_mode="HTML"
     )
     
     heist_lobbies[lobby_id]["msg_id"] = msg.message_id
 
-@dp.callback_query(lambda c: c.data.startswith("heist_join_"))
+@dp.callback_query(lambda c: c.data and c.data.startswith("hj-"))
 async def cb_heist_join(cb: types.CallbackQuery):
-    lobby_id = cb.data.split("_", 2)[2]
+    lobby_id = cb.data.split("-", 1)[1]
     if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
@@ -2327,12 +2332,11 @@ async def cb_heist_join(cb: types.CallbackQuery):
     if len(lobby["players"]) >= 3:
         return await cb.answer("❌ Команда полная (3/3)!", show_alert=True)
     
-    # Проверяем кулдаун
     has_cooldown, remaining = await check_cooldown(cid, uid)
     if has_cooldown:
         hours = remaining // 3600
         minutes = (remaining % 3600) // 60
-        return await cb.answer(f"⏳ Ваш кулдаун: {hours}ч {minutes}мин", show_alert=True)
+        return await cb.answer(f" Ваш кулдаун: {hours}ч {minutes}мин", show_alert=True)
     
     if len(lobby["players"]) == 1:
         role = "coder"
@@ -2359,8 +2363,8 @@ async def cb_heist_join(cb: types.CallbackQuery):
         if players_count < 3:
             next_role = ['hacker', 'coder', 'sapper'][players_count]
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text=f"🔓 Присоединиться ({ROLES[next_role]['name']})", callback_data=f"heist_join_{lobby_id}")],
-                [InlineKeyboardButton(text="❌ Отменить", callback_data=f"heist_cancel_{lobby_id}")]
+                [InlineKeyboardButton(text=f"🔓 Присоединиться ({ROLES[next_role]['name']})", callback_data=f"hj-{lobby_id}")],
+                [InlineKeyboardButton(text="❌ Отменить", callback_data=f"hc-{lobby_id}")]
             ])
             
             await cb.message.edit_text(
@@ -2378,8 +2382,8 @@ async def cb_heist_join(cb: types.CallbackQuery):
             )
         else:
             kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🚀 Начать ограбление", callback_data=f"heist_start_{lobby_id}")],
-                [InlineKeyboardButton(text="❌ Отменить", callback_data=f"heist_cancel_{lobby_id}")]
+                [InlineKeyboardButton(text="🚀 Начать ограбление", callback_data=f"hs-{lobby_id}")],
+                [InlineKeyboardButton(text="❌ Отменить", callback_data=f"hc-{lobby_id}")]
             ])
             
             await cb.message.edit_text(
@@ -2397,9 +2401,9 @@ async def cb_heist_join(cb: types.CallbackQuery):
     except Exception as e:
         print(f"Ошибка обновления лобби: {e}")
 
-@dp.callback_query(lambda c: c.data.startswith("heist_start_"))
+@dp.callback_query(lambda c: c.data and c.data.startswith("hs-"))
 async def cb_heist_start(cb: types.CallbackQuery):
-    lobby_id = cb.data.split("_", 2)[2]
+    lobby_id = cb.data.split("-", 1)[1]
     if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
@@ -2417,11 +2421,10 @@ async def cb_heist_start(cb: types.CallbackQuery):
         pass
     
     await run_heist(cid, lobby)
-    del heist_lobbies[lobby_id]
 
-@dp.callback_query(lambda c: c.data.startswith("heist_cancel_"))
+@dp.callback_query(lambda c: c.data and c.data.startswith("hc-"))
 async def cb_heist_cancel(cb: types.CallbackQuery):
-    lobby_id = cb.data.split("_", 2)[2]
+    lobby_id = cb.data.split("-", 1)[1]
     if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
@@ -2434,11 +2437,17 @@ async def cb_heist_cancel(cb: types.CallbackQuery):
     del heist_lobbies[lobby_id]
     
     try:
-        await cb.message.edit_text("❌ <b>Лобби отменено!</b>", parse_mode="HTML")
+        await cb.message.edit_text(
+            "❌ <b>Лобби отменено!</b>\n\n"
+            "Никто не посажен, деньги не списаны.\n\n"
+            "🏦 Создать новое: /heist_create local",
+            reply_markup=None,
+            parse_mode="HTML"
+        )
     except:
         pass
     
-    await cb.answer("✅ Лобби отменено!")
+    await cb.answer("✅ Лобби отменено")
 
 async def run_heist(cid, lobby):
     bank = lobby["bank"]
@@ -2465,14 +2474,14 @@ async def run_heist(cid, lobby):
         hacker_name = f"User{hacker_uid}"
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔓 Взломать дверь", callback_data=f"heist_s1-{lobby_id}-{hacker_uid}-{final_chance}")]
+        [InlineKeyboardButton(text="🔓 Взломать дверь", callback_data=f"h1-{lobby_id}-{hacker_uid}-{final_chance}")]
     ])
     
     await bot.send_message(
         cid,
         f"🏦 <b>ЭТАП 1: ВЗЛОМ ДВЕРИ</b>\n\n"
         f" Ответственный: {hacker_name} (Взломщик)\n"
-        f"️ Банк: {bank['name']}\n"
+        f"🏛️ Банк: {bank['name']}\n"
         f"🛠️ Инструмент: {tool['name']}\n"
         f" Шанс успеха: {final_chance}%\n\n"
         f"⏳ Нажми кнопку, чтобы взломать дверь...",
@@ -2480,7 +2489,7 @@ async def run_heist(cid, lobby):
         parse_mode="HTML"
     )
 
-@dp.callback_query(lambda c: c.data and c.data.startswith("heist_s1-"))
+@dp.callback_query(lambda c: c.data and c.data.startswith("h1-"))
 async def cb_heist_stage1(cb: types.CallbackQuery):
     parts = cb.data.split("-")
     lobby_id = parts[1]
@@ -2490,11 +2499,10 @@ async def cb_heist_stage1(cb: types.CallbackQuery):
     if cb.from_user.id != player_uid:
         return await cb.answer("❌ Это не твой этап!", show_alert=True)
     
-    cid = cb.message.chat.id
-    
     if lobby_id not in heist_lobbies:
         return await cb.answer("❌ Лобби не найдено!", show_alert=True)
     
+    cid = cb.message.chat.id
     lobby = heist_lobbies[lobby_id]
     
     roll = random.randint(1, 100)
@@ -2504,7 +2512,7 @@ async def cb_heist_stage1(cb: types.CallbackQuery):
         f"🔓 <b>ВЗЛОМ ДВЕРИ...</b>\n\n"
         f"🎲 Выпало: {roll}\n"
         f"🎯 Нужно было: ≤{chance}\n\n"
-        f"{'✅ Дверь взломана!' if success else '❌ Взлом провалился!'}",
+        f"{'✅ Дверь взломана!' if success else ' Взлом провалился!'}",
         parse_mode="HTML"
     )
     
@@ -2545,23 +2553,23 @@ async def start_stage2(cid, lobby):
             break
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="1️⃣", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-1"),
-         InlineKeyboardButton(text="2️⃣", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-2"),
-         InlineKeyboardButton(text="3️⃣", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-3")],
-        [InlineKeyboardButton(text="4️⃣", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-4"),
-         InlineKeyboardButton(text="5️", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-5"),
-         InlineKeyboardButton(text="6️⃣", callback_data=f"heist_s2-{lobby_id}-{coder_uid}-6")]
+        [InlineKeyboardButton(text="1️⃣", callback_data=f"h2-{lobby_id}-{coder_uid}-1"),
+         InlineKeyboardButton(text="2️⃣", callback_data=f"h2-{lobby_id}-{coder_uid}-2"),
+         InlineKeyboardButton(text="3️", callback_data=f"h2-{lobby_id}-{coder_uid}-3")],
+        [InlineKeyboardButton(text="4️⃣", callback_data=f"h2-{lobby_id}-{coder_uid}-4"),
+         InlineKeyboardButton(text="5️⃣", callback_data=f"h2-{lobby_id}-{coder_uid}-5"),
+         InlineKeyboardButton(text="6️", callback_data=f"h2-{lobby_id}-{coder_uid}-6")]
     ])
     
     await bot.send_message(
         cid,
-        f"🔐 <b>ЭТАП 2: ПОДБОР КОДА К СЕЙФУ</b>\n\n"
+        f" <b>ЭТАП 2: ПОДБОР КОДА К СЕЙФУ</b>\n\n"
         f"👤 Ответственный: {coder_name} (Хакер)\n"
         f"🏛️ Банк: {bank['name']}\n"
-        f"🛠️ Инструмент: {tool['name']}\n\n"
+        f"️ Инструмент: {tool['name']}\n\n"
         f"💡 Правильных кнопок: {len(correct_buttons)} из 6\n"
         f"⚠️ Нажми на правильные кнопки!\n\n"
-        f" У тебя есть {max_attempts} попыток...",
+        f"⏳ У тебя есть {max_attempts} попыток...",
         reply_markup=kb,
         parse_mode="HTML"
     )
@@ -2569,7 +2577,7 @@ async def start_stage2(cid, lobby):
     lobby["stage2_attempts"] = 0
     lobby["stage2_found"] = []
 
-@dp.callback_query(lambda c: c.data and c.data.startswith("heist_s2-"))
+@dp.callback_query(lambda c: c.data and c.data.startswith("h2-"))
 async def cb_heist_stage2(cb: types.CallbackQuery):
     parts = cb.data.split("-")
     lobby_id = parts[1]
@@ -2665,7 +2673,7 @@ async def start_stage3(cid, lobby):
     for i in range(0, len(available_wires), 2):
         row = []
         for name, num in available_wires[i:i+2]:
-            row.append(InlineKeyboardButton(text=name, callback_data=f"heist_s3-{lobby_id}-{sapper_uid}-{num}"))
+            row.append(InlineKeyboardButton(text=name, callback_data=f"h3-{lobby_id}-{sapper_uid}-{num}"))
         kb_rows.append(row)
     
     kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
@@ -2676,7 +2684,7 @@ async def start_stage3(cid, lobby):
         f"💣 <b>ЭТАП 3: ОБЕЗВРЕЖИВАНИЕ СИГНАЛИЗАЦИИ</b>\n\n"
         f"👤 Ответственный: {sapper_name} (Сапёр)\n"
         f"🏛️ Банк: {bank['name']}\n"
-        f"️ Инструмент: {tool['name']}\n\n"
+        f"🛠️ Инструмент: {tool['name']}\n\n"
         f"⚠️ Один из {total_wires} проводов правильный!\n"
         f"🎯 Шанс угадать: {chance_wire}%\n\n"
         f"⏳ Выбери провод...",
@@ -2684,7 +2692,7 @@ async def start_stage3(cid, lobby):
         parse_mode="HTML"
     )
 
-@dp.callback_query(lambda c: c.data and c.data.startswith("heist_s3-"))
+@dp.callback_query(lambda c: c.data and c.data.startswith("h3-"))
 async def cb_heist_stage3(cb: types.CallbackQuery):
     parts = cb.data.split("-")
     lobby_id = parts[1]
@@ -2701,11 +2709,11 @@ async def cb_heist_stage3(cb: types.CallbackQuery):
     lobby = heist_lobbies[lobby_id]
     
     correct_wire = lobby["correct_wire"]
-    wire_names = {1: "🔴 Красный", 2: " Синий", 3: "🟢 Зелёный", 4: "🟡 Жёлтый"}
+    wire_names = {1: "🔴 Красный", 2: "🔵 Синий", 3: "🟢 Зелёный", 4: "🟡 Жёлтый"}
     
     if wire == correct_wire:
         await cb.message.edit_text(
-            f" <b>СИГНАЛИЗАЦИЯ ОБЕЗВРЕЖЕНА!</b>\n\n"
+            f"💣 <b>СИГНАЛИЗАЦИЯ ОБЕЗВРЕЖЕНА!</b>\n\n"
             f"✅ Правильный провод: {wire_names[wire]}\n"
             f" Все системы отключены!",
             parse_mode="HTML"
@@ -2725,10 +2733,12 @@ async def cb_heist_stage3(cb: types.CallbackQuery):
     await cb.answer()
 
 async def finish_heist(cid, lobby, success, reason):
-    for lid, l in list(heist_lobbies.items()):    
-        if l is lobby:
+    # Удаляем лобби
+    for lid in list(heist_lobbies.keys()):
+        if heist_lobbies[lid] is lobby:
             del heist_lobbies[lid]
             break
+    
     bank = lobby["bank"]
     tool_key = lobby["tool_key"]
     tool = TOOLS[tool_key] if tool_key else BASE_TOOL
@@ -2751,7 +2761,7 @@ async def finish_heist(cid, lobby, success, reason):
             await update_balance(cid, uid, reward)
             await set_heist_cooldown(cid, uid)
         
-        tool_text = f"🛠️ Инструмент: {tool['name']}\n" if tool_key else "👊 Голыми руками!\n"
+        tool_text = f"🛠️ Инструмент: {tool['name']}\n" if tool_key else " Голыми руками!\n"
         
         await bot.send_message(
             cid,
