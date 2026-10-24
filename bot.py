@@ -304,14 +304,6 @@ async def init_db():
             min_increment INTEGER DEFAULT 100
         )""")
         print("✅ Таблица auctions создана")
-
-        await conn.execute("""CREATE TABLE IF NOT EXISTS heist_cooldowns (
-            chat_id BIGINT,
-            user_id BIGINT,
-            last_heist_time REAL DEFAULT 0,
-            PRIMARY KEY (chat_id, user_id)
-        )""")
-        print("✅ Таблица heist_cooldowns создана")
         
         await conn.execute("""CREATE TABLE IF NOT EXISTS auction_bids (
             id SERIAL PRIMARY KEY,
@@ -322,7 +314,7 @@ async def init_db():
         )""")
         print("✅ Таблица auction_bids создана")
 
-    await conn.execute("""CREATE TABLE IF NOT EXISTS heist_cooldowns (
+        await conn.execute("""CREATE TABLE IF NOT EXISTS heist_cooldowns (
             chat_id BIGINT,
             user_id BIGINT,
             last_heist_time REAL DEFAULT 0,
