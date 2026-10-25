@@ -3734,42 +3734,36 @@ async def cmd_admin_balance(m: Message):
 
 @dp.message(Command("fix_income"))
 async def cmd_fix_income(m: Message):
-    """Обновляет доход всех бизнесов по актуальным ценам из конфига"""
+    """Автоматически обновляет доход всех бизнесов из конфига BUSINESSES"""
     if m.from_user.id not in ADMIN_IDS:
-        return await m.answer(" Только для админов!")
+        return await m.answer("❌ Только для админов!")
+    
+    # Проверяем, есть ли словарь BUSINESSES
+    if 'BUSINESSES' not in globals():
+        return await m.answer("❌ Словарь BUSINESSES не найден в коде!")
     
     async with pool.acquire() as conn:
         # Показываем что было ДО
         rows = await conn.fetch("SELECT business_name, income FROM businesses GROUP BY business_name, income ORDER BY income")
         old = "📋 <b>БЫЛО:</b>\n" + "\n".join([f"• {r['business_name']}: {r['income']}" for r in rows])
         
-        # Маппинг: часть названия бизнеса -> новый доход
-        # ДОБАВЛЯЙ СЮДА НОВЫЕ БИЗНЕСЫ ПРИ ДОБАВЛЕНИИ В ИГРУ!
-        income_map = {
-            "Газетк": 83,
-            "Шаурм": 333,
-            "Кофейнд": 833,
-            "Крипто": 2500,
-            "Oren": 8333,
-            "Ямиц": 1900,
-            "Такс": 7899,
-            "Аптек": 18789,
-            "Строй": 35000,
-            "Космодр": 120000,
-            "Казино": 300000,
-        }
-        
-        # Обновляем все бизнесы по маппингу
-        for key, new_income in income_map.items():
+        # Автоматически берём все бизнесы из конфига
+        updated = 0
+        for biz_key, biz_data in BUSINESSES.items():
+            biz_name = biz_data['name']  # или как у тебя называется поле
+            new_income = biz_data['income']  # или как у тебя называется поле дохода
+            
+            # Обновляем в БД по части названия
             await conn.execute(
-                f"UPDATE businesses SET income = {new_income} WHERE business_name LIKE '%{key}%'"
+                f"UPDATE businesses SET income = {new_income} WHERE business_name LIKE '%{biz_name}%'"
             )
+            updated += 1
         
         # Показываем что стало ПОСЛЕ
         rows = await conn.fetch("SELECT business_name, income FROM businesses GROUP BY business_name, income ORDER BY income")
         new = "📋 <b>СТАЛО:</b>\n" + "\n".join([f"• {r['business_name']}: {r['income']}" for r in rows])
         
-        await m.answer(f"{old}\n\n✅ Обновлено!\n\n{new}", parse_mode="HTML")
+        await m.answer(f"{old}\n\n✅ Обновлено бизнесов: <b>{updated}</b>\n\n{new}", parse_mode="HTML")
 
 @dp.message(Command("pay_mafia"))
 async def cmd_pay_mafia(m: Message):
