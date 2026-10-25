@@ -3734,30 +3734,27 @@ async def cmd_admin_balance(m: Message):
 
 @dp.message(Command("fix_income"))
 async def cmd_fix_income(m: Message):
-    """Автоматически обновляет доход всех бизнесов из конфига BUSINESSES"""
+    """Автоматически обновляет доход всех бизнесов из конфига MARKET"""
     if m.from_user.id not in ADMIN_IDS:
         return await m.answer("❌ Только для админов!")
-    
-    # Проверяем, есть ли словарь BUSINESSES
-    if 'BUSINESSES' not in globals():
-        return await m.answer("❌ Словарь BUSINESSES не найден в коде!")
     
     async with pool.acquire() as conn:
         # Показываем что было ДО
         rows = await conn.fetch("SELECT business_name, income FROM businesses GROUP BY business_name, income ORDER BY income")
         old = "📋 <b>БЫЛО:</b>\n" + "\n".join([f"• {r['business_name']}: {r['income']}" for r in rows])
         
-        # Автоматически берём все бизнесы из конфига
+        # Берём все бизнесы из MARKET (где type == "business")
         updated = 0
-        for biz_key, biz_data in BUSINESSES.items():
-            biz_name = biz_data['name']  # или как у тебя называется поле
-            new_income = biz_data['income']  # или как у тебя называется поле дохода
-            
-            # Обновляем в БД по части названия
-            await conn.execute(
-                f"UPDATE businesses SET income = {new_income} WHERE business_name LIKE '%{biz_name}%'"
-            )
-            updated += 1
+        for biz_key, biz_data in MARKET.items():
+            if biz_data.get('type') == 'business':
+                biz_name = biz_data['name']
+                new_income = biz_data['income']
+                
+                # Обновляем в БД по названию
+                await conn.execute(
+                    f"UPDATE businesses SET income = {new_income} WHERE business_name LIKE '%{biz_name}%'"
+                )
+                updated += 1
         
         # Показываем что стало ПОСЛЕ
         rows = await conn.fetch("SELECT business_name, income FROM businesses GROUP BY business_name, income ORDER BY income")
