@@ -2216,6 +2216,7 @@ async def cmd_heist_create(m: Message):
         return await m.answer("Используй: /heist_create local\nТипы: local, city, central, swiss")
     bank = BANKS[args[1]]
     has_cd, rem = await check_cooldown(cid, uid)
+    print(f"🔍 Проверка кулдауна для user {uid}: has_cd={has_cd}, rem={rem}")
     if has_cd:
         h, mn = rem // 3600, (rem % 3600) // 60
         return await m.answer(f"⏳ Кулдаун: {h}ч {mn}мин")
@@ -2381,21 +2382,24 @@ async def run_stage2(cid, lobby):
         name = (await bot.get_chat_member(cid, coder_uid)).user.full_name
     except:
         name = f"User{coder_uid}"
-    correct = rnd.sample(range(1, 7), rnd.randint(1, 2))
+    
+    # ТЕПЕРЬ ТОЛЬКО 1 ПРАВИЛЬНАЯ КНОПКА
+    correct = [rnd.randint(1, 6)]
     lobby["correct_buttons"] = correct
     lobby["stage2_attempts"] = 0
     lobby["stage2_found"] = []
     max_att = 3 + tool['extra_attempts']
+    
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="1️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_1"),
          InlineKeyboardButton(text="2️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_2"),
          InlineKeyboardButton(text="3️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_3")],
         [InlineKeyboardButton(text="4️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_4"),
          InlineKeyboardButton(text="5️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_5"),
-         InlineKeyboardButton(text="6️", callback_data=f"s2_{lobby['id']}_{coder_uid}_6")]
+         InlineKeyboardButton(text="6️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_6")]
     ])
     await bot.send_message(cid,
-        f"🔐 <b>ЭТАП 2: КОД К СЕЙФУ</b>\n\n {name} (Хакер)\n️ {bank['name']}\n️ {tool['name']}\n\n💡 Правильных: {len(correct)} из 6\n⏳ Попыток: {max_att}",
+        f" <b>ЭТАП 2: КОД К СЕЙФУ</b>\n\n {name} (Хакер)\n️ {bank['name']}\n️ {tool['name']}\n\n💡 Угадай 1 правильную кнопку из 6\n⏳ Попыток: {max_att}",
         reply_markup=kb, parse_mode="HTML")
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("s2_"))
@@ -2415,24 +2419,19 @@ async def cb_stage2(cb: types.CallbackQuery):
     lobby = heist_lobbies[lobby_id]
     correct = lobby["correct_buttons"]
     attempts = lobby["stage2_attempts"]
-    found = lobby["stage2_found"]
     tool_key = lobby["tool_key"]
     tool = TOOLS[tool_key] if tool_key else BASE_TOOL
     max_att = 3 + tool['extra_attempts']
-    if button in correct and button not in found:
-        found.append(button)
-        lobby["stage2_found"] = found
-        if len(found) == len(correct):
-            await cb.message.edit_text(f"🔐 <b>КОД ПОДОБРАН!</b>\n✅ Кнопки: {found}\n🎉 Сейф открыт!", parse_mode="HTML")
-            await asyncio.sleep(2)
-            await run_stage3(cid, lobby)
-        else:
-            await cb.answer(f"✅ Найдено: {len(found)}/{len(correct)}")
+    
+    if button == correct[0]:  # ТЕПЕРЬ ПРОСТО СРАВНЕНИЕ С ОДНОЙ КНОПКОЙ
+        await cb.message.edit_text(f"🔐 <b>КОД ПОДОБРАН!</b>\n✅ Кнопка: {button}\n Сейф открыт!", parse_mode="HTML")
+        await asyncio.sleep(2)
+        await run_stage3(cid, lobby)
     else:
         attempts += 1
         lobby["stage2_attempts"] = attempts
         if attempts >= max_att:
-            await cb.message.edit_text(f" <b>ПРОВАЛ!</b>\n❌ Попытки кончились\n✅ Было: {correct}", parse_mode="HTML")
+            await cb.message.edit_text(f"🔐 <b>ПРОВАЛ!</b>\n❌ Попытки кончились\n✅ Была кнопка: {correct[0]}", parse_mode="HTML")
             await finish_heist(cid, lobby, False, "Код не подобран")
         else:
             await cb.answer(f"❌ Неверно! Осталось: {max_att - attempts}", show_alert=True)
@@ -2492,12 +2491,15 @@ async def finish_heist(cid, lobby, success, reason):
     lobby_id = lobby["id"]
     if lobby_id in heist_lobbies:
         del heist_lobbies[lobby_id]
+    
     bank = lobby["bank"]
     tool_key = lobby["tool_key"]
     tool = TOOLS[tool_key] if tool_key else BASE_TOOL
     players = lobby["players"]
+    
     if tool_key and lobby["creator"] in getattr(bot, 'heist_tools', {}):
         del bot.heist_tools[lobby["creator"]]
+    
     team = []
     for uid, role in players.items():
         try:
@@ -2505,21 +2507,41 @@ async def finish_heist(cid, lobby, success, reason):
         except:
             name = f"User{uid}"
         team.append(f"{ROLES[role]}: {name}")
+    
+    now = time.time()
+    
     if success:
         reward = bank['reward']
-        for uid in players.keys():
-            await update_balance(cid, uid, reward)
-            await set_heist_cooldown(cid, uid)
+        async with pool.acquire() as conn:
+            for uid in players.keys():
+                await update_balance(cid, uid, reward)
+                await conn.execute(
+                    "INSERT INTO heist_cooldowns VALUES ($1,$2,$3) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_heist_time=$3",
+                    cid, uid, now
+                )
+                print(f"✅ Кулдаун записан для user {uid} в чате {cid}")
+        
         await bot.send_message(cid,
             f"✅ <b>УСПЕХ!</b>\n\n🏦 {bank['name']}\n🛠️ {tool['name']}\n👥 {', '.join(team)}\n\n💰 Каждый: <b>{fmt_money(reward)}</b>\n\n⏰ Кулдаун 24ч",
             parse_mode="HTML")
     else:
         jail = max(1, bank['jail'] - tool['jail_reduce'])
-        for uid in players.keys():
-            await send_to_jail(cid, uid, jail)
-            await set_heist_cooldown(cid, uid)
+        until_time = now + jail * 3600
+        
+        async with pool.acquire() as conn:
+            for uid in players.keys():
+                await conn.execute(
+                    "INSERT INTO jail (chat_id, user_id, until_time) VALUES ($1,$2,$3) ON CONFLICT (chat_id, user_id) DO UPDATE SET until_time=$3",
+                    cid, uid, until_time
+                )
+                await conn.execute(
+                    "INSERT INTO heist_cooldowns VALUES ($1,$2,$3) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_heist_time=$3",
+                    cid, uid, now
+                )
+                print(f"🔒 Тюрьма + кулдаун записаны для user {uid} в чате {cid}")
+        
         await bot.send_message(cid,
-            f"❌ <b>ПРОВАЛ!</b>\n\n🏦 {bank['name']}\n👥 {', '.join(team)}\n\n🔒 Все в тюрьме на <b>{jail}ч</b>\n️ {reason}\n⏰ Кулдаун 24ч",
+            f"❌ <b>ПРОВАЛ!</b>\n\n {bank['name']}\n👥 {', '.join(team)}\n\n🔒 Все в тюрьме на <b>{jail}ч</b>\n⚠️ {reason}\n⏰ Кулдаун 24ч",
             parse_mode="HTML")
 
 @dp.message(Command("jail_pay"))
