@@ -3404,247 +3404,58 @@ async def handle_exam_answer(m: Message):
         else:
             await m.answer(f"😔 <b>Провал.</b> {ex['correct']}/3\n/buy_course {ex['course']}", parse_mode="HTML")
         del exam_sessions[ek]
-
-# ══════════════════════════════════════════
-#  АДМИНСКИЕ КОМАНДЫ: ТЮРЬМА + ИЗЪЯТИЕ
-# ══════════════════════════════════════════
-
-@dp.message(Command("admin_jail"))
-async def cmd_admin_jail(m: Message):
-    """Посадить игрока в тюрьму. Формат: /admin_jail @username часы"""
+        
+@dp.message(Command("admin_hard_jail"))
+async def cmd_admin_hard_jail(m: Message):
+    """Жесткая тюрьма без штрафа и досрочного выхода. Формат: /admin_hard_jail @username часы"""
     if m.from_user.id not in ADMIN_IDS:
-        return await m.answer("❌ Только для админов!")
+        return await m.answer(" Только для админов!")
     
-    if not m.reply_to_message and len(m.text.split()) < 2:
-        return await m.answer(
-            " <b>Посадить в тюрьму</b>\n\n"
-            "Ответь на игрока или укажи @username\n\n"
-            "Использование:\n"
-            "/admin_jail @username 24\n"
-            "/admin_jail @username 120 — 5 суток",
-            parse_mode="HTML"
-        )
+    # Определяем цель (только ответ на сообщение)
+    if not m.reply_to_message:
+        return await m.answer("⚠️ Ответь на сообщение игрока")
     
-    # Определяем цель
-    if m.reply_to_message:
-        target_uid = m.reply_to_message.from_user.id
-        target_name = m.reply_to_message.from_user.full_name
-    else:
-        # Ищем по @username в тексте
-        args = m.text.split()
-        username = args[1].lstrip("@")
-        try:
-            # Пытаемся найти пользователя через Telegram
-            chat_member = await bot.get_chat_member(m.chat.id, username)
-            target_uid = chat_member.user.id
-            target_name = chat_member.user.full_name
-        except Exception as e:
-            return await m.answer(f"❌ Не нашёл пользователя: {e}")
-    
-    # Часы
+    target = m.reply_to_message.from_user
     args = m.text.split()
-    hours_str = args[-1] if len(args) > 1 else "24"
+    
+    # Парсим часы
+    hours_str = args[1] if len(args) > 1 else "24"
     try:
         hours = int(hours_str)
-        if hours < 1 or hours > 720:  # макс 30 суток
-            return await m.answer("❌ Часы должны быть от 1 до 720")
-    except:
-        return await m.answer("❌ Некорректное число часов")
+        if hours < 1 or hours > 720:
+            return await m.answer(" Срок от 1 до 720 часов")
+    except ValueError:
+        return await m.answer("❌ Укажи корректное число часов")
     
     cid = m.chat.id
-    await send_to_jail(cid, target_uid, hours)
+    until_time = time.time() + hours * 3600
     
-    await m.answer(
-        f"🔒 <b>ИГРОК ПОСАЖЕН!</b>\n\n"
-        f"👤 {target_name}\n"
-        f"⏳ Срок: <b>{hours} часов</b>\n"
-        f"👮 Админ: {m.from_user.full_name}",
-        parse_mode="HTML"
-    )
-
-@dp.message(Command("admin_unjail"))
-async def cmd_admin_unjail(m: Message):
-    """Освободить игрока из тюрьмы. Формат: /admin_unjail @username"""
-    if m.from_user.id not in ADMIN_IDS:
-        return await m.answer("❌ Только для админов!")
-    
-    if not m.reply_to_message and len(m.text.split()) < 2:
-        return await m.answer("Ответь на игрока или укажи @username")
-    
-    if m.reply_to_message:
-        target_uid = m.reply_to_message.from_user.id
-        target_name = m.reply_to_message.from_user.full_name
-    else:
-        username = m.text.split()[1].lstrip("@")
-        try:
-            chat_member = await bot.get_chat_member(m.chat.id, username)
-            target_uid = chat_member.user.id
-            target_name = chat_member.user.full_name
-        except:
-            return await m.answer("❌ Не нашёл пользователя")
-    
-    cid = m.chat.id
+    # Записываем напрямую в БД, минуя обычные функции
     async with pool.acquire() as conn:
+        # Ставим в жесткую тюрьму
         await conn.execute(
-            "DELETE FROM jail WHERE chat_id=$1 AND user_id=$2",
-            cid, target_uid
+            """INSERT INTO jail (chat_id, user_id, until_time, hard_mode) 
+               VALUES ($1, $2, $3, TRUE)
+               ON CONFLICT (chat_id, user_id) 
+               DO UPDATE SET until_time=$3, hard_mode=TRUE""",
+            cid, target.id, until_time
         )
+        
+        # Если столбца hard_mode нет в твоей БД, используй эту версию:
+        # await conn.execute(
+        #     """INSERT INTO jail (chat_id, user_id, until_time) 
+        #        VALUES ($1, $2, $3)
+        #        ON CONFLICT (chat_id, user_id) 
+        #        DO UPDATE SET until_time=$3""",
+        #     cid, target.id, until_time
+        # )
     
     await m.answer(
-        f"✅ <b>ИГРОК ОСВОБОЖДЁН!</b>\n\n"
-        f"👤 {target_name}\n"
-        f"👮 Админ: {m.from_user.full_name}",
-        parse_mode="HTML"
-    )
-
-@dp.message(Command("admin_seize"))
-async def cmd_admin_seize(m: Message):
-    """Изъять имущество. Форматы:
-    /admin_seize @username всё — изъять ВСЁ
-    /admin_seize @username бизнес_name — изъять 1 бизнес
-    /admin_seize @username бизнес_name 5 — изъять 5 штук"""
-    if m.from_user.id not in ADMIN_IDS:
-        return await m.answer("❌ Только для админов!")
-    
-    args = m.text.split()
-    if len(args) < 2:
-        return await m.answer(
-            "🗑️ <b>Изъятие имущества</b>\n\n"
-            "Ответь на игрока или укажи @username\n\n"
-            "Использование:\n"
-            "/admin_seize @username всё — изъять ВСЁ\n"
-            "/admin_seize @username Газетка — изъять 1 шт\n"
-            "/admin_seize @username Газетка 10 — изъять 10 шт",
-            parse_mode="HTML"
-        )
-    
-    # Определяем цель
-    if m.reply_to_message:
-        target_uid = m.reply_to_message.from_user.id
-        target_name = m.reply_to_message.from_user.full_name
-        args = m.text.split()
-    else:
-        username = args[1].lstrip("@")
-        try:
-            chat_member = await bot.get_chat_member(m.chat.id, username)
-            target_uid = chat_member.user.id
-            target_name = chat_member.user.full_name
-            args = [args[0]] + args[2:]  # убираем username из args
-        except:
-            return await m.answer("❌ Не нашёл пользователя")
-    
-    cid = m.chat.id
-    
-    # Определяем режим: "всё" или конкретный бизнес
-    if len(args) < 2 or args[1].lower() == "всё":
-        # Изъять ВСЁ имущество
-        async with pool.acquire() as conn:
-            # Считаем что изымаем
-            businesses = await conn.fetch(
-                "SELECT business_name, COUNT(*) as cnt FROM businesses WHERE chat_id=$1 AND user_id=$2 GROUP BY business_name",
-                cid, target_uid
-            )
-            if not businesses:
-                return await m.answer(f" {target_name} — ничего не найдено для изъятия")
-            
-            total = sum(b['cnt'] for b in businesses)
-            
-            # Удаляем всё
-            await conn.execute(
-                "DELETE FROM businesses WHERE chat_id=$1 AND user_id=$2",
-                cid, target_uid
-            )
-        
-        biz_list = "\n".join([f"• {b['business_name']}: {b['cnt']} шт" for b in businesses])
-        await m.answer(
-            f"🗑️ <b>ВСЁ ИМУЩЕСТВО ИЗЪЯТО!</b>\n\n"
-            f"👤 {target_name}\n"
-            f" Список:\n{biz_list}\n\n"
-            f"📊 Всего: <b>{total} единиц</b>\n"
-            f"👮 Админ: {m.from_user.full_name}",
-            parse_mode="HTML"
-        )
-    else:
-        # Изъять конкретный бизнес
-        biz_name = args[1]
-        count = int(args[2]) if len(args) > 2 else 1
-        
-        async with pool.acquire() as conn:
-            # Проверяем сколько есть
-            row = await conn.fetchrow(
-                "SELECT COUNT(*) as cnt FROM businesses WHERE chat_id=$1 AND user_id=$2 AND business_name LIKE $3",
-                cid, target_uid, f"%{biz_name}%"
-            )
-            if not row or row['cnt'] == 0:
-                return await m.answer(f"❌ У {target_name} нет бизнеса '{biz_name}'")
-            
-            have = row['cnt']
-            if count > have:
-                return await m.answer(f"❌ У игрока только {have} шт, а ты хочешь {count}")
-            
-            # Удаляем нужное количество (последние по ID)
-            to_delete = await conn.fetch(
-                "SELECT id FROM businesses WHERE chat_id=$1 AND user_id=$2 AND business_name LIKE $3 ORDER BY id DESC LIMIT $4",
-                cid, target_uid, f"%{biz_name}%", count
-            )
-            ids = [r['id'] for r in to_delete]
-            if ids:
-                await conn.execute(
-                    f"DELETE FROM businesses WHERE id = ANY($1)",
-                    ids
-                )
-        
-        await m.answer(
-            f"🗑️ <b>ИМУЩЕСТВО ИЗЪЯТО!</b>\n\n"
-            f"👤 {target_name}\n"
-            f"📦 Бизнес: <b>{biz_name}</b>\n"
-            f" Изъято: <b>{count} шт</b>\n"
-            f" Админ: {m.from_user.full_name}",
-            parse_mode="HTML"
-        )
-
-@dp.message(Command("admin_balance"))
-async def cmd_admin_balance(m: Message):
-    """Изменить баланс игрока. Формат: /admin_balance @username сумма"""
-    if m.from_user.id not in ADMIN_IDS:
-        return await m.answer("❌ Только для админов!")
-    
-    args = m.text.split()
-    if len(args) < 3:
-        return await m.answer(
-            "💰 <b>Изменить баланс</b>\n\n"
-            "Ответь на игрока или укажи @username\n\n"
-            "Использование:\n"
-            "/admin_balance @username 100000 — добавить\n"
-            "/admin_balance @username -50000 — списать",
-            parse_mode="HTML"
-        )
-    
-    if m.reply_to_message:
-        target_uid = m.reply_to_message.from_user.id
-        target_name = m.reply_to_message.from_user.full_name
-        amount = int(args[1])
-    else:
-        username = args[1].lstrip("@")
-        try:
-            chat_member = await bot.get_chat_member(m.chat.id, username)
-            target_uid = chat_member.user.id
-            target_name = chat_member.user.full_name
-        except:
-            return await m.answer(" Не нашёл пользователя")
-        amount = int(args[2])
-    
-    cid = m.chat.id
-    await update_balance(cid, target_uid, amount)
-    
-    user = await get_user(cid, target_uid)
-    action = "Добавлено" if amount > 0 else "Списано"
-    
-    await m.answer(
-        f"💰 <b>БАЛАНС ИЗМЕНЁН!</b>\n\n"
-        f" {target_name}\n"
-        f"{action}: <b>{fmt_money(abs(amount))}</b>\n"
-        f" Новый баланс: <b>{fmt_money(user['balance'])}</b>\n"
+        f"🔒 <b>ЖЕСТКАЯ ТЮРЬМА!</b>\n\n"
+        f"👤 {target.full_name}\n"
+        f"⏳ Срок: <b>{hours} часов</b>\n"
+        f"💸 Штраф: <b>0</b>\n"
+        f"🚫 Досрочный выход: <b>запрещен</b>\n"
         f"👮 Админ: {m.from_user.full_name}",
         parse_mode="HTML"
     )
