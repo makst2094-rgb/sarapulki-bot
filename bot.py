@@ -3,6 +3,7 @@ import logging
 import random
 import time
 import os
+import random as rnd
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -220,6 +221,29 @@ ACHIEVEMENTS = {
     "roulette_survivor": {"name": "🎯 Везучий стрелок", "desc": "Выживи в рулетке 10 раз", "icon": "🎯"},
     "roulette_winner": {"name": "🏆 Победитель рулетки", "desc": "Выиграй в рулетке 5 раз", "icon": "🏆"},
 }
+
+# ══════════════════════════════════════════
+#  КОНТРАБАНДА (CONTRABAND)
+# ══════════════════════════════════════════
+
+CONTRABAND_COOLDOWN = 21600  # 6 часов
+
+CONTRABAND_ITEMS = {
+    "docs": {"name": " Фальшивые документы", "price": 5000, "reward": 12000, "fail_chance": 30, "penalty_percent": 10, "jail_hours": 2, "duration": 180},
+    "fake_money": {"name": "💵 Фейковые деньги", "price": 15000, "reward": 40000, "fail_chance": 50, "penalty_percent": 25, "jail_hours": 4, "duration": 300},
+    "drugs": {"name": "💊 Запрещенные вещества", "price": 50000, "reward": 150000, "fail_chance": 70, "penalty_percent": 50, "jail_hours": 8, "duration": 480},
+    "weapons": {"name": "🔫 Оружие", "price": 100000, "reward": 350000, "fail_chance": 85, "penalty_percent": 75, "jail_hours": 12, "duration": 720, "seize_business": True}
+}
+
+CONTRABAND_ROLES = {
+    "driver": {"name": "🚛 Водитель", "desc": "Снижает шанс провала на 15%"},
+    "navigator": {"name": "🗺️ Навигатор", "desc": "Ускоряет рейс на 20%"},
+    "guard": {"name": "️ Охранник", "desc": "Дает шанс отбиться при проверке"},
+    "coordinator": {"name": "📡 Связной", "desc": "Увеличивает награду на 10%"}
+}
+
+active_contraband_runs = {}  # Активные рейсы
+contraband_cooldowns = {}    # Кулдауны (user_id -> время)
 
 def pluralize(n, forms):
     n = abs(n) % 100
@@ -3489,6 +3513,309 @@ async def cmd_fix_income(m: Message):
         new = "📋 <b>СТАЛО:</b>\n" + "\n".join([f"• {r['business_name']}: {r['income']}" for r in rows])
         
         await m.answer(f"{old}\n\n✅ Обновлено бизнесов: <b>{updated}</b>\n\n{new}", parse_mode="HTML")
+
+# ══════════════════════════════════════════
+#  КОМАНДЫ КОНТРАБАНДЫ
+# ══════════════════════════════════════════
+
+async def apply_smart_fine(cid, uid, percent):
+    """Умный штраф: списывает % с того счета, где больше денег"""
+    user = await get_user(cid, uid)
+    balance = user.get('balance', 0)
+    
+    # Пытаемся найти депозит/банк (адаптируй под свои названия полей, если они другие)
+    deposit = user.get('deposit', user.get('bank_balance', user.get('savings', 0))) 
+    
+    total = balance + deposit
+    fine = int(total * percent / 100)
+    
+    if fine <= 0:
+        return 0
+
+    # Списываем с того, где больше
+    if balance >= deposit:
+        await update_balance(cid, uid, -fine)
+    else:
+        # Если в банке больше, пытаемся списать через SQL (безопасно)
+        try:
+            async with pool.acquire() as conn:
+                # Адаптируй 'deposit' под название твоего столбца с банком
+                await conn.execute("UPDATE users SET deposit = GREATEST(deposit - $1, 0) WHERE chat_id=$2 AND user_id=$3", fine, cid, uid)
+        except:
+            # Если не вышло, списываем с основного
+            await update_balance(cid, uid, -fine)
+    return fine
+
+@dp.message(Command("contraband"))
+async def cmd_contraband_info(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid):
+        return await m.answer("🔒 Вы в тюрьме!")
+    
+    t = "🚛 <b>КОНТРАБАНДА</b>\n\n"
+    t += "⚠️ <b>Высокий риск, высокая награда!</b>\n"
+    t += "Нужна команда из 4 человек.\n\n"
+    t += "━━━━━━━━━━━━━━━━━━━━\n <b>ТОВАРЫ:</b>\n\n"
+    for key, item in CONTRABAND_ITEMS.items():
+        t += f"{item['name']}\n"
+        t += f"    Цена: {fmt_money(item['price'])}\n"
+        t += f"   🎁 Награда: {fmt_money(item['reward'])}\n"
+        t += f"   ⚠️ Шанс провала: {item['fail_chance']}%\n"
+        t += f"   💸 Штраф: {item['penalty_percent']}% баланса\n"
+        t += f"   ⏱️ Время: {item['duration']//60} мин\n"
+        t += f"    /contraband_start {key}\n\n"
+    t += "━━━━━━━━━━━━━━━━━━━━\n"
+    t += "👥 <b>Собрать команду:</b>\n"
+    t += "Ответь на 3 игроков сообщением:\n"
+    t += "/contraband_team\n\n"
+    t += " Кулдаун: <b>6 часов</b>"
+    await m.answer(t, parse_mode="HTML")
+
+@dp.message(Command("contraband_team"))
+async def cmd_contraband_team(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid):
+        return await m.answer(" Вы в тюрьме!")
+    
+    if not m.reply_to_message:
+        return await m.answer("⚠️ Ответь на сообщение одного из напарников, а двух других укажи через пробел!\nПример: ответь на Петю и напиши `/contraband_team @вася @миша`", parse_mode="HTML")
+    
+    # Собираем ID команды
+    team = [uid, m.reply_to_message.from_user.id]
+    args = m.text.split()[1:] # убираем команду
+    
+    for arg in args:
+        if arg.startswith('@'):
+            try:
+                chat_member = await bot.get_chat_member(cid, arg)
+                team.append(chat_member.user.id)
+            except:
+                return await m.answer(f"❌ Не нашел игрока {arg}")
+    
+    # Убираем дубликаты
+    team = list(set(team))
+    
+    if len(team) != 4:
+        return await m.answer(f"❌ Нужно ровно 4 человека (включая тебя). Сейчас: {len(team)}")
+    
+    # Проверки
+    for member_uid in team:
+        if await is_in_jail(cid, member_uid):
+            return await m.answer(f"🔒 Кто-то из команды в тюрьме!")
+        if member_uid in contraband_cooldowns and contraband_cooldowns[member_uid] > time.time():
+            return await m.answer(f"⏳ У кого-то из команды кулдаун!")
+        if member_uid in [r['team'] for r in active_contraband_runs.values() if r['status'] == 'active']:
+            return await m.answer(f" Кто-то уже в рейсе!")
+
+    # Создаем рейс
+    run_id = f"run_{cid}_{uid}_{int(time.time())}"
+    active_contraband_runs[run_id] = {
+        "id": run_id,
+        "leader": uid,
+        "team": team,
+        "status": "forming",
+        "item": None
+    }
+    
+    team_names = []
+    for member_uid in team:
+        try: name = (await bot.get_chat_member(cid, member_uid)).user.full_name
+        except: name = f"User{member_uid}"
+        team_names.append(name)
+    
+    await m.answer(
+        f"🚛 <b>КОМАНДА СОБРАНА!</b>\n\n"
+        f"👥 Участники:\n" + "\n".join([f"• {name}" for name in team_names]) + "\n\n"
+        f"📋 Лидер, выбери товар:\n"
+        f"/contraband_start docs\n"
+        f"/contraband_start fake_money\n"
+        f"/contraband_start drugs\n"
+        f"/contraband_start weapons",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("contraband_start"))
+async def cmd_contraband_start(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    
+    args = m.text.split()
+    if len(args) < 2 or args[1] not in CONTRABAND_ITEMS:
+        return await m.answer("⚠️ Укажи товар: docs, fake_money, drugs, weapons")
+    
+    # Ищем рейс лидера
+    run = None
+    for r in active_contraband_runs.values():
+        if r["leader"] == uid and r["status"] == "forming":
+            run = r
+            break
+    
+    if not run:
+        return await m.answer("❌ У тебя нет собранной команды! Используй /contraband_team")
+    
+    item_key = args[1]
+    item = CONTRABAND_ITEMS[item_key]
+    
+    # Списываем стоимость с лидера
+    user = await get_user(cid, uid)
+    if user['balance'] < item['price']:
+        return await m.answer(f"❌ Нужно {fmt_money(item['price'])}. У тебя: {fmt_money(user['balance'])}")
+    
+    await update_balance(cid, uid, -item['price'])
+    
+    # Настраиваем рейс
+    run["item"] = item_key
+    run["status"] = "active"
+    run["start_time"] = time.time()
+    
+    # Распределяем роли случайно
+    roles_list = list(CONTRABAND_ROLES.keys())
+    rnd.shuffle(roles_list)
+    run["roles"] = {uid: roles_list[i] for i, uid in enumerate(run["team"])}
+    
+    # Считаем модификаторы
+    fail_chance = item['fail_chance']
+    duration = item['duration']
+    reward = item['reward']
+    
+    for member_uid, role in run["roles"].items():
+        if role == "driver": fail_chance -= 15
+        elif role == "navigator": duration = int(duration * 0.8)
+        elif role == "coordinator": reward = int(reward * 1.1)
+    
+    fail_chance = max(5, fail_chance) # Минимум 5%
+    run["fail_chance"] = fail_chance
+    run["duration"] = duration
+    run["reward"] = reward
+    run["checks_passed"] = 0
+    run["total_checks"] = duration // 60
+    
+    await m.answer("🚛 <b>РЕЙС НАЧАЛСЯ!</b> Каждую минуту будет проверка. Не выходите из чата!", parse_mode="HTML")
+    
+    # Уведомляем команду
+    team_info = []
+    for member_uid in run["team"]:
+        try: name = (await bot.get_chat_member(cid, member_uid)).user.full_name
+        except: name = f"User{member_uid}"
+        role_name = CONTRABAND_ROLES[run["roles"][member_uid]]['name']
+        team_info.append(f"{role_name}: {name}")
+        
+    await bot.send_message(cid,
+        f"🚛 <b>РЕЙС НАЧАЛСЯ!</b>\n\n"
+        f"📦 Товар: {item['name']}\n"
+        f"⏱️ Длительность: {duration//60} мин\n"
+        f"⚠️ Шанс провала: {fail_chance}%\n"
+        f"🎁 Награда: {fmt_money(reward)}\n\n"
+        f"👥 <b>Команда:</b>\n" + "\n".join(team_info) + "\n\n"
+        f"⏳ Проверки начались...",
+        parse_mode="HTML"
+    )
+    
+    # Запускаем цикл
+    asyncio.create_task(contraband_check_loop(cid, run))
+
+@dp.message(Command("contraband_status"))
+async def cmd_contraband_status(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    
+    for run in active_contraband_runs.values():
+        if uid in run["team"] and run["status"] == "active":
+            item = CONTRABAND_ITEMS[run["item"]]
+            elapsed = time.time() - run["start_time"]
+            remaining = run["duration"] - elapsed
+            progress = int(elapsed / run["duration"] * 100)
+            
+            return await m.answer(
+                f"🚛 <b>АКТИВНЫЙ РЕЙС</b>\n\n"
+                f"📦 Товар: {item['name']}\n"
+                f"⏱️ Осталось: {int(remaining)//60} мин\n"
+                f" Прогресс: {progress}%\n"
+                f"✅ Проверок пройдено: {run['checks_passed']}/{run['total_checks']}",
+                parse_mode="HTML"
+            )
+    await m.answer("❌ У тебя нет активного рейса")
+
+# ══════════════════════════════════════════
+#  ЛОГИКА РЕЙСА
+# ══════════════════════════════════════════
+
+async def contraband_check_loop(cid, run):
+    """Цикл проверок"""
+    for _ in range(run["total_checks"]):
+        await asyncio.sleep(60)
+        
+        if run["status"] != "active":
+            return
+        
+        # Проверка на провал
+        if rnd.randint(1, 100) <= run["fail_chance"]:
+            await contraband_failed(cid, run, "Наткнулись на усиленный патруль!")
+            return
+            
+        run["checks_passed"] += 1
+        
+    # Если дошли до конца
+    await contraband_success(cid, run)
+
+async def contraband_success(cid, run):
+    """Успех"""
+    item = CONTRABAND_ITEMS[run["item"]]
+    team = run["team"]
+    reward = run["reward"]
+    reward_per_person = reward // len(team)
+    
+    for member_uid in team:
+        await update_balance(cid, member_uid, reward_per_person)
+        contraband_cooldowns[member_uid] = time.time() + CONTRABAND_COOLDOWN
+    
+    del active_contraband_runs[run["id"]]
+    
+    await bot.send_message(cid,
+        f"✅ <b>РЕЙС УСПЕШЕН!</b>\n\n"
+        f"📦 Товар: {item['name']}\n"
+        f"💰 Каждый получил: <b>{fmt_money(reward_per_person)}</b>\n\n"
+        f"⏰ Кулдаун: 6 часов",
+        parse_mode="HTML"
+    )
+
+async def contraband_failed(cid, run, reason):
+    """Провал"""
+    item = CONTRABAND_ITEMS[run["item"]]
+    team = run["team"]
+    penalty_percent = item['penalty_percent']
+    jail_hours = item['jail_hours']
+    
+    for member_uid in team:
+        # Умный штраф
+        fine = await apply_smart_fine(cid, member_uid, penalty_percent)
+        
+        # Тюрьма
+        await send_to_jail(cid, member_uid, jail_hours)
+        
+        # Кулдаун
+        contraband_cooldowns[member_uid] = time.time() + CONTRABAND_COOLDOWN
+        
+        # Изъятие бизнеса (только для оружия)
+        if item.get('seize_business'):
+            try:
+                async with pool.acquire() as conn:
+                    biz = await conn.fetchrow("SELECT id FROM businesses WHERE chat_id=$1 AND user_id=$2 LIMIT 1", cid, member_uid)
+                    if biz:
+                        await conn.execute("DELETE FROM businesses WHERE id=$1", biz['id'])
+            except:
+                pass
+    
+    del active_contraband_runs[run["id"]]
+    
+    await bot.send_message(cid,
+        f"❌ <b>РЕЙС ПРОВАЛЕН!</b>\n\n"
+        f"📦 Товар: {item['name']}\n"
+        f"⚠️ Причина: {reason}\n\n"
+        f"🔒 Все в тюрьме на <b>{jail_hours} часов</b>\n"
+        f"💸 Штраф: <b>{penalty_percent}% баланса</b>\n"
+        f"{'🗑️ Изъят 1 бизнес\n' if item.get('seize_business') else ''}"
+        f"⏰ Кулдаун: 6 часов",
+        parse_mode="HTML"
+    )
 
 @dp.message(Command("pay_mafia"))
 async def cmd_pay_mafia(m: Message):
