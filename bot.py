@@ -3806,15 +3806,17 @@ async def contraband_failed(cid, run, reason):
                 pass
     
     del active_contraband_runs[run["id"]]
+
+    seize_text = "🗑️ Изъят 1 бизнес\n" if item.get('seize_business') else ""
     
     await bot.send_message(cid,
         f"❌ <b>РЕЙС ПРОВАЛЕН!</b>\n\n"
         f"📦 Товар: {item['name']}\n"
-        f"⚠️ Причина: {reason}\n\n"
+        f"️ Причина: {reason}\n\n"
         f"🔒 Все в тюрьме на <b>{jail_hours} часов</b>\n"
         f"💸 Штраф: <b>{penalty_percent}% баланса</b>\n"
-        f"{'🗑️ Изъят 1 бизнес\n' if item.get('seize_business') else ''}"
-        f"⏰ Кулдаун: 6 часов",
+        f"{seize_text}"
+        f" Кулдаун: 6 часов",
         parse_mode="HTML"
     )
 
