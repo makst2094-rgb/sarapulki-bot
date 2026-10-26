@@ -3576,39 +3576,78 @@ async def cmd_contraband_info(m: Message):
 async def cmd_contraband_team(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     if await is_in_jail(cid, uid):
-        return await m.answer(" Вы в тюрьме!")
+        return await m.answer("🔒 Вы в тюрьме!")
     
     if not m.reply_to_message:
-        return await m.answer("⚠️ Ответь на сообщение одного из напарников, а двух других укажи через пробел!\nПример: ответь на Петю и напиши `/contraband_team @вася @миша`", parse_mode="HTML")
+        return await m.answer(
+            "⚠️ Ответь на сообщение одного из напарников, "
+            "а двух других укажи через @\n"
+            "Пример: ответь на Петю и напиши\n"
+            "`/contraband_team @вася @миша`",
+            parse_mode="HTML"
+        )
     
-    # Собираем ID команды
+    # Собираем команду: ты + тот, на кого ответил
     team = [uid, m.reply_to_message.from_user.id]
-    args = m.text.split()[1:] # убираем команду
+    
+    # Парсим остальных по @username
+    args = m.text.split()[1:]  # убираем команду
     
     for arg in args:
-        if arg.startswith('@'):
+        username = arg.lstrip('@')
+        if not username:
+            continue
+        
+        try:
+            # Пытаемся найти через username
+            chat_member = await bot.get_chat_member(cid, f"@{username}")
+            team.append(chat_member.user.id)
+        except Exception as e:
+            # Если не нашли — пробуем как ID
             try:
-                chat_member = await bot.get_chat_member(cid, arg)
+                user_id = int(username)
+                chat_member = await bot.get_chat_member(cid, user_id)
                 team.append(chat_member.user.id)
             except:
-                return await m.answer(f"❌ Не нашел игрока {arg}")
+                # Выводим подробную ошибку
+                return await m.answer(
+                    f"❌ Не нашёл игрока <b>@{username}</b>\n\n"
+                    f"Проверь:\n"
+                    f"• Правильно ли написан username\n"
+                    f"• Игрок точно в этом чате\n"
+                    f"• У него есть @username в Telegram",
+                    parse_mode="HTML"
+                )
     
-    # Убираем дубликаты
-    team = list(set(team))
+    # Убираем дубликаты (если кто-то ответил сам на себя)
+    team = list(dict.fromkeys(team))
     
     if len(team) != 4:
-        return await m.answer(f"❌ Нужно ровно 4 человека (включая тебя). Сейчас: {len(team)}")
+        return await m.answer(
+            f"❌ Нужно ровно 4 человека (включая тебя).\n"
+            f"Сейчас: {len(team)}\n\n"
+            f"Формат: ответь на 1 игрока + укажи 2 через @",
+            parse_mode="HTML"
+        )
     
-    # Проверки
+    # Проверки для всех
     for member_uid in team:
+        if member_uid == uid:
+            continue  # себя не проверяем на тюрьму повторно
         if await is_in_jail(cid, member_uid):
-            return await m.answer(f"🔒 Кто-то из команды в тюрьме!")
+            try:
+                name = (await bot.get_chat_member(cid, member_uid)).user.full_name
+            except:
+                name = f"User{member_uid}"
+            return await m.answer(f"🔒 {name} сейчас в тюрьме!")
         if member_uid in contraband_cooldowns and contraband_cooldowns[member_uid] > time.time():
-            return await m.answer(f"⏳ У кого-то из команды кулдаун!")
-        if member_uid in [r['team'] for r in active_contraband_runs.values() if r['status'] == 'active']:
-            return await m.answer(f" Кто-то уже в рейсе!")
-
-    # Создаем рейс
+            try:
+                name = (await bot.get_chat_member(cid, member_uid)).user.full_name
+            except:
+                name = f"User{member_uid}"
+            return await m.answer(f"⏳ У {name} кулдаун на контрабанду!")
+    
+    # Создаём рейс
     run_id = f"run_{cid}_{uid}_{int(time.time())}"
     active_contraband_runs[run_id] = {
         "id": run_id,
@@ -3618,10 +3657,13 @@ async def cmd_contraband_team(m: Message):
         "item": None
     }
     
+    # Собираем имена
     team_names = []
     for member_uid in team:
-        try: name = (await bot.get_chat_member(cid, member_uid)).user.full_name
-        except: name = f"User{member_uid}"
+        try:
+            name = (await bot.get_chat_member(cid, member_uid)).user.full_name
+        except:
+            name = f"User{member_uid}"
         team_names.append(name)
     
     await m.answer(
