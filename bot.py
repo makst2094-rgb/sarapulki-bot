@@ -2695,7 +2695,7 @@ async def cmd_dice(m: Message):
         return await m.answer("🔒 В тюрьме нельзя играть!")
     args = m.text.split()
     if len(args) < 2:
-        return await m.answer("🎲 <b>/dice сумма</b>\n\n4,5,6,1,2,3 — победа x2\n — проигрыш", parse_mode="HTML")
+        return await m.answer("🎲 <b>/dice сумма</b>\n\n4,5,6 — победа x2\n3,2,1 — проигрыш", parse_mode="HTML")
     try:
         bet = int(args[1])
     except:
