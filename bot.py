@@ -2693,28 +2693,59 @@ async def cmd_dice(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     if await is_in_jail(cid, uid):
         return await m.answer("🔒 В тюрьме нельзя играть!")
+    
     args = m.text.split()
     if len(args) < 2:
-        return await m.answer("🎲 <b>/dice сумма</b>\n\n4,5,6 — победа x2\n3,2,1 — проигрыш", parse_mode="HTML")
+        return await m.answer(
+            f"🎲 <b>/dice сумма</b>\n\n"
+            f"🎯 Шанс победы: <b>{DICE_WIN_PERCENT}%</b>\n"
+            f"💰 Выигрыш: ставка × {DICE_WIN_MULTIPLIER}\n"
+            f"📉 Мин. ставка: {DICE_MIN_BET}",
+            parse_mode="HTML"
+        )
+    
     try:
         bet = int(args[1])
     except:
-        return await m.answer("❌ Число!")
+        return await m.answer("❌ Укажи число!")
+    
     if bet < DICE_MIN_BET:
-        return await m.answer(f"❌ Мин: {DICE_MIN_BET}")
+        return await m.answer(f"❌ Мин. ставка: {DICE_MIN_BET}")
+    
     ub = await get_user(cid, uid)
     if ub['balance'] < bet:
-        return await m.answer(f"❌ Мало ({fmt_money(ub['balance'])})")
+        return await m.answer(f"❌ Мало денег ({fmt_money(ub['balance'])})")
+    
+    # Списываем ставку
     await update_balance(cid, uid, -bet)
-    dice = random.randint(1, 6)
+    
+    # 🎲 ВИЗУАЛЬНЫЙ КУБИК (от 1 до 6, как раньше)
+    visual_dice = random.randint(1, 6)
+    
     await m.answer(f"🎲 <b>Бросаем...</b>\nСтавка: {fmt_money(bet)}", parse_mode="HTML")
     await asyncio.sleep(1)
-    if dice >= DICE_WIN_THRESHOLD:
+    
+    # 🎯 РЕАЛЬНЫЙ ШАНС (от 1 до 100)
+    chance_roll = random.randint(1, 100)
+    
+    # ✅ ПРОВЕРКА ПО ПРОЦЕНТУ
+    if chance_roll <= DICE_WIN_PERCENT:
+        # ПОБЕДА
         win = bet * DICE_WIN_MULTIPLIER
         await update_balance(cid, uid, win)
-        await m.answer(f"🎲 <b>{dice}</b>\n\n🎉 <b>ПОБЕДА!</b>\n+{fmt_money(win)} (x2)", parse_mode="HTML")
+        await m.answer(
+            f"🎲 Выпало: <b>{visual_dice}</b>\n\n"
+            f"🎉 <b>ПОБЕДА!</b>\n"
+            f"💰 Выигрыш: +{fmt_money(win)} (x{DICE_WIN_MULTIPLIER})",
+            parse_mode="HTML"
+        )
     else:
-        await m.answer(f"🎲 <b>{dice}</b>\n\n💀 <b>Проигрыш</b>", parse_mode="HTML")
+        # ПРОИГРЫШ
+        await m.answer(
+            f"🎲 Выпало: <b>{visual_dice}</b>\n\n"
+            f"💀 <b>Проигрыш</b>",
+            parse_mode="HTML"
+        )
 
 @dp.message(Command("buy_ticket"))
 async def cmd_buy_ticket(m: Message):
