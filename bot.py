@@ -2698,7 +2698,7 @@ async def cmd_dice(m: Message):
     if len(args) < 2:
         return await m.answer(
             f"🎲 <b>/dice сумма</b>\n\n"
-            f"🎯 Шанс победы: <b>{DICE_WIN_PERCENT}%</b>\n"
+            f"🎯 Шанс победы: <b>50 на 50</b>\n"
             f"💰 Выигрыш: ставка × {DICE_WIN_MULTIPLIER}\n"
             f"📉 Мин. ставка: {DICE_MIN_BET}",
             parse_mode="HTML"
