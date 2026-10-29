@@ -2697,7 +2697,7 @@ async def cmd_dice(m: Message):
     args = m.text.split()
     if len(args) < 2:
         return await m.answer(
-            f"🎲 <b>/dice сумма</b>\n\n"
+            f" <b>/dice сумма</b>\n\n"
             f"🎯 Шанс победы: <b>50 на 50</b>\n"
             f"💰 Выигрыш: ставка × {DICE_WIN_MULTIPLIER}\n"
             f"📉 Мин. ставка: {DICE_MIN_BET}",
@@ -2719,28 +2719,30 @@ async def cmd_dice(m: Message):
     # Списываем ставку
     await update_balance(cid, uid, -bet)
     
-    # 🎲 ВИЗУАЛЬНЫЙ КУБИК (от 1 до 6, как раньше)
-    visual_dice = random.randint(1, 6)
+    # 🎯 РЕАЛЬНЫЙ ШАНС (скрытый от игрока)
+    chance_roll = random.randint(1, 100)
+    is_win = chance_roll <= DICE_WIN_PERCENT
+    
+    # 🎲 ВИЗУАЛЬНЫЙ КУБИК (зависит от результата)
+    if is_win:
+        visual_dice = random.randint(4, 6)  # При победе выпадает 4, 5 или 6
+    else:
+        visual_dice = random.randint(1, 3)  # При проигрыше выпадает 1, 2 или 3
     
     await m.answer(f"🎲 <b>Бросаем...</b>\nСтавка: {fmt_money(bet)}", parse_mode="HTML")
     await asyncio.sleep(1)
     
-    # 🎯 РЕАЛЬНЫЙ ШАНС (от 1 до 100)
-    chance_roll = random.randint(1, 100)
-    
-    # ✅ ПРОВЕРКА ПО ПРОЦЕНТУ
-    if chance_roll <= DICE_WIN_PERCENT:
-        # ПОБЕДА
+    # ✅ ВЫДАЧА РЕЗУЛЬТАТА
+    if is_win:
         win = bet * DICE_WIN_MULTIPLIER
         await update_balance(cid, uid, win)
         await m.answer(
             f"🎲 Выпало: <b>{visual_dice}</b>\n\n"
-            f"🎉 <b>ПОБЕДА!</b>\n"
+            f" <b>ПОБЕДА!</b>\n"
             f"💰 Выигрыш: +{fmt_money(win)} (x{DICE_WIN_MULTIPLIER})",
             parse_mode="HTML"
         )
     else:
-        # ПРОИГРЫШ
         await m.answer(
             f"🎲 Выпало: <b>{visual_dice}</b>\n\n"
             f"💀 <b>Проигрыш</b>",
