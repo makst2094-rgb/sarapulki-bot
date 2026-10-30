@@ -83,6 +83,12 @@ ROB_DEBT_TIMEOUT = 7200
 DICE_MIN_BET = 10             # Минимальная ставка
 DICE_WIN_PERCENT = 50        # ШАНС ПОБЕДЫ В ПРОЦЕНТАХ (меняй здесь!)
 DICE_WIN_MULTIPLIER = 2       # Множитель выигрыша (x2)
+DEBT_MIN_AMOUNT = 1000          # Мин. сумма долга
+DEBT_MAX_AMOUNT = 10000000      # Макс. сумма долга
+DEBT_MIN_DAYS = 1               # Мин. срок (дни)
+DEBT_MAX_DAYS = 7               # Макс. срок (дни)
+DEBT_FEE_PERCENT = 5            # Комиссия системы (%)
+DEBT_PENALTY_PERCENT = 20       # Штраф коллекторов (%)
 BJ_MIN_BALANCE = 50
 BJ_MAX_PLAYERS = 5
 BJ_WAIT_TIME = 60
@@ -345,6 +351,32 @@ async def init_db():
             PRIMARY KEY (chat_id, user_id)
         )""")
         print("✅ Таблица heist_cooldowns создана")
+            # Таблица долгов между игроками
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS debts (
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            lender_id BIGINT NOT NULL,
+            borrower_id BIGINT NOT NULL,
+            amount BIGINT NOT NULL,
+            fee BIGINT NOT NULL,
+            created_at REAL NOT NULL,
+            deadline REAL NOT NULL,
+            status TEXT DEFAULT 'active',
+            reminder_sent BOOLEAN DEFAULT FALSE
+            )
+        """)
+    
+    # Таблица долгов государству
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS state_debts (
+            chat_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            amount BIGINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (chat_id, user_id)
+            )
+        """)
+        print("✅ Таблицы системы долгов проверены/созданы")
         
     print("✅ База данных готова")
 
@@ -546,6 +578,107 @@ async def arrest_player(cid, uid):
         await conn.execute("UPDATE profiles SET job_key='novice', level=1 WHERE chat_id=$1 AND user_id=$2", cid, uid)
     
     return arrested, total_value
+
+# ══════════════════════════════════════════
+#  ФУНКЦИИ СИСТЕМЫ ДОЛГОВ
+# ══════════════════════════════════════════
+
+async def get_state_debt(cid, uid):
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT amount FROM state_debts WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            return row['amount'] if row else 0
+    except: return 0
+
+async def is_bankrupt(cid, uid):
+    user = await get_user(cid, uid)
+    if user['balance'] < 0: return True
+    return (await get_state_debt(cid, uid)) > 0
+
+async def run_collectors(debt):
+    cid = debt['chat_id']
+    borrower_id = debt['borrower_id']
+    lender_id = debt['lender_id']
+    debt_amount = debt['amount']
+    
+    penalty = int(debt_amount * DEBT_PENALTY_PERCENT / 100)
+    total_debt = debt_amount + penalty
+    collected = 0
+    seized_items = []
+    
+    async with pool.acquire() as conn:
+        # 1. Забираем машины
+        cars = await conn.fetch("SELECT id, car_name FROM cars WHERE chat_id=$1 AND user_id=$2", cid, borrower_id)
+        for car in cars:
+            if collected >= total_debt: break
+            # Ищем цену машины в словаре CARS
+            car_price = 0
+            for key, data in CARS.items():
+                if data['name'] in car['car_name'] or car['car_name'] in data['name']:
+                    car_price = data['price']
+                    break
+            if car_price > 0:
+                await conn.execute("DELETE FROM cars WHERE id=$1", car['id'])
+                collected += car_price
+                seized_items.append(f"🚗 {car['car_name']} ({fmt_money(car_price)})")
+        
+        # 2. Забираем бизнесы (если не хватило машин)
+        if collected < total_debt:
+            businesses = await conn.fetch("SELECT id, business_name FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, borrower_id)
+            for biz in businesses:
+                if collected >= total_debt: break
+                biz_price = 0
+                for key, data in MARKET.items():
+                    if data['name'] in biz['business_name'] or biz['business_name'] in data['name']:
+                        biz_price = data['price']
+                        break
+                # Если не нашли цену, берем доход * 50
+                if biz_price == 0: 
+                    biz_price = 50000 # Заглушка, если не нашли
+                if biz_price > 0:
+                    await conn.execute("DELETE FROM businesses WHERE id=$1", biz['id'])
+                    collected += biz_price
+                    seized_items.append(f"🏪 {biz['business_name']} ({fmt_money(biz_price)})")
+        
+        # 3. Забираем баланс
+        user = await get_user(cid, borrower_id)
+        if collected < total_debt and user['balance'] > 0:
+            take = min(user['balance'], total_debt - collected)
+            await update_balance(cid, borrower_id, -take)
+            collected += take
+            seized_items.append(f"💰 Баланс: {fmt_money(take)}")
+        
+        # 4. Если не хватило — долг государству и минус баланс
+        remaining = total_debt - collected
+        if remaining > 0:
+            await conn.execute("INSERT INTO state_debts VALUES ($1,$2,$3) ON CONFLICT (chat_id, user_id) DO UPDATE SET amount=state_debts.amount+$3", cid, borrower_id, remaining)
+            await update_balance(cid, borrower_id, -remaining)
+        
+        # Обновляем статус и платим кредитору
+        await conn.execute("UPDATE debts SET status='collected' WHERE id=$1", debt['id'])
+        await update_balance(cid, lender_id, debt_amount)
+
+    # Уведомления
+    try: b_name = (await bot.get_chat_member(cid, borrower_id)).user.full_name
+    except: b_name = "Должник"
+    try: l_name = (await bot.get_chat_member(cid, lender_id)).user.full_name
+    except: l_name = "Кредитор"
+    
+    seized_text = "\n".join(seized_items) if seized_items else "Ничего не найдено"
+    
+    await bot.send_message(cid, f"🚨 <b>КОЛЛЕКТОРЫ ЯВИЛИСЬ!</b>\n\n👤 {b_name}\n📜 Долг: {fmt_money(debt_amount)} + {fmt_money(penalty)} штраф\n\n🗑️ <b>Изъято:</b>\n{seized_text}\n\n{'🏛️ Долг государству: ' + fmt_money(remaining) if remaining > 0 else '✅ Долг закрыт'}", parse_mode="HTML")
+    await bot.send_message(cid, f"✅ <b>ДОЛГ ВОЗВРАЩЁН</b>\n\n👤 От {b_name}\n💰 Получено: {fmt_money(debt_amount)}", parse_mode="HTML")
+
+async def check_expired_debts_loop():
+    while True:
+        await asyncio.sleep(3600) # Проверка раз в час
+        try:
+            async with pool.acquire() as conn:
+                debts = await conn.fetch("SELECT * FROM debts WHERE status='active' AND deadline < $1", time.time())
+                for debt in debts:
+                    await run_collectors(debt)
+        except Exception as e:
+            print(f"Ошибка проверки долгов: {e}")
 
 # ==================== ДОСТИЖЕНИЯ ====================
 async def check_achievements(cid, uid):
@@ -955,6 +1088,8 @@ async def cmd_marketplace(m: Message):
 async def cmd_sell(m: Message):
     try:
         cid, uid = m.chat.id, m.from_user.id
+    if await is_bankrupt(cid, uid):
+        return await m.answer("❌ У вас долги! Погасите через /debt_pay_state")
         args = m.text.split()
         
         if len(args) < 3:
@@ -1728,6 +1863,11 @@ async def cmd_start(m: Message):
         "🏆 <b>Аукцион:</b>\n"
         "  /auction — активные лоты\n"
         "  /bid ID сумма — сделать ставку\n\n"
+        "💳 <b>ДОЛГИ:</b>\n"
+        " /debt_give — Дать в долг\n"
+        " /debt_return — Вернуть долг\n"
+        " /debt_list — Мои долги\n"
+        " /debt_pay_state — Погасить долг государству\n\n"
         " <b>Ограбления банков:</b>\n"
         "  /bank_heist — список банков\n"
         "  /buy_tool — магазин инструментов\n"
@@ -2748,6 +2888,109 @@ async def cmd_dice(m: Message):
             f"💀 <b>Проигрыш</b>",
             parse_mode="HTML"
         )
+
+@dp.message(Command("debt_give"))
+async def cmd_debt_give(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_bankrupt(cid, uid): return await m.answer("❌ Сначала погасите долги государству!")
+    
+    args = m.text.split()
+    if len(args) < 4:
+        return await m.answer(f"📜 <b>ДАТЬ В ДОЛГ</b>\n\n/debt_give @username сумма дни\n\nПример: /debt_give @вася 50000 3\nКомиссия системы: {DEBT_FEE_PERCENT}%", parse_mode="HTML")
+    
+    username = args[1].lstrip('@')
+    try:
+        amount = int(args[2])
+        days = int(args[3])
+    except: return await m.answer("❌ Сумма и дни должны быть числами!")
+    
+    if amount < DEBT_MIN_AMOUNT: return await m.answer(f"❌ Мин. сумма: {fmt_money(DEBT_MIN_AMOUNT)}")
+    if days < DEBT_MIN_DAYS or days > DEBT_MAX_DAYS: return await m.answer(f"❌ Срок: от {DEBT_MIN_DAYS} до {DEBT_MAX_DAYS} дней")
+    
+    try:
+        borrower = await bot.get_chat_member(cid, f"@{username}")
+        borrower_id = borrower.user.id
+    except: return await m.answer("❌ Игрок не найден!")
+    
+    if borrower_id == uid: return await m.answer("❌ Нельзя дать в долг себе!")
+    
+    fee = int(amount * DEBT_FEE_PERCENT / 100)
+    total = amount + fee
+    lender = await get_user(cid, uid)
+    if lender['balance'] < total: return await m.answer(f"❌ Нужно {fmt_money(total)} (сумма + комиссия). У вас: {fmt_money(lender['balance'])}")
+    
+    deadline = time.time() + days * 86400
+    async with pool.acquire() as conn:
+        await update_balance(cid, uid, -total)
+        await update_balance(cid, borrower_id, amount)
+        await conn.execute("INSERT INTO debts (chat_id, lender_id, borrower_id, amount, fee, created_at, deadline) VALUES ($1,$2,$3,$4,$5,$6,$7)", cid, uid, borrower_id, amount, fee, time.time(), deadline)
+    
+    await m.answer(f"📜 <b>РАСПИСКА СОЗДАНА</b>\n\n👤 Должник: {borrower.user.full_name}\n💰 Сумма: {fmt_money(amount)}\n📅 Срок: {days} дн.\n🏦 Комиссия: {fmt_money(fee)}\n📤 Списано: {fmt_money(total)}", parse_mode="HTML")
+    await bot.send_message(cid, f"📜 <b>ВЫ ВЗЯЛИ В ДОЛГ!</b>\n\n👤 Кредитор: {m.from_user.full_name}\n💰 Получено: {fmt_money(amount)}\n📅 Вернуть до: {days} дн.\n⚠️ При просрочке: +{DEBT_PENALTY_PERCENT}% штраф + коллекторы!", parse_mode="HTML")
+
+@dp.message(Command("debt_return"))
+async def cmd_debt_return(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    async with pool.acquire() as conn:
+        debt = await conn.fetchrow("SELECT * FROM debts WHERE borrower_id=$1 AND status='active' ORDER BY deadline ASC LIMIT 1", uid)
+    
+    if not debt: return await m.answer("✅ У вас нет активных долгов!")
+    
+    user = await get_user(cid, uid)
+    if user['balance'] < debt['amount']: return await m.answer(f"❌ Нужно {fmt_money(debt['amount'])}. У вас: {fmt_money(user['balance'])}")
+    
+    async with pool.acquire() as conn:
+        await update_balance(cid, uid, -debt['amount'])
+        await update_balance(cid, debt['lender_id'], debt['amount'])
+        await conn.execute("UPDATE debts SET status='returned' WHERE id=$1", debt['id'])
+    
+    await m.answer(f"✅ <b>ДОЛГ ПОГАШЕН!</b>\n\n💰 Списано: {fmt_money(debt['amount'])}\n📊 Баланс: {fmt_money((await get_user(cid, uid))['balance'])}", parse_mode="HTML")
+
+@dp.message(Command("debt_list"))
+async def cmd_debt_list(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    async with pool.acquire() as conn:
+        i_owe = await conn.fetch("SELECT * FROM debts WHERE borrower_id=$1 AND status='active'", uid)
+        owed_me = await conn.fetch("SELECT * FROM debts WHERE lender_id=$1 AND status='active'", uid)
+    
+    t = "📋 <b>ДОЛГИ</b>\n\n"
+    if i_owe:
+        t += "📤 <b>Я должен:</b>\n"
+        for d in i_owe:
+            lender = await bot.get_chat_member(cid, d['lender_id'])
+            t += f"• {lender.user.full_name}: {fmt_money(d['amount'])}\n"
+    else: t += "✅ Я никому не должен\n"
+    
+    if owed_me:
+        t += "\n📥 <b>Мне должны:</b>\n"
+        for d in owed_me:
+            borrower = await bot.get_chat_member(cid, d['borrower_id'])
+            t += f"• {borrower.user.full_name}: {fmt_money(d['amount'])}\n"
+    else: t += "\n✅ Мне никто не должен"
+    
+    await m.answer(t, parse_mode="HTML")
+
+@dp.message(Command("debt_pay_state"))
+async def cmd_debt_pay_state(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    debt = await get_state_debt(cid, uid)
+    if debt == 0: return await m.answer("✅ У вас нет долгов перед государством!")
+    
+    args = m.text.split()
+    if len(args) < 2: return await m.answer(f"🏛️ Долг государству: {fmt_money(debt)}\n\nИспользуйте: /debt_pay_state сумма")
+    
+    try: amount = int(args[1])
+    except: return await m.answer("❌ Укажите число!")
+    
+    if amount > debt: amount = debt
+    user = await get_user(cid, uid)
+    if user['balance'] < amount: return await m.answer(f"❌ Нужно {fmt_money(amount)}")
+    
+    async with pool.acquire() as conn:
+        await update_balance(cid, uid, -amount)
+        await conn.execute("UPDATE state_debts SET amount=amount-$1 WHERE chat_id=$2 AND user_id=$3", amount, cid, uid)
+    
+    await m.answer(f"✅ Погашено: {fmt_money(amount)}\n🏛️ Остаток: {fmt_money(await get_state_debt(cid, uid))}", parse_mode="HTML")
 
 @dp.message(Command("buy_ticket"))
 async def cmd_buy_ticket(m: Message):
@@ -4656,6 +4899,8 @@ async def main():
     asyncio.create_task(jail_fine_check_loop())
     asyncio.create_task(stock_market_loop())
     asyncio.create_task(stock_dividend_loop())
+    asyncio.create_task(check_expired_debts_loop())
+    print("🕒 Фоновая проверка долгов запущена")
     await dp.start_polling(bot, timeout=30, drop_pending_updates=True, allowed_updates=["message", "callback_query", "my_chat_member"])
 
 if __name__ == "__main__":
