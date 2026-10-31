@@ -2905,42 +2905,135 @@ async def cmd_dice(m: Message):
 
 @dp.message(Command("debt_give"))
 async def cmd_debt_give(m: Message):
+    """Дать в долг. Формат: /debt_give @player сумма дней"""
     cid, uid = m.chat.id, m.from_user.id
-    if await is_bankrupt(cid, uid): return await m.answer("❌ Сначала погасите долги государству!")
+    
+    if await is_bankrupt(cid, uid):
+        return await m.answer("❌ Сначала погасите долги государству!")
     
     args = m.text.split()
-    if len(args) < 4:
-        return await m.answer(f"📜 <b>ДАТЬ В ДОЛГ</b>\n\n/debt_give @username сумма дни\n\nПример: /debt_give @вася 50000 3\nКомиссия системы: {DEBT_FEE_PERCENT}%", parse_mode="HTML")
+    if len(args) < 3:
+        return await m.answer(
+            f"📜 <b>ДАТЬ В ДОЛГ</b>\n\n"
+            f"Способ 1: Ответь на сообщение игрока:\n"
+            f"/debt_give сумма дни\n\n"
+            f"Способ 2: Укажи через @:\n"
+            f"/debt_give @ник сумма дни\n\n"
+            f"Пример: /debt_give @вася 50000 3\n"
+            f"Комиссия системы: {DEBT_FEE_PERCENT}%",
+            parse_mode="HTML"
+        )
     
-    username = args[1].lstrip('@')
+    # Определяем способ указания должника
+    borrower_id = None
+    
+    # Способ 1: Через reply (самый надежный)
+    if m.reply_to_message:
+        borrower_id = m.reply_to_message.from_user.id
+    
+    # Способ 2: Через упоминание (text_mention)
+    if not borrower_id and m.entities:
+        for entity in m.entities:
+            if entity.type == "text_mention":
+                borrower_id = entity.user.id
+                break
+    
+    # Способ 3: Через @username (аргумент)
+    if not borrower_id:
+        username = args[1].lstrip('@')
+        try:
+            borrower = await bot.get_chat_member(cid, f"@{username}")
+            borrower_id = borrower.user.id
+        except:
+            pass
+    
+    # Если не нашли — ошибка
+    if not borrower_id:
+        return await m.answer(
+            "❌ Игрок не найден!\n\n"
+            "💡 <b>Попробуй так:</b>\n"
+            "1. Ответь на сообщение игрока\n"
+            "2. Напиши: /debt_give 50000 3\n\n"
+            "Или убедись, что у игрока есть @username",
+            parse_mode="HTML"
+        )
+    
+    if borrower_id == uid:
+        return await m.answer("❌ Нельзя дать в долг себе!")
+    
+    if await is_in_jail(cid, borrower_id):
+        return await m.answer("🔒 Игрок в тюрьме!")
+    
+    # Парсим сумму и дни (зависит от способа)
     try:
-        amount = int(args[2])
-        days = int(args[3])
-    except: return await m.answer("❌ Сумма и дни должны быть числами!")
+        if m.reply_to_message or (m.entities and any(e.type == "text_mention" for e in m.entities)):
+            # Если через reply или mention: args = [команда, сумма, дни]
+            amount = int(args[1])
+            days = int(args[2])
+        else:
+            # Если через @username: args = [команда, @ник, сумма, дни]
+            amount = int(args[2])
+            days = int(args[3])
+    except (ValueError, IndexError):
+        return await m.answer("❌ Сумма и дни должны быть числами!\nПример: /debt_give 50000 3")
     
-    if amount < DEBT_MIN_AMOUNT: return await m.answer(f"❌ Мин. сумма: {fmt_money(DEBT_MIN_AMOUNT)}")
-    if days < DEBT_MIN_DAYS or days > DEBT_MAX_DAYS: return await m.answer(f"❌ Срок: от {DEBT_MIN_DAYS} до {DEBT_MAX_DAYS} дней")
+    if amount < DEBT_MIN_AMOUNT:
+        return await m.answer(f"❌ Мин. сумма: {fmt_money(DEBT_MIN_AMOUNT)}")
+    if days < DEBT_MIN_DAYS or days > DEBT_MAX_DAYS:
+        return await m.answer(f"❌ Срок: от {DEBT_MIN_DAYS} до {DEBT_MAX_DAYS} дней")
     
-    try:
-        borrower = await bot.get_chat_member(cid, f"@{username}")
-        borrower_id = borrower.user.id
-    except: return await m.answer("❌ Игрок не найден!")
-    
-    if borrower_id == uid: return await m.answer("❌ Нельзя дать в долг себе!")
-    
+    # Считаем комиссию
     fee = int(amount * DEBT_FEE_PERCENT / 100)
     total = amount + fee
-    lender = await get_user(cid, uid)
-    if lender['balance'] < total: return await m.answer(f"❌ Нужно {fmt_money(total)} (сумма + комиссия). У вас: {fmt_money(lender['balance'])}")
     
+    lender = await get_user(cid, uid)
+    if lender['balance'] < total:
+        return await m.answer(
+            f"❌ Нужно {fmt_money(total)}\n"
+            f"(сумма {fmt_money(amount)} + комиссия {fmt_money(fee)})\n"
+            f"У вас: {fmt_money(lender['balance'])}",
+            parse_mode="HTML"
+        )
+    
+    # Создаём долг
     deadline = time.time() + days * 86400
+    
     async with pool.acquire() as conn:
         await update_balance(cid, uid, -total)
         await update_balance(cid, borrower_id, amount)
-        await conn.execute("INSERT INTO debts (chat_id, lender_id, borrower_id, amount, fee, created_at, deadline) VALUES ($1,$2,$3,$4,$5,$6,$7)", cid, uid, borrower_id, amount, fee, time.time(), deadline)
+        await conn.execute(
+            "INSERT INTO debts (chat_id, lender_id, borrower_id, amount, fee, created_at, deadline) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+            cid, uid, borrower_id, amount, fee, time.time(), deadline
+        )
     
-    await m.answer(f"📜 <b>РАСПИСКА СОЗДАНА</b>\n\n👤 Должник: {borrower.user.full_name}\n💰 Сумма: {fmt_money(amount)}\n📅 Срок: {days} дн.\n🏦 Комиссия: {fmt_money(fee)}\n📤 Списано: {fmt_money(total)}", parse_mode="HTML")
-    await bot.send_message(cid, f"📜 <b>ВЫ ВЗЯЛИ В ДОЛГ!</b>\n\n👤 Кредитор: {m.from_user.full_name}\n💰 Получено: {fmt_money(amount)}\n📅 Вернуть до: {days} дн.\n⚠️ При просрочке: +{DEBT_PENALTY_PERCENT}% штраф + коллекторы!", parse_mode="HTML")
+    # Получаем имя должника
+    try:
+        borrower_name = (await bot.get_chat_member(cid, borrower_id)).user.full_name
+    except:
+        borrower_name = f"User{borrower_id}"
+    
+    # Уведомления
+    await m.answer(
+        f"📜 <b>РАСПИСКА СОЗДАНА</b>\n\n"
+        f"👤 Должник: {borrower_name}\n"
+        f"💰 Сумма: {fmt_money(amount)}\n"
+        f"📅 Срок: {days} дн.\n"
+        f"🏦 Комиссия: {fmt_money(fee)}\n"
+        f"📤 Списано: {fmt_money(total)}\n\n"
+        f"⚠️ Если не вернёт — придут коллекторы!",
+        parse_mode="HTML"
+    )
+    
+    await bot.send_message(
+        cid,
+        f"📜 <b>ВЫ ВЗЯЛИ В ДОЛГ!</b>\n\n"
+        f"👤 Кредитор: {m.from_user.full_name}\n"
+        f"💰 Получено: {fmt_money(amount)}\n"
+        f"📅 Вернуть до: {days} дн.\n"
+        f"⚠️ При просрочке: +{DEBT_PENALTY_PERCENT}% штраф + коллекторы!\n\n"
+        f"Команда для возврата: /debt_return",
+        parse_mode="HTML"
+    )
 
 @dp.message(Command("debt_return"))
 async def cmd_debt_return(m: Message):
