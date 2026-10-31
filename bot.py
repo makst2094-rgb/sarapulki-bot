@@ -1102,10 +1102,9 @@ async def cmd_marketplace(m: Message):
 async def cmd_sell(m: Message):
     try:
         cid, uid = m.chat.id, m.from_user.id
-    if await is_bankrupt(cid, uid):
-        return await m.answer("❌ У вас долги! Погасите через /debt_pay_state")
+        if await is_bankrupt(cid, uid):
+            return await m.answer("❌ У вас долги! Погасите через /debt_pay_state")
         args = m.text.split()
-        
         if len(args) < 3:
             return await m.answer(
                 "🏪 <b>Продать предмет</b>\n\n"
