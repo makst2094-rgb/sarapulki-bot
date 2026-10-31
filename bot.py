@@ -1180,8 +1180,9 @@ async def cmd_sell(m: Message):
                 await m.answer(f"✅ Бизнес <b>{biz['business_name']}</b> выставлен за {fmt_money(price)}!", parse_mode="HTML")
             else:
                 return await m.answer("❌ Тип: inv, car или biz")
+                
     except Exception as e:
-        logging.error(f"sell error: {e}")
+        logging.error(f"Ошибка в cmd_sell: {e}")
         await m.answer(f"❌ Ошибка при продаже: {str(e)}")
 
 @dp.message(Command("buy_item"))
