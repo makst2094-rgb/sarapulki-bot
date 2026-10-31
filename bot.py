@@ -590,16 +590,24 @@ async def get_state_debt(cid, uid):
                 "SELECT amount FROM state_debts WHERE chat_id=$1 AND user_id=$2",
                 cid, uid
             )
-            return row['amount'] if row else 0
+            if row:
+                return row['amount']
+            return 0
     except Exception:
         return 0
 
+
 async def is_bankrupt(cid, uid):
-    user = await get_user(cid, uid)
-    if user['balance'] < 0:
-        return True
-    state_debt = await get_state_debt(cid, uid)
-    return state_debt > 0
+    try:
+        user = await get_user(cid, uid)
+        if user['balance'] < 0:
+            return True
+        state_debt = await get_state_debt(cid, uid)
+        if state_debt > 0:
+            return True
+        return False
+    except Exception:
+        return False
 
 async def run_collectors(debt):
     cid = debt['chat_id']
