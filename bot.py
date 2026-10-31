@@ -586,14 +586,20 @@ async def arrest_player(cid, uid):
 async def get_state_debt(cid, uid):
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT amount FROM state_debts WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            row = await conn.fetchrow(
+                "SELECT amount FROM state_debts WHERE chat_id=$1 AND user_id=$2",
+                cid, uid
+            )
             return row['amount'] if row else 0
-    except: return 0
+    except Exception:
+        return 0
 
 async def is_bankrupt(cid, uid):
     user = await get_user(cid, uid)
-    if user['balance'] < 0: return True
-    return (await get_state_debt(cid, uid)) > 0
+    if user['balance'] < 0:
+        return True
+    state_debt = await get_state_debt(cid, uid)
+    return state_debt > 0
 
 async def run_collectors(debt):
     cid = debt['chat_id']
