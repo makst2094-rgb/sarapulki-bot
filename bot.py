@@ -400,7 +400,7 @@ async def init_db():
             )
         """)
     
-    # Таблица долгов государству
+        # Таблица долгов государству
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS state_debts (
             chat_id BIGINT NOT NULL,
@@ -530,17 +530,18 @@ async def init_db():
     
         # Голоса на федеральных выборах
         await conn.execute("""
-                CREATE TABLE IF NOT EXISTS federal_votes (
-                chat_id BIGINT NOT NULL,
-                role TEXT NOT NULL,
-                voter_id BIGINT NOT NULL,
-                candidate_id BIGINT NOT NULL,
-                election_id TEXT NOT NULL,
-                PRIMARY KEY (chat_id, role, voter_id, election_id)
-                )
-            """)
-            print("✅ Таблицы федерального уровня созданы")
-        print("✅ База данных готова")
+            CREATE TABLE IF NOT EXISTS federal_votes (
+            chat_id BIGINT NOT NULL,
+            role TEXT NOT NULL,
+            voter_id BIGINT NOT NULL,
+            candidate_id BIGINT NOT NULL,
+            election_id TEXT NOT NULL,
+                RIMARY KEY (chat_id, role, voter_id, election_id)
+            )
+        """)
+        print("✅ Таблицы федерального уровня созданы")
+        
+    print("✅ База данных готова")
 
 async def save_username(cid, uid, name):
     async with pool.acquire() as conn:
