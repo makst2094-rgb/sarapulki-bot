@@ -494,7 +494,7 @@ async def init_db():
             active_until REAL NOT NULL
             )
         """)
-            # Федеральная казна
+        # Федеральная казна
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS state_treasury (
             chat_id BIGINT PRIMARY KEY,
@@ -524,7 +524,7 @@ async def init_db():
             user_id BIGINT NOT NULL,
             votes BIGINT DEFAULT 0,
             election_id TEXT NOT NULL,
-            UNIQUE(chat_id, role, user_id, election_id)
+            UNIQUE (chat_id, role, user_id, election_id)
             )
         """)
     
@@ -536,9 +536,10 @@ async def init_db():
             voter_id BIGINT NOT NULL,
             candidate_id BIGINT NOT NULL,
             election_id TEXT NOT NULL,
-                RIMARY KEY (chat_id, role, voter_id, election_id)
+            PRIMARY KEY (chat_id, role, voter_id, election_id)
             )
         """)
+    
         print("✅ Таблицы федерального уровня созданы")
         
     print("✅ База данных готова")
