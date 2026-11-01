@@ -2930,17 +2930,25 @@ async def init_cities():
         print(f"❌ Ошибка инициализации городов: {e}")
 
 async def get_player_city(cid, uid):
-    """Получить город игрока"""
+    """Получить город игрока. Возвращает dict с данными города."""
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT pc.city_id, c.* FROM player_cities pc JOIN cities c ON pc.city_id = c.id WHERE pc.chat_id=$1 AND pc.user_id=$2",
+                "SELECT city_id FROM player_cities WHERE chat_id=$1 AND user_id=$2",
                 cid, uid
             )
-            return row
+            if not row:
+                return None
+            
+            # Находим город в константе по ID
+            city_id = row['city_id']
+            for city in CITIES_LIST:
+                if city['id'] == city_id:
+                    return city
+            return None
     except Exception:
         return None
-
+        
 async def set_player_city(cid, uid, city_id):
     """Установить город игрока"""
     async with pool.acquire() as conn:
@@ -3196,14 +3204,7 @@ async def cmd_city(m: Message):
     
     subcmd = args[1].lower()
     
-    # СПИСОК ГОРОДОВ
-    if subcmd == "list":
-        t = "🏙️ <b>ГОРОДА РОССИИ</b>\n\n"
-        for city in CITIES_LIST:
-            t += f"{city['emoji']} <b>{city['name']}</b> — {city['desc']}\n\n"
-        return await m.answer(t, parse_mode="HTML")
-    
-    # ИНФОРМАЦИЯ О ГОРОДЕ (УПРОЩЕННАЯ ВЕРСИЯ)
+    # ИНФОРМАЦИЯ О ГОРОДЕ
     if subcmd == "info":
         try:
             player_city = await get_player_city(cid, uid)
@@ -3219,7 +3220,7 @@ async def cmd_city(m: Message):
             
             # Формируем ответ
             t = f"{player_city['emoji']} <b>{player_city['name']}</b>\n\n"
-            t += f"📊 Бонус: {player_city['bonus_desc']}\n"
+            t += f"📊 Бонус: {player_city['desc']}\n"
             t += f"💰 Казна: {treasury}\n\n"
             
             if mayor:
