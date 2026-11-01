@@ -85,6 +85,8 @@ CITIES_LIST = [
     {"id": 10, "name": "Владивосток", "emoji": "⚓", "bonus_type": "contraband", "bonus_value": 10, "desc": "+10% к контрабанде"}
 ]
 
+TAX_RATE_PERCENT = 5               # Стандартный налог на доход (5%)
+CITY_ASSIGNMENT_DAYS = 7           # Дней до принудительного распределения города
 PRESIDENT_DECREE_DURATION = 168  # 7 дней (пока президент у власти)
 PRIME_MINISTER_DECREE_DURATION = 168  # 7 дней
 MAYOR_ELECTION_HOURS = 24  # Окно для выборов мэра: 24 часа
@@ -2127,12 +2129,17 @@ async def cmd_balance(m: Message):
 async def cmd_work(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     
-    # 1. ПРОВЕРКА ТЮРЬМЫ (должна быть первой!)
+    # 0. ПРИНУДИТЕЛЬНАЯ ПРОПИСКА (если прошло 7 дней без выбора)
+    assigned_city_name = await check_and_assign_city(cid, uid)
+    if assigned_city_name:
+        await m.answer(f"⚠️ <b>ВНИМАНИЕ!</b>\n\nВы не выбрали город проживания за 7 дней.\nСистема случайно распределила вас в город: <b>{assigned_city_name}</b>!\n\nИспользуйте /city info, чтобы узнать свой бонус.", parse_mode="HTML")
+
+    # 1. ПРОВЕРКА ТЮРЬМЫ
     if await is_in_jail(cid, uid):
         info = await get_jail_info(cid, uid)
         return await m.answer(f"🔒 Вы в тюрьме! Осталось: {format_time(int(info['release_time'] - time.time()))}\n Используйте /jail_pay")
 
-    # 2. ПРОВЕРКА КРЕДИТА И ДОЛГОВ
+    # 2. ПРОВЕРКА КРЕДИТА
     user = await get_user(cid, uid)
     loan = await get_loan(cid, uid)
     
@@ -2147,26 +2154,20 @@ async def cmd_work(m: Message):
                 await conn.execute("UPDATE users SET balance=$1 WHERE chat_id=$2 AND user_id=$3", new_balance, cid, uid)
         
         await clear_loan(cid, uid)
-        
         msg = f"🚔 <b>АРЕСТ ИМУЩЕСТВА!</b>\n\n💰 Долг: <b>{fmt_money(total_debt)}</b>\n📦 Конфисковано на: <b>{fmt_money(confiscated_value)}</b>\n\n"
         msg += "<b>Конфисковано:</b>\n" + "\n".join([f"• {item}" for item in arrested])
-        
         if remaining_debt > 0:
-            msg += f"\n\n⛔ Остаток долга: <b>{fmt_money(remaining_debt)}</b> (ушёл в минус баланса)\nРаботайте и гасите через /repay"
+            msg += f"\n\n⛔ Остаток долга: <b>{fmt_money(remaining_debt)}</b>\nРаботайте и гасите через /repay"
         
-        try:
-            await bot.send_message(cid, msg, parse_mode="HTML")
-        except: 
-            pass
-            
-        return await m.answer(f"⛔ Ваше имущество конфисковано за неуплату кредита!\nНачните работать через /work", parse_mode="HTML")
+        try: await bot.send_message(cid, msg, parse_mode="HTML")
+        except: pass
+        return await m.answer(f"⛔ Ваше имущество конфисковано за неуплату кредита!", parse_mode="HTML")
 
-    # 3. ОБНОВЛЕНИЕ НИКНЕЙМА И ПОЛУЧЕНИЕ ПРОФИЛЯ
+    # 3. ПРОФИЛЬ И РАБОТА
     await save_username(cid, uid, m.from_user.full_name)
     p = await get_profile(cid, uid)
     jk = p['job_key']
     
-    # Проверка образования
     if jk != 'novice':
         edu = await get_education(cid, uid)
         if jk not in edu['completed_courses']:
@@ -2178,7 +2179,7 @@ async def cmd_work(m: Message):
     j = JOBS[jk]
     ct = time.time()
 
-    # 4. РАСЧЕТ БОНУСОВ ГОРОДА И УКАЗОВ МЭРА ⭐
+    # 4. РАСЧЕТ БОНУСОВ (Город + Мэр + Премьер)
     work_bonus_multiplier = 1.0
     player_city = await get_player_city(cid, uid)
     
@@ -2187,10 +2188,15 @@ async def cmd_work(m: Message):
         if player_city.get('bonus_type') == 'work':
             work_bonus_multiplier += player_city.get('bonus_value', 0) / 100
         
-        # Указ мэра "Рабочая смена"
+        # Указ мэра "Рабочая смена" (+20%)
         work_decree = await get_active_decree(cid, player_city['id'], 'work_bonus')
         if work_decree:
-            work_bonus_multiplier += 0.20  # +20% от указа
+            work_bonus_multiplier += 0.20
+            
+        # Указ Премьера "Субсидии" (+10%)
+        subsidy_decree = await get_active_federal_decree(cid, 'prime_minister', 'subsidy')
+        if subsidy_decree:
+            work_bonus_multiplier += 0.10
 
     # 5. КУЛДАУН С УЧЕТОМ КОФЕ
     coffee_level = p.get('coffee_level', 0)
@@ -2199,39 +2205,41 @@ async def cmd_work(m: Message):
 
     if ct - p['last_work_time'] < cd:
         rest_seconds = cd - (ct - p['last_work_time'])
-        minutes_left = int(rest_seconds // 60)
-        seconds_left = int(rest_seconds % 60)
-        return await m.answer(f"⏳ Отдых {minutes_left} мин. {seconds_left} сек.")
+        return await m.answer(f"⏳ Отдых {int(rest_seconds // 60)} мин. {int(rest_seconds % 60)} сек.")
 
-    # 6. РАСЧЕТ ЗАРПЛАТЫ С ПРИМЕНЕНИЕМ МНОЖИТЕЛЯ
-    sal = j['base_pay'] * p['level'] + random.randint(0, 5)
+    # 6. РАСЧЕТ ЗАРПЛАТЫ (ГРЯЗНЫЙ ДОХОД)
+    gross_sal = j['base_pay'] * p['level'] + random.randint(0, 5)
+    gross_sal = int(gross_sal * work_bonus_multiplier)
     
-    # Применяем множитель города и указов
-    sal = int(sal * work_bonus_multiplier)
-    
-    # Бонус MBA
     edu = await get_education(cid, uid)
     if edu['has_mba']:
-        sal = int(sal * 1.5)
+        gross_sal = int(gross_sal * 1.5)
 
-    # 7. АВТО-СПИСАНИЕ ДОЛГА С ЗАРПЛАТЫ
+    # 7. 💸 ПРИМЕНЕНИЕ НАЛОГА (ПЛАТЯТ ВСЕ!)
+    net_sal, tax_paid, tax_receiver, tax_rate = await apply_income_tax(cid, uid, gross_sal)
+
+    # 8. АВТО-СПИСАНИЕ ДОЛГА С ЧИСТОЙ ЗАРПЛАТЫ
     debt_deduction = 0
     deduction_msg = ""
 
     if user['balance'] < 0:
-        debt_deduction = int(sal * 0.5)
+        debt_deduction = int(net_sal * 0.5)
         debt_deduction = min(debt_deduction, abs(user['balance']))
-        
         if debt_deduction > 0:
-            sal -= debt_deduction
-            deduction_msg = f"\n💸 Автоматически погашено долга: <b>{fmt_money(debt_deduction)}</b>"
+            net_sal -= debt_deduction
+            deduction_msg = f"\n💸 Погашено долга: <b>{fmt_money(debt_deduction)}</b>"
 
-    # 8. ВЫДАЧА ДЕНЕГ И ОБНОВЛЕНИЕ ВРЕМЕНИ
-    await update_balance(cid, uid, sal)
+    # 9. ВЫДАЧА ДЕНЕГ
+    await update_balance(cid, uid, net_sal)
     async with pool.acquire() as conn:
         await conn.execute("UPDATE profiles SET last_work_time=$1 WHERE chat_id=$2 AND user_id=$3", ct, cid, uid)
 
-    response = f"💼 <b>{j['name']}</b> (Ур.{p['level']}): +<b>{fmt_money(sal)}</b>"
+    # Формируем красивый ответ
+    response = f"💼 <b>{j['name']}</b> (Ур.{p['level']}):\n"
+    response += f"💰 Начислено: <b>{fmt_money(gross_sal)}</b>\n"
+    response += f"🏛️ Налог ({tax_rate}%): <b>-{fmt_money(tax_paid)}</b> (в {tax_receiver})\n"
+    response += f"✅ <b>На руки: +{fmt_money(net_sal)}</b>"
+    
     if deduction_msg:
         response += deduction_msg
 
@@ -3103,6 +3111,65 @@ async def get_active_decree(cid, city_id, decree_type):
             return row
     except Exception:
         return None
+
+async def apply_income_tax(cid, uid, gross_income):
+    """
+    Применяет налог к доходу. Платят ВСЕ (включая мэров и президента).
+    Возвращает: (чистый_доход, сумма_налога, получатель, ставка_%)
+    """
+    # Проверяем федеральные указы о налоге
+    tax_cut = await get_active_federal_decree(cid, 'president', 'tax_cut')
+    tax_boost_president = await get_active_federal_decree(cid, 'president', 'tax_boost')
+    tax_boost_prime = await get_active_federal_decree(cid, 'prime_minister', 'tax_boost')
+    
+    # Определяем ставку налога
+    if tax_cut:
+        tax_rate = 2  # Указ Президента: снижение до 2%
+    elif tax_boost_president or tax_boost_prime:
+        tax_rate = 10  # Указ о повышении до 10%
+    else:
+        tax_rate = TAX_RATE_PERCENT  # Стандартные 5%
+    
+    tax_amount = int(gross_income * tax_rate / 100)
+    net_income = gross_income - tax_amount
+    
+    player_city = await get_player_city(cid, uid)
+    
+    if player_city:
+        # Налог идет в городскую казну
+        await update_city_treasury(cid, player_city['id'], tax_amount)
+        receiver = f"казну г. {player_city['name']}"
+    else:
+        # Если нет прописки, налог идет в федеральную казну
+        await update_state_treasury(cid, tax_amount)
+        receiver = "федеральную казну"
+        
+    return net_income, tax_amount, receiver, tax_rate
+
+async def check_and_assign_city(cid, uid):
+    """Проверяет, есть ли город у игрока. Если нет и прошло 7 дней — назначает случайно."""
+    player_city = await get_player_city(cid, uid)
+    if player_city:
+        return None  # Город уже есть, выходим
+
+    # Проверяем время регистрации
+    async with pool.acquire() as conn:
+        user = await conn.fetchrow("SELECT registered_at FROM users WHERE chat_id=$1 AND user_id=$2", cid, uid)
+        
+        reg_time = user['registered_at'] if user and user['registered_at'] else time.time()
+        
+        # Если поля не было, создаем его
+        if not user or not user['registered_at']:
+            await conn.execute("UPDATE users SET registered_at=$1 WHERE chat_id=$2 AND user_id=$3", reg_time, cid, uid)
+
+    # Прошло ли 7 дней?
+    if time.time() - reg_time > (CITY_ASSIGNMENT_DAYS * 86400):
+        import random
+        new_city = random.choice(CITIES_LIST)
+        await set_player_city(cid, uid, new_city['id'])
+        return new_city['name']
+    
+    return None
 
 async def create_decree(cid, city_id, mayor_id, decree_type, duration_hours=24):
     """Создать указ. Возвращает (успех, сообщение)"""
