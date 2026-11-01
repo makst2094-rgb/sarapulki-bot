@@ -3518,6 +3518,142 @@ async def cmd_dice(m: Message):
             parse_mode="HTML"
         )
 
+@dp.message(Command("president_nominate"))
+async def cmd_president_nominate(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        success, msg = await nominate_federal(cid, uid, 'president')
+        await m.answer(msg, parse_mode="HTML")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("president_vote"))
+async def cmd_president_vote(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        
+        if len(args) < 2:
+            election_id = await get_current_federal_election_id(cid, 'president')
+            async with pool.acquire() as conn:
+                candidates = await conn.fetch(
+                    "SELECT user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='president' AND election_id=$2 ORDER BY id ASC",
+                    cid, election_id
+                )
+            
+            if not candidates:
+                return await m.answer("🏛️ <b>Выборы Президента</b>\n\n❌ Пока нет кандидатов.\nИспользуй /president_nominate", parse_mode="HTML")
+            
+            t = "🏛️ <b>Кандидаты в Президенты:</b>\n\n"
+            for i, c in enumerate(candidates, 1):
+                try:
+                    name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
+                except:
+                    name = f"User{c['user_id']}"
+                t += f"{i}. {name} ({c['votes']} голосов)\n"
+            
+            t += f"\n💰 Стоимость голоса: {PRESIDENT_VOTE_COST}\n"
+            t += "Используй: /president_vote [номер]"
+            return await m.answer(t, parse_mode="HTML")
+        
+        try:
+            candidate_num = int(args[1])
+        except ValueError:
+            return await m.answer("❌ Укажи номер кандидата числом!")
+        
+        success, msg = await vote_federal(cid, uid, 'president', candidate_num)
+        await m.answer(msg, parse_mode="HTML")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("president_finalize"))
+async def cmd_president_finalize(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        result = await finalize_federal_election(cid, 'president')
+        
+        if result is None:
+            return await m.answer("🏛️ <b>Выборы Президента завершены.</b>\n\n❌ Никто не баллотировался.", parse_mode="HTML")
+        
+        return await m.answer(
+            f"🎉 <b>НОВЫЙ ПРЕЗИДЕНТ НАЗНАЧЕН!</b>\n\n"
+            f"👤 ID: {result['user_id']}\n"
+            f"🗳️ Голосов: {result['votes']}\n"
+            f"💰 Бонус: +{result['bonus']}\n"
+            f"⏰ Срок: {PRESIDENT_TERM_DAYS} дней",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("prime_nominate"))
+async def cmd_prime_nominate(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        success, msg = await nominate_federal(cid, uid, 'prime_minister')
+        await m.answer(msg, parse_mode="HTML")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("prime_vote"))
+async def cmd_prime_vote(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        
+        if len(args) < 2:
+            election_id = await get_current_federal_election_id(cid, 'prime_minister')
+            async with pool.acquire() as conn:
+                candidates = await conn.fetch(
+                    "SELECT user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='prime_minister' AND election_id=$2 ORDER BY id ASC",
+                    cid, election_id
+                )
+            
+            if not candidates:
+                return await m.answer("💼 <b>Выборы Премьер-министра</b>\n\n❌ Пока нет кандидатов.\nИспользуй /prime_nominate", parse_mode="HTML")
+            
+            t = "💼 <b>Кандидаты в Премьер-министры:</b>\n\n"
+            for i, c in enumerate(candidates, 1):
+                try:
+                    name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
+                except:
+                    name = f"User{c['user_id']}"
+                t += f"{i}. {name} ({c['votes']} голосов)\n"
+            
+            t += f"\n💰 Стоимость голоса: {PRIME_MINISTER_VOTE_COST}\n"
+            t += "Используй: /prime_vote [номер]"
+            return await m.answer(t, parse_mode="HTML")
+        
+        try:
+            candidate_num = int(args[1])
+        except ValueError:
+            return await m.answer("❌ Укажи номер кандидата числом!")
+        
+        success, msg = await vote_federal(cid, uid, 'prime_minister', candidate_num)
+        await m.answer(msg, parse_mode="HTML")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("prime_finalize"))
+async def cmd_prime_finalize(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        result = await finalize_federal_election(cid, 'prime_minister')
+        
+        if result is None:
+            return await m.answer("💼 <b>Выборы Премьера завершены.</b>\n\n❌ Никто не баллотировался.", parse_mode="HTML")
+        
+        return await m.answer(
+            f"🎉 <b>НОВЫЙ ПРЕМЬЕР-МИНИСТР НАЗНАЧЕН!</b>\n\n"
+            f"👤 ID: {result['user_id']}\n"
+            f"🗳️ Голосов: {result['votes']}\n"
+            f"💰 Бонус: +{result['bonus']}\n"
+            f"⏰ Срок: {PRIME_MINISTER_TERM_DAYS} дней",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
 @dp.message(Command("debt_give"))
 async def cmd_debt_give(m: Message):
     """Дать в долг. Формат: /debt_give @player сумма дней"""
