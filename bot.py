@@ -85,6 +85,8 @@ CITIES_LIST = [
     {"id": 10, "name": "Владивосток", "emoji": "⚓", "bonus_type": "contraband", "bonus_value": 10, "desc": "+10% к контрабанде"}
 ]
 
+PRESIDENT_DECREE_DURATION = 168  # 7 дней (пока президент у власти)
+PRIME_MINISTER_DECREE_DURATION = 168  # 7 дней
 MAYOR_ELECTION_HOURS = 24  # Окно для выборов мэра: 24 часа
 MAYOR_ELECTION_DURATION = MAYOR_ELECTION_HOURS * 3600  # 86400 секунд
 FEDERAL_ELECTION_DURATION = 86400  # 24 часа в секундах
@@ -565,6 +567,18 @@ async def init_db():
             PRIMARY KEY (chat_id, city_id, election_id)
             )
         """)
+            # Указы Президента и Премьера
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS federal_decrees (
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            role TEXT NOT NULL,
+            decree_type TEXT NOT NULL,
+            active_until REAL NOT NULL,
+            UNIQUE (chat_id, role, decree_type)
+            )
+        """)
+        print("✅ Таблица федеральных указов создана")
 
     print("✅ База данных готова")
 
@@ -3507,6 +3521,70 @@ async def get_federal_role(cid, role):
     except Exception:
         return None
 
+# ══════════════════════════════════════════
+#  ФУНКЦИИ ФЕДЕРАЛЬНЫХ УКАЗОВ
+# ══════════════════════════════════════════
+
+async def is_federal_official(cid, uid, role):
+    """Проверка, является ли игрок федеральным чиновником"""
+    official = await get_federal_role(cid, role)
+    if official and official['user_id'] == uid:
+        return True
+    return False
+
+async def get_active_federal_decree(cid, role, decree_type):
+    """Получить активный федеральный указ"""
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM federal_decrees WHERE chat_id=$1 AND role=$2 AND decree_type=$3 AND active_until > $4",
+                cid, role, decree_type, time.time()
+            )
+            return row
+    except Exception:
+        return None
+
+async def create_federal_decree(cid, uid, role, decree_type):
+    """Создать федеральный указ. Возвращает (успех, сообщение)"""
+    # Проверяем, что игрок — нужный чиновник
+    if not await is_federal_official(cid, uid, role):
+        role_name = "Президент" if role == 'president' else "Премьер-министр"
+        return False, f"❌ Только {role_name} может издавать этот указ!"
+    
+    # Проверяем, нет ли уже такого указа
+    existing = await get_active_federal_decree(cid, role, decree_type)
+    if existing:
+        hours_left = int((existing['active_until'] - time.time()) / 3600)
+        return False, f"⚠️ Этот указ уже активен! Осталось: {hours_left} ч."
+    
+    # Длительность указа
+    duration = PRESIDENT_DECREE_DURATION if role == 'president' else PRIME_MINISTER_DECREE_DURATION
+    active_until = time.time() + (duration * 3600)
+    
+    # Создаём указ (ON CONFLICT обновляет срок)
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO federal_decrees (chat_id, role, decree_type, active_until) 
+               VALUES ($1,$2,$3,$4)
+               ON CONFLICT (chat_id, role, decree_type) DO UPDATE SET active_until = $4""",
+            cid, role, decree_type, active_until
+        )
+    
+    role_name = "Президент" if role == 'president' else "Премьер-министр"
+    return True, f"✅ Указ {role_name} издан!\n⏰ Действует {duration} часов."
+
+def get_federal_decree_name(decree_type):
+    """Название указа для отображения"""
+    names = {
+        'amnesty': '🕊️ Амнистия (освобождение из тюрьмы)',
+        'tax_cut': '📉 Снижение налога до 2%',
+        'tax_boost': '📈 Повышение налога до 10%',
+        'emergency': '🚨 Чрезвычайное положение',
+        'subsidy': '💰 Субсидии бизнесам (+10% к доходу)',
+        'investment': '🏗️ Инвестиции в города (казна +5000)',
+    }
+    return names.get(decree_type, 'Неизвестный указ')
+
 @dp.message(Command("dice"))
 async def cmd_dice(m: Message):
     cid, uid = m.chat.id, m.from_user.id
@@ -3576,6 +3654,166 @@ async def cmd_president_nominate(m: Message):
         await m.answer(msg, parse_mode="HTML")
     except Exception as e:
         await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("president_decree"))
+async def cmd_president_decree(m: Message):
+    """Команды Президента для издания указов"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    # Проверяем, президент ли игрок
+    if not await is_federal_official(cid, uid, 'president'):
+        return await m.answer("❌ Только Президент может издавать указы!")
+    
+    args = m.text.split()
+    if len(args) < 2:
+        return await m.answer(
+            "🏛️ <b>УКАЗЫ ПРЕЗИДЕНТА</b>\n\n"
+            "📋 <b>Доступные указы:</b>\n"
+            "/president_decree amnesty — Амнистия (освободить всех из тюрьмы)\n"
+            "/president_decree tax_cut — Снижение налога до 2% (7 дней)\n"
+            "/president_decree tax_boost — Повышение налога до 10% (7 дней)\n"
+            "/president_decree emergency — Чрезвычайное положение (7 дней)\n\n"
+            "💡 Указы действуют 7 дней или до конца срока Президента",
+            parse_mode="HTML"
+        )
+    
+    decree = args[1].lower()
+    
+    decree_map = {
+        'amnesty': 'amnesty',
+        'tax_cut': 'tax_cut',
+        'tax_boost': 'tax_boost',
+        'emergency': 'emergency',
+    }
+    
+    decree_type = decree_map.get(decree)
+    if not decree_type:
+        return await m.answer("❌ Неизвестный указ! Используй /president_decree для списка")
+    
+    # Особая логика для амнистии — мгновенное действие
+    if decree_type == 'amnesty':
+        try:
+            async with pool.acquire() as conn:
+                jailed = await conn.fetch(
+                    "SELECT user_id FROM jail WHERE chat_id=$1 AND release_time > $2",
+                    cid, time.time()
+                )
+                count = len(jailed)
+                if count > 0:
+                    await conn.execute(
+                        "DELETE FROM jail WHERE chat_id=$1 AND release_time > $2",
+                        cid, time.time()
+                    )
+            return await m.answer(f"🕊️ <b>АМНИСТИЯ ОБЪЯВЛЕНА!</b>\n\nОсвобождено заключённых: <b>{count}</b>", parse_mode="HTML")
+        except Exception as e:
+            return await m.answer(f"❌ Ошибка: {str(e)}")
+    
+    # Обычные указы
+    success, msg = await create_federal_decree(cid, uid, 'president', decree_type)
+    await m.answer(msg, parse_mode="HTML")
+
+@dp.message(Command("president_decrees"))
+async def cmd_president_decrees(m: Message):
+    """Показать активные указы Президента"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    try:
+        async with pool.acquire() as conn:
+            decrees = await conn.fetch(
+                "SELECT * FROM federal_decrees WHERE chat_id=$1 AND role='president' AND active_until > $2",
+                cid, time.time()
+            )
+    except Exception:
+        return await m.answer("❌ Ошибка при загрузке указов")
+    
+    if not decrees:
+        return await m.answer("🏛️ <b>Указы Президента</b>\n\n❌ Нет активных указов")
+    
+    t = "🏛️ <b>Активные указы Президента:</b>\n\n"
+    for d in decrees:
+        hours_left = int((d['active_until'] - time.time()) / 3600)
+        t += f"• {get_federal_decree_name(d['decree_type'])}\n"
+        t += f"  ⏰ Осталось: {hours_left} ч.\n\n"
+    
+    return await m.answer(t, parse_mode="HTML")
+
+@dp.message(Command("prime_decree"))
+async def cmd_prime_decree(m: Message):
+    """Команды Премьер-министра для издания указов"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    # Проверяем, премьер ли игрок
+    if not await is_federal_official(cid, uid, 'prime_minister'):
+        return await m.answer("❌ Только Премьер-министр может издавать указы!")
+    
+    args = m.text.split()
+    if len(args) < 2:
+        return await m.answer(
+            "💼 <b>УКАЗЫ ПРЕМЬЕР-МИНИСТРА</b>\n\n"
+            "📋 <b>Доступные указы:</b>\n"
+            "/prime_decree subsidy — Субсидии бизнесам (+10% к доходу, 7 дней)\n"
+            "/prime_decree investment — Инвестиции в города (казна +5000, разово)\n"
+            "/prime_decree tax_cut — Снижение налога до 2% (7 дней)\n"
+            "/prime_decree tax_boost — Повышение налога до 10% (7 дней)\n\n"
+            "💡 Указы действуют 7 дней или до конца срока Премьера",
+            parse_mode="HTML"
+        )
+    
+    decree = args[1].lower()
+    
+    decree_map = {
+        'subsidy': 'subsidy',
+        'investment': 'investment',
+        'tax_cut': 'tax_cut',
+        'tax_boost': 'tax_boost',
+    }
+    
+    decree_type = decree_map.get(decree)
+    if not decree_type:
+        return await m.answer("❌ Неизвестный указ! Используй /prime_decree для списка")
+    
+    # Особая логика для инвестиций — разовое действие
+    if decree_type == 'investment':
+        try:
+            async with pool.acquire() as conn:
+                cities = await conn.fetch(
+                    "SELECT DISTINCT city_id FROM player_cities WHERE chat_id=$1",
+                    cid
+                )
+                for city_row in cities:
+                    await update_city_treasury(cid, city_row['city_id'], 5000)
+            return await m.answer(f"🏗️ <b>ИНВЕСТИЦИИ В ГОРОДА!</b>\n\nКаждому городу добавлено <b>5000</b> в казну.\nГородов получило: <b>{len(cities)}</b>", parse_mode="HTML")
+        except Exception as e:
+            return await m.answer(f"❌ Ошибка: {str(e)}")
+    
+    # Обычные указы
+    success, msg = await create_federal_decree(cid, uid, 'prime_minister', decree_type)
+    await m.answer(msg, parse_mode="HTML")
+
+@dp.message(Command("prime_decrees"))
+async def cmd_prime_decrees(m: Message):
+    """Показать активные указы Премьер-министра"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    try:
+        async with pool.acquire() as conn:
+            decrees = await conn.fetch(
+                "SELECT * FROM federal_decrees WHERE chat_id=$1 AND role='prime_minister' AND active_until > $2",
+                cid, time.time()
+            )
+    except Exception:
+        return await m.answer("❌ Ошибка при загрузке указов")
+    
+    if not decrees:
+        return await m.answer("💼 <b>Указы Премьер-министра</b>\n\n❌ Нет активных указов")
+    
+    t = "💼 <b>Активные указы Премьер-министра:</b>\n\n"
+    for d in decrees:
+        hours_left = int((d['active_until'] - time.time()) / 3600)
+        t += f"• {get_federal_decree_name(d['decree_type'])}\n"
+        t += f"  ⏰ Осталось: {hours_left} ч.\n\n"
+    
+    return await m.answer(t, parse_mode="HTML")
 
 @dp.message(Command("president_vote"))
 async def cmd_president_vote(m: Message):
