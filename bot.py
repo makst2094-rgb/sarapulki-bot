@@ -446,6 +446,31 @@ async def init_db():
             PRIMARY KEY (chat_id, city_id)
             )
         """)
+                # Таблицы для выборов мэров
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS mayor_candidates (
+                id SERIAL PRIMARY KEY,
+                chat_id BIGINT NOT NULL,
+                city_id INTEGER NOT NULL,
+                user_id BIGINT NOT NULL,
+                votes BIGINT DEFAULT 0,
+                election_id TEXT NOT NULL,
+                status TEXT DEFAULT 'active',
+                UNIQUE(chat_id, city_id, user_id, election_id)
+            )
+        """)
+        
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS mayor_votes (
+                chat_id BIGINT NOT NULL,
+                city_id INTEGER NOT NULL,
+                voter_id BIGINT NOT NULL,
+                candidate_id BIGINT NOT NULL,
+                election_id TEXT NOT NULL,
+                PRIMARY KEY (chat_id, city_id, voter_id, election_id)
+            )
+        """)
+        print("✅ Таблицы выборов мэров созданы")
     
         print("✅ Таблицы городов и мэров созданы")
         
