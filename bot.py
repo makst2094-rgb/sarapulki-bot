@@ -3236,7 +3236,7 @@ async def nominate_mayor(cid, uid, city_id):
     """Выдвижение кандидата. Возвращает (успех, сообщение)"""
     user = await get_user(cid, uid)
     if user['balance'] < MAYOR_ELECTION_FEE:
-        return False, f"❌ Нужно {MAYOR_ELECTION_FEE} для выдвижения. У тебя: {user['balance']}"
+        return False, f" Нужно {fmt_money(MAYOR_ELECTION_FEE)} для выдвижения. У тебя: {fmt_money(user['balance'])}"
     
     election_id = await get_current_election_id(cid, city_id)
     async with pool.acquire() as conn:
@@ -3252,8 +3252,19 @@ async def nominate_mayor(cid, uid, city_id):
             "INSERT INTO mayor_candidates (chat_id, city_id, user_id, election_id) VALUES ($1,$2,$3,$4)",
             cid, city_id, uid, election_id
         )
+        
+        # ⭐ НОВОЕ: Записываем время начала выборов мэра
+        existing_start = await conn.fetchrow(
+            "SELECT * FROM mayor_elections_start WHERE chat_id=$1 AND city_id=$2 AND election_id=$3",
+            cid, city_id, election_id
+        )
+        if not existing_start:
+            await conn.execute(
+                "INSERT INTO mayor_elections_start (chat_id, city_id, election_id, started_at) VALUES ($1,$2,$3,$4)",
+                cid, city_id, election_id, time.time()
+            )
     
-    return True, f"✅ Ты выдвинут кандидатом в мэры!\n💸 Взнос {MAYOR_ELECTION_FEE} списан."
+    return True, f"✅ Ты выдвинут кандидатом в мэры!\n Взнос {fmt_money(MAYOR_ELECTION_FEE)} списан."
 
 async def vote_for_mayor(cid, uid, city_id, candidate_num):
     """Голосование. Возвращает (успех, сообщение)"""
@@ -6112,6 +6123,198 @@ async def on_user_join(m: Message):
         await get_user(cid, user.id)
         await save_username(cid, user.id, user.full_name)
 
+# ════════════════════════════════════════════════════════════════
+#  ФОНОВАЯ ЗАДАЧА: ПРОВЕРКА СРОКОВ И ВЫБОРОВ (ВСЕ УРОВНИ)
+# ════════════════════════════════════════════════════════════════
+
+async def check_all_elections_and_terms():
+    """Единая проверка для мэров, президента и премьера: 7 дней правления + 24 часа выборов"""
+    while True:
+        await asyncio.sleep(3600)  # Проверка раз в час
+        try:
+            async with pool.acquire() as conn:
+                now = time.time()
+                
+                # ══════════════════════════════════════════
+                # 1. МЭРЫ: Проверка истёкших сроков (7 дней)
+                # ══════════════════════════════════════════
+                expired_mayors = await conn.fetch(
+                    "SELECT chat_id, city_id FROM mayors WHERE expires_at <= $1", now
+                )
+                
+                for mayor_data in expired_mayors:
+                    cid = mayor_data['chat_id']
+                    city_id = mayor_data['city_id']
+                    
+                    # Удаляем старого мэра
+                    await conn.execute(
+                        "DELETE FROM mayors WHERE chat_id=$1 AND city_id=$2",
+                        cid, city_id
+                    )
+                    
+                    # Очищаем старые записи о старте выборов
+                    await conn.execute(
+                        "DELETE FROM mayor_elections_start WHERE chat_id=$1 AND city_id=$2",
+                        cid, city_id
+                    )
+                    
+                    # Находим название города
+                    city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+                    if city:
+                        try:
+                            await bot.send_message(
+                                cid,
+                                f"️ <b>СРОК МЭРА В {city['emoji']} {city['name']} ИСТЁК!</b>\n\n"
+                                f"⏳ Открыто окно для новых выборов на 24 часа.\n"
+                                f"Используйте /mayor_nominate",
+                                parse_mode="HTML"
+                            )
+                        except:
+                            pass
+                
+                # ══════════════════════════════════════════
+                # 2. МЭРЫ: Автозавершение выборов через 24 часа
+                # ══════════════════════════════════════════
+                expired_mayor_elections = await conn.fetch(
+                    """SELECT chat_id, city_id, election_id 
+                       FROM mayor_elections_start 
+                       WHERE started_at < $1""",
+                    now - MAYOR_ELECTION_DURATION
+                )
+                
+                for elec in expired_mayor_elections:
+                    cid = elec['chat_id']
+                    city_id = elec['city_id']
+                    
+                    # Завершаем выборы мэра
+                    result = await finalize_mayor_election(cid, city_id)
+                    
+                    # Удаляем запись о старте
+                    await conn.execute(
+                        "DELETE FROM mayor_elections_start WHERE chat_id=$1 AND city_id=$2 AND election_id=$3",
+                        cid, city_id, elec['election_id']
+                    )
+                    
+                    city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+                    if city:
+                        if result:
+                            try:
+                                winner_name = (await bot.get_chat_member(cid, result['user_id'])).user.full_name
+                            except:
+                                winner_name = f"User{result['user_id']}"
+                            
+                            msg = (
+                                f"🎉 <b>ВЫБОРЫ МЭРА В {city['emoji']} {city['name']} ЗАВЕРШЕНЫ!</b>\n\n"
+                                f"👤 Победитель: {winner_name}\n"
+                                f"🗳️ Голосов: {result['votes']}\n"
+                                f"⏰ Срок полномочий: {MAYOR_TERM_DAYS} дней"
+                            )
+                        else:
+                            msg = (
+                                f"🏛️ <b>ВЫБОРЫ МЭРА В {city['emoji']} {city['name']} ЗАВЕРШЕНЫ</b>\n\n"
+                                f"❌ Никто не баллотировался.\n"
+                                f"Должность мэра остаётся вакантной."
+                            )
+                        
+                        try:
+                            await bot.send_message(cid, msg, parse_mode="HTML")
+                        except:
+                            pass
+                
+                # ══════════════════════════════════════════
+                # 3. ФЕДЕРАЛЬНЫЙ УРОВЕНЬ: Проверка истёкших сроков (7 дней)
+                # ══════════════════════════════════════════
+                expired_federal = await conn.fetch(
+                    "SELECT chat_id, role FROM federal_roles WHERE expires_at <= $1", now
+                )
+                
+                for role_data in expired_federal:
+                    cid = role_data['chat_id']
+                    role = role_data['role']
+                    
+                    # Удаляем старого чиновника
+                    await conn.execute(
+                        "DELETE FROM federal_roles WHERE chat_id=$1 AND role=$2",
+                        cid, role
+                    )
+                    
+                    # Очищаем старые записи о старте выборов
+                    await conn.execute(
+                        "DELETE FROM federal_elections_start WHERE chat_id=$1 AND role=$2",
+                        cid, role
+                    )
+                    
+                    role_name = "Президент" if role == 'president' else "Премьер-министр"
+                    emoji = "🏛️" if role == 'president' else "💼"
+                    
+                    try:
+                        await bot.send_message(
+                            cid,
+                            f"{emoji} <b>СРОК ПОЛНОМОЧИЙ {role_name.upper()} ИСТЁК!</b>\n\n"
+                            f"⏳ Открыто окно для новых выборов на 24 часа.\n"
+                            f"Используйте /{'president' if role=='president' else 'prime'}_nominate",
+                            parse_mode="HTML"
+                        )
+                    except:
+                        pass
+                
+                # ═════════════════════════════════════════
+                # 4. ФЕДЕРАЛЬНЫЙ УРОВЕНЬ: Автозавершение выборов через 24 часа
+                # ══════════════════════════════════════════
+                expired_federal_elections = await conn.fetch(
+                    """SELECT chat_id, role, election_id 
+                       FROM federal_elections_start 
+                       WHERE started_at < $1""",
+                    now - FEDERAL_ELECTION_DURATION
+                )
+                
+                for elec in expired_federal_elections:
+                    cid = elec['chat_id']
+                    role = elec['role']
+                    
+                    # Завершаем выборы
+                    result = await finalize_federal_election(cid, role)
+                    
+                    # Удаляем запись о старте
+                    await conn.execute(
+                        "DELETE FROM federal_elections_start WHERE chat_id=$1 AND role=$2 AND election_id=$3",
+                        cid, role, elec['election_id']
+                    )
+                    
+                    role_name = "Президент" if role == 'president' else "Премьер-министр"
+                    emoji = "🏛️" if role == 'president' else "💼"
+                    
+                    if result:
+                        try:
+                            winner_name = (await bot.get_chat_member(cid, result['user_id'])).user.full_name
+                        except:
+                            winner_name = f"User{result['user_id']}"
+                        
+                        msg = (
+                            f"{emoji} <b>ВЫБОРЫ {role_name.upper()} ЗАВЕРШЕНЫ!</b>\n\n"
+                            f"👤 Победитель: {winner_name}\n"
+                            f"🗳️ Голосов: {result['votes']}\n"
+                            f" Срок полномочий: {PRESIDENT_TERM_DAYS} дней"
+                        )
+                    else:
+                        msg = (
+                            f"{emoji} <b>ВЫБОРЫ {role_name.upper()} ЗАВЕРШЕНЫ</b>\n\n"
+                            f"❌ Никто не баллотировался.\n"
+                            f"Должность остаётся вакантной до следующих выборов."
+                        )
+                    
+                    try:
+                        await bot.send_message(cid, msg, parse_mode="HTML")
+                    except:
+                        pass
+                        
+        except Exception as e:
+            print(f"Ошибка проверки выборов и сроков: {e}")
+
+# Запуск единой фоновой задачи
+asyncio.create_task(check_all_elections_and_terms())
+print("⏰ Единая проверка сроков и выборов (мэры + президент + премьер) запущена")
+
 async def main():
     await init_db()
     print("🤖 Бот запущен!")
@@ -6129,6 +6332,8 @@ async def main():
     print("🕒 Фоновая проверка долгов запущена")
     await init_cities()
     print("🏙️ Система городов готова к работе")
+    asyncio.create_task(check_all_elections_and_terms())
+    print("⏰ Единая проверка сроков и выборов (мэры + президент + премьер) запущена")
     await dp.start_polling(bot, timeout=30, drop_pending_updates=True, allowed_updates=["message", "callback_query", "my_chat_member"])
 
 if __name__ == "__main__":
