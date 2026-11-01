@@ -88,7 +88,9 @@ CITIES_LIST = [
 CITY_MOVE_COOLDOWN = 604800  # 7 дней в секундах
 CITY_MOVE_COST = 10000       # Стоимость переезда
 MAYOR_ELECTION_FEE = 30000   # Взнос за выдвижение мэром
-MAYOR_TERM_DAYS = 7          # Срок полномочий мэра
+MAYOR_TERM_DAYS = 7
+MAYOR_VOTE_COST = 500
+MAYOR_WIN_BONUS = 30000
 LOTTERY_PRICE = 50
 LOTTERY_INTERVAL = 12 * 3600
 BANK_INTEREST_RATE = 0.01
@@ -2983,6 +2985,117 @@ async def get_mayor(cid, city_id):
     except Exception:
         return None
 
+async def get_current_election_id(cid, city_id):
+    """Генерирует ID текущих выборов (меняется раз в неделю)"""
+    week_num = int(time.time() // 604800)
+    return f"elec_{cid}_{city_id}_w{week_num}"
+
+async def nominate_mayor(cid, uid, city_id):
+    """Выдвижение кандидата. Возвращает (успех, сообщение)"""
+    user = await get_user(cid, uid)
+    if user['balance'] < MAYOR_ELECTION_FEE:
+        return False, f"❌ Нужно {MAYOR_ELECTION_FEE} для выдвижения. У тебя: {user['balance']}"
+    
+    election_id = await get_current_election_id(cid, city_id)
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT * FROM mayor_candidates WHERE chat_id=$1 AND city_id=$2 AND user_id=$3 AND election_id=$4",
+            cid, city_id, uid, election_id
+        )
+        if existing:
+            return False, "❌ Ты уже выдвинут кандидатом!"
+        
+        await update_balance(cid, uid, -MAYOR_ELECTION_FEE)
+        await conn.execute(
+            "INSERT INTO mayor_candidates (chat_id, city_id, user_id, election_id) VALUES ($1,$2,$3,$4)",
+            cid, city_id, uid, election_id
+        )
+    
+    return True, f"✅ Ты выдвинут кандидатом в мэры!\n💸 Взнос {MAYOR_ELECTION_FEE} списан."
+
+async def vote_for_mayor(cid, uid, city_id, candidate_num):
+    """Голосование. Возвращает (успех, сообщение)"""
+    user = await get_user(cid, uid)
+    if user['balance'] < MAYOR_VOTE_COST:
+        return False, f"❌ Голос стоит {MAYOR_VOTE_COST}. У тебя: {user['balance']}"
+    
+    election_id = await get_current_election_id(cid, city_id)
+    
+    async with pool.acquire() as conn:
+        candidates = await conn.fetch(
+            "SELECT id, user_id, votes FROM mayor_candidates WHERE chat_id=$1 AND city_id=$2 AND election_id=$3 ORDER BY id ASC",
+            cid, city_id, election_id
+        )
+        
+        if not candidates:
+            return False, "❌ Пока нет кандидатов!"
+        
+        if candidate_num < 1 or candidate_num > len(candidates):
+            return False, f"❌ Неверный номер. Доступные: 1-{len(candidates)}"
+        
+        target_candidate = candidates[candidate_num - 1]
+        
+        already_voted = await conn.fetchrow(
+            "SELECT * FROM mayor_votes WHERE chat_id=$1 AND city_id=$2 AND voter_id=$3 AND election_id=$4",
+            cid, city_id, uid, election_id
+        )
+        if already_voted:
+            return False, "❌ Ты уже проголосовал!"
+        
+        await update_balance(cid, uid, -MAYOR_VOTE_COST)
+        await update_city_treasury(cid, city_id, MAYOR_VOTE_COST)
+        
+        await conn.execute(
+            "INSERT INTO mayor_votes (chat_id, city_id, voter_id, candidate_id, election_id) VALUES ($1,$2,$3,$4,$5)",
+            cid, city_id, uid, target_candidate['id'], election_id
+        )
+        
+        await conn.execute(
+            "UPDATE mayor_candidates SET votes = votes + 1 WHERE id=$1",
+            target_candidate['id']
+        )
+    
+    return True, f"✅ Голос принят!\n💸 Списано: {MAYOR_VOTE_COST}"
+
+async def finalize_mayor_election(cid, city_id):
+    """Подсчет голосов и назначение мэра."""
+    election_id = await get_current_election_id(cid, city_id)
+    
+    async with pool.acquire() as conn:
+        candidates = await conn.fetch(
+            "SELECT * FROM mayor_candidates WHERE chat_id=$1 AND city_id=$2 AND election_id=$3 ORDER BY votes DESC",
+            cid, city_id, election_id
+        )
+        
+        if not candidates:
+            await conn.execute("DELETE FROM mayors WHERE chat_id=$1 AND city_id=$2", cid, city_id)
+            return None
+        
+        winner = candidates[0]
+        
+        expires_at = time.time() + MAYOR_TERM_DAYS * 86400
+        await conn.execute(
+            """INSERT INTO mayors (chat_id, city_id, user_id, elected_at, expires_at, approval_rating) 
+               VALUES ($1,$2,$3,$4,$5,50)
+               ON CONFLICT (chat_id, city_id) DO UPDATE SET 
+                   user_id=$3, elected_at=$4, expires_at=$5, approval_rating=50""",
+            cid, city_id, winner['user_id'], time.time(), expires_at
+        )
+        
+        try:
+            await update_balance(cid, winner['user_id'], MAYOR_ELECTION_FEE + MAYOR_WIN_BONUS)
+        except Exception as e:
+            print(f"Ошибка бонуса мэру: {e}")
+        
+        await conn.execute("DELETE FROM mayor_votes WHERE chat_id=$1 AND city_id=$2 AND election_id=$3", cid, city_id, election_id)
+        await conn.execute("DELETE FROM mayor_candidates WHERE chat_id=$1 AND city_id=$2 AND election_id=$3", cid, city_id, election_id)
+    
+    return {
+        "user_id": winner['user_id'],
+        "votes": winner['votes'],
+        "bonus": MAYOR_WIN_BONUS
+    }
+
 @dp.message(Command("dice"))
 async def cmd_dice(m: Message):
     cid, uid = m.chat.id, m.from_user.id
@@ -3303,6 +3416,92 @@ async def cmd_city(m: Message):
         return await m.answer(f"🚚 Переезд завершён!\n\nТы теперь в {city['emoji']} {city['name']}\nБонус: {city['desc']}")
     
     await m.answer("❓ Неизвестная команда. Используй /city")
+
+@dp.message(Command("mayor_nominate"))
+async def cmd_mayor_nominate(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        player_city = await get_player_city(cid, uid)
+        if not player_city:
+            return await m.answer("❌ Ты ещё не выбрал город! Используй /city choose")
+        
+        success, msg = await nominate_mayor(cid, uid, player_city['id'])
+        await m.answer(msg, parse_mode="HTML")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("mayor_vote"))
+async def cmd_mayor_vote(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        
+        if len(args) < 2:
+            player_city = await get_player_city(cid, uid)
+            if not player_city:
+                return await m.answer("❌ Ты ещё не выбрал город!")
+            
+            election_id = await get_current_election_id(cid, player_city['id'])
+            async with pool.acquire() as conn:
+                candidates = await conn.fetch(
+                    "SELECT user_id, votes FROM mayor_candidates WHERE chat_id=$1 AND city_id=$2 AND election_id=$3 ORDER BY id ASC",
+                    cid, player_city['id'], election_id
+                )
+            
+            if not candidates:
+                return await m.answer(f"🏛️ <b>Выборы в {player_city['emoji']} {player_city['name']}</b>\n\n❌ Пока нет кандидатов.\nИспользуй /mayor_nominate", parse_mode="HTML")
+            
+            t = f"🏛️ <b>Кандидаты в мэры {player_city['emoji']} {player_city['name']}:</b>\n\n"
+            for i, c in enumerate(candidates, 1):
+                try:
+                    name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
+                except:
+                    name = f"User{c['user_id']}"
+                t += f"{i}. {name} ({c['votes']} голосов)\n"
+            
+            t += f"\n💰 Стоимость голоса: {MAYOR_VOTE_COST}\n"
+            t += "Используй: /mayor_vote [номер]"
+            return await m.answer(t, parse_mode="HTML")
+        
+        try:
+            candidate_num = int(args[1])
+        except ValueError:
+            return await m.answer("❌ Укажи номер кандидата числом!")
+        
+        player_city = await get_player_city(cid, uid)
+        if not player_city:
+            return await m.answer("❌ Ты ещё не выбрал город!")
+        
+        success, msg = await vote_for_mayor(cid, uid, player_city['id'], candidate_num)
+        await m.answer(msg, parse_mode="HTML")
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("mayor_finalize"))
+async def cmd_mayor_finalize(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        player_city = await get_player_city(cid, uid)
+        if not player_city:
+            return await m.answer("❌ Ты ещё не выбрал город!")
+        
+        result = await finalize_mayor_election(cid, player_city['id'])
+        
+        if result is None:
+            return await m.answer(f"🏛️ <b>Выборы завершены.</b>\n\n❌ Никто не баллотировался.\nМесто мэра остается ВАКАНТНЫМ.", parse_mode="HTML")
+        
+        return await m.answer(
+            f"🎉 <b>НОВЫЙ МЭР НАЗНАЧЕН!</b>\n\n"
+            f"🏛️ Город: {player_city['emoji']} {player_city['name']}\n"
+            f"👤 ID мэра: {result['user_id']}\n"
+            f"🗳️ Голосов: {result['votes']}\n"
+            f"💰 Бонус: +{result['bonus']}\n"
+            f"⏰ Срок: {MAYOR_TERM_DAYS} дней\n\n"
+            f"Проверь: /city info",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("debt_list"))
 async def cmd_debt_list(m: Message):
