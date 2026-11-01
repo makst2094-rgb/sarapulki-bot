@@ -2990,6 +2990,13 @@ async def finish_heist(cid, lobby, success, reason):
             f"❌ <b>ПРОВАЛ!</b>\n\n {bank['name']}\n👥 {', '.join(team)}\n\n🔒 Все в тюрьме на <b>{jail}ч</b>\n⚠️ {reason}\n⏰ Кулдаун 24ч",
             parse_mode="HTML")
 
+@dp.message(Command("state_treasury"))
+async def cmd_state_treasury(m: Message):
+    """Показать баланс федеральной казны"""
+    cid = m.chat.id
+    amount = await get_state_treasury(cid)
+    await m.answer(f"🏛️ <b>Федеральная казна:</b>\n💰 Баланс: <b>{fmt_money(amount)}</b>", parse_mode="HTML")
+
 @dp.message(Command("jail_pay"))
 async def cmd_jail_pay(m: Message):
     cid, uid = m.chat.id, m.from_user.id
@@ -3316,6 +3323,32 @@ async def update_city_treasury(cid, city_id, amount):
             cid, city_id, amount
         )
 
+async def update_state_treasury(cid, amount):
+    """Обновить баланс федеральной казны"""
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT amount FROM state_treasury WHERE chat_id=$1", cid
+        )
+        if existing:
+            new_amount = existing['amount'] + amount
+            await conn.execute(
+                "UPDATE state_treasury SET amount=$1 WHERE chat_id=$2",
+                new_amount, cid
+            )
+        else:
+            await conn.execute(
+                "INSERT INTO state_treasury (chat_id, amount) VALUES ($1, $2)",
+                cid, amount
+            )
+
+async def get_state_treasury(cid):
+    """Получить баланс федеральной казны"""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT amount FROM state_treasury WHERE chat_id=$1", cid
+        )
+        return row['amount'] if row else 0
+
 async def get_mayor(cid, city_id):
     """Получить мэра. Вернет None, если место вакантно!"""
     try:
@@ -3541,6 +3574,8 @@ async def vote_federal(cid, uid, role, candidate_num):
         
         await update_balance(cid, uid, -cost)
         await update_state_treasury(cid, cost)
+        await update_balance(cid, uid, -cost)
+        await update_state_treasury(cid, cost)  # ← ЭТА СТРОКА!
         
         await conn.execute(
             "INSERT INTO federal_votes (chat_id, role, voter_id, candidate_id, election_id) VALUES ($1,$2,$3,$4,$5)",
