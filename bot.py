@@ -85,6 +85,7 @@ CITIES_LIST = [
     {"id": 10, "name": "Владивосток", "emoji": "⚓", "bonus_type": "contraband", "bonus_value": 10, "desc": "+10% к контрабанде"}
 ]
 
+FEDERAL_ELECTION_DURATION = 86400  # 24 часа в секундах
 PRESIDENT_ELECTION_FEE = 50000
 PRESIDENT_VOTE_COST = 1000
 PRESIDENT_WIN_BONUS = 50000
@@ -541,7 +542,18 @@ async def init_db():
         """)
     
         print("✅ Таблицы федерального уровня созданы")
-        
+
+        # Время начала федеральных выборов
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS federal_elections_start (
+            chat_id BIGINT NOT NULL,
+            role TEXT NOT NULL,
+            election_id TEXT NOT NULL,
+            started_at REAL NOT NULL,
+            PRIMARY KEY (chat_id, role, election_id)
+            )
+        """)
+
     print("✅ База данных готова")
 
 async def save_username(cid, uid, name):
@@ -3337,6 +3349,7 @@ async def nominate_federal(cid, uid, role):
     
     election_id = await get_current_federal_election_id(cid, role)
     async with pool.acquire() as conn:
+        # Проверяем, не баллотируется ли уже
         existing = await conn.fetchrow(
             "SELECT * FROM federal_candidates WHERE chat_id=$1 AND role=$2 AND user_id=$3 AND election_id=$4",
             cid, role, uid, election_id
@@ -3344,11 +3357,25 @@ async def nominate_federal(cid, uid, role):
         if existing:
             return False, "❌ Ты уже выдвинут кандидатом!"
         
+        # Списываем взнос
         await update_balance(cid, uid, -fee)
+        
+        # Регистрируем кандидата
         await conn.execute(
             "INSERT INTO federal_candidates (chat_id, role, user_id, election_id) VALUES ($1,$2,$3,$4)",
             cid, role, uid, election_id
         )
+        
+        # ⭐ НОВОЕ: Запоминаем время начала выборов (если это первый кандидат)
+        existing_start = await conn.fetchrow(
+            "SELECT * FROM federal_elections_start WHERE chat_id=$1 AND role=$2 AND election_id=$3",
+            cid, role, election_id
+        )
+        if not existing_start:
+            await conn.execute(
+                "INSERT INTO federal_elections_start (chat_id, role, election_id, started_at) VALUES ($1,$2,$3,$4)",
+                cid, role, election_id, time.time()
+            )
     
     role_name = "Президент" if role == 'president' else "Премьер-министр"
     return True, f"✅ Ты выдвинут кандидатом в {role_name}!\n💸 Взнос {fmt_money(fee)} списан."
