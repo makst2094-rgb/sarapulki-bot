@@ -2998,6 +2998,15 @@ async def get_city_treasury(cid, city_id):
     except Exception:
         return 0
 
+async def update_city_treasury(cid, city_id, amount):
+    """Изменить баланс городской казны"""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO city_treasury (chat_id, city_id, amount) VALUES ($1, $2, $3)
+               ON CONFLICT (chat_id, city_id) DO UPDATE SET amount = city_treasury.amount + $3""",
+            cid, city_id, amount
+        )
+
 async def get_mayor(cid, city_id):
     """Получить мэра. Вернет None, если место вакантно!"""
     try:
