@@ -68,6 +68,27 @@ CRAFT_RECIPES = {
     "scriptka": {"name": "🎸 Золотая Скрипка", "requires": {"💎 Алмаз": 5}, "rarity": "legendary"}
 }
 
+# ══════════════════════════════════════════
+#  СИСТЕМА ГОРОДОВ И МЭРОВ
+# ══════════════════════════════════════════
+
+CITIES_LIST = [
+    {"id": 1, "name": "Москва", "emoji": "🏛️", "bonus_type": "income", "bonus_value": 10, "desc": "+10% к доходам (столичный эффект)"},
+    {"id": 2, "name": "Сарапул", "emoji": "🏭", "bonus_type": "work", "bonus_value": 15, "desc": "+15% к работе (рабочий город)"},
+    {"id": 3, "name": "Санкт-Петербург", "emoji": "🎭", "bonus_type": "reputation", "bonus_value": 10, "desc": "+10% к репутации"},
+    {"id": 4, "name": "Казань", "emoji": "🕌", "bonus_type": "heist", "bonus_value": 10, "desc": "+10% к ограблениям"},
+    {"id": 5, "name": "Новосибирск", "emoji": "🔬", "bonus_type": "business", "bonus_value": 10, "desc": "+10% к доходу бизнесов"},
+    {"id": 6, "name": "Екатеринбург", "emoji": "⚙️", "bonus_type": "production", "bonus_value": 10, "desc": "+10% к производству"},
+    {"id": 7, "name": "Нижний Новгород", "emoji": "🚗", "bonus_type": "cars", "bonus_value": 10, "desc": "+10% к машинам/ремонту"},
+    {"id": 8, "name": "Краснодар", "emoji": "🌾", "bonus_type": "farm", "bonus_value": 10, "desc": "+10% к фермерским бизнесам"},
+    {"id": 9, "name": "Сочи", "emoji": "🏖️", "bonus_type": "entertainment", "bonus_value": 10, "desc": "+10% к развлечениям"},
+    {"id": 10, "name": "Владивосток", "emoji": "⚓", "bonus_type": "contraband", "bonus_value": 10, "desc": "+10% к контрабанде"}
+]
+
+CITY_MOVE_COOLDOWN = 604800  # 7 дней в секундах
+CITY_MOVE_COST = 10000       # Стоимость переезда
+MAYOR_ELECTION_FEE = 30000   # Взнос за выдвижение мэром
+MAYOR_TERM_DAYS = 7          # Срок полномочий мэра
 LOTTERY_PRICE = 50
 LOTTERY_INTERVAL = 12 * 3600
 BANK_INTEREST_RATE = 0.01
@@ -308,6 +329,7 @@ async def init_db():
         await conn.execute("""CREATE TABLE IF NOT EXISTS mafia_threats (id SERIAL PRIMARY KEY, chat_id BIGINT, user_id BIGINT, threat_time REAL DEFAULT 0, deadline REAL DEFAULT 0, ransom_amount INTEGER DEFAULT 0, threat_type TEXT DEFAULT 'asset', target_asset TEXT DEFAULT '', paid BOOLEAN DEFAULT FALSE)""")
         await conn.execute("""CREATE TABLE IF NOT EXISTS achievements (chat_id BIGINT, user_id BIGINT, achievement_id TEXT, unlocked_at REAL DEFAULT 0, PRIMARY KEY (chat_id, user_id, achievement_id))""")
         
+        
         # Создаём новые таблицы без FOREIGN KEY
         await conn.execute("""CREATE TABLE marketplace (id SERIAL PRIMARY KEY, chat_id BIGINT, seller_id BIGINT, item_type TEXT, item_name TEXT, item_key TEXT, price INTEGER, created_at REAL DEFAULT 0)""")
         print("✅ Таблица marketplace создана")
@@ -377,6 +399,53 @@ async def init_db():
             )
         """)
         print("✅ Таблицы системы долгов проверены/созданы")
+
+        # Таблица городов
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS cities (
+            id SERIAL PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            bonus_desc TEXT NOT NULL,
+            bonus_type TEXT NOT NULL,
+            bonus_value INTEGER DEFAULT 10
+            )
+        """)
+    
+        # Привязка игроков к городам
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS player_cities (
+            chat_id BIGINT NOT NULL,
+            user_id BIGINT NOT NULL,
+            city_id INTEGER NOT NULL,
+            moved_at REAL DEFAULT 0,
+            PRIMARY KEY (chat_id, user_id)
+            )
+        """)
+    
+        # Городская казна
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS city_treasury (
+            chat_id BIGINT NOT NULL,
+            city_id INTEGER NOT NULL,
+            amount BIGINT DEFAULT 0,
+            PRIMARY KEY (chat_id, city_id)
+            )
+        """)
+    
+        # Мэры (может быть пустым, если никто не баллотировался!)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS mayors (
+            chat_id BIGINT NOT NULL,
+            city_id INTEGER NOT NULL,
+            user_id BIGINT NOT NULL,
+            elected_at REAL NOT NULL,
+            expires_at REAL NOT NULL,
+            approval_rating INTEGER DEFAULT 50,
+            PRIMARY KEY (chat_id, city_id)
+            )
+        """)
+    
+        print("✅ Таблицы городов и мэров созданы")
         
     print("✅ База данных готова")
 
@@ -2842,6 +2911,70 @@ async def cmd_daily(m: Message):
         await conn.execute("INSERT INTO daily_bonus VALUES ($1,$2,$3,$4) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_claim=$3, streak=$4", cid, uid, ct, sk)
     await m.answer(f" Бонус за {sk} дн.: <b>{fmt_money(bn)}</b>", parse_mode="HTML")
 
+# ══════════════════════════════════════════
+#  ФУНКЦИИ ГОРОДОВ
+# ══════════════════════════════════════════
+
+async def init_cities():
+    """Инициализация городов в БД при старте"""
+    try:
+        async with pool.acquire() as conn:
+            for city in CITIES_LIST:
+                await conn.execute(
+                    """INSERT INTO cities (id, name, bonus_desc, bonus_type, bonus_value) 
+                       VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING""",
+                    city['id'], city['name'], city['desc'], city['bonus_type'], city['bonus_value']
+                )
+        print(f"🏙️ Инициализировано {len(CITIES_LIST)} городов")
+    except Exception as e:
+        print(f"❌ Ошибка инициализации городов: {e}")
+
+async def get_player_city(cid, uid):
+    """Получить город игрока"""
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT pc.city_id, c.* FROM player_cities pc JOIN cities c ON pc.city_id = c.id WHERE pc.chat_id=$1 AND pc.user_id=$2",
+                cid, uid
+            )
+            return row
+    except Exception:
+        return None
+
+async def set_player_city(cid, uid, city_id):
+    """Установить город игрока"""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO player_cities (chat_id, user_id, city_id, moved_at) 
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (chat_id, user_id) DO UPDATE SET city_id=$3, moved_at=$4""",
+            cid, uid, city_id, time.time()
+        )
+
+async def get_city_treasury(cid, city_id):
+    """Получить баланс городской казны"""
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT amount FROM city_treasury WHERE chat_id=$1 AND city_id=$2",
+                cid, city_id
+            )
+            return row['amount'] if row else 0
+    except Exception:
+        return 0
+
+async def get_mayor(cid, city_id):
+    """Получить мэра. Вернет None, если место вакантно!"""
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM mayors WHERE chat_id=$1 AND city_id=$2 AND expires_at > $3",
+                cid, city_id, time.time()
+            )
+            return row
+    except Exception:
+        return None
+
 @dp.message(Command("dice"))
 async def cmd_dice(m: Message):
     cid, uid = m.chat.id, m.from_user.id
@@ -3052,6 +3185,143 @@ async def cmd_debt_return(m: Message):
         await conn.execute("UPDATE debts SET status='returned' WHERE id=$1", debt['id'])
     
     await m.answer(f"✅ <b>ДОЛГ ПОГАШЕН!</b>\n\n💰 Списано: {fmt_money(debt['amount'])}\n📊 Баланс: {fmt_money((await get_user(cid, uid))['balance'])}", parse_mode="HTML")
+
+@dp.message(Command("city"))
+async def cmd_city(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    args = m.text.split()
+    
+    if len(args) < 2:
+        return await m.answer(
+            "🏙️ <b>СИСТЕМА ГОРОДОВ</b>\n\n"
+            "📋 <b>Команды:</b>\n"
+            "/city list — список всех городов\n"
+            "/city choose [город] — выбрать город (1 раз бесплатно)\n"
+            "/city move [город] — сменить город (раз в 7 дней, 10к)\n"
+            "/city info — информация о твоём городе и мэре\n"
+            "/city residents — жители города\n\n"
+            "💡 <b>Как выбрать:</b>\n"
+            "/city choose Москва\n"
+            "/city choose Сарапул",
+            parse_mode="HTML"
+        )
+    
+    subcmd = args[1].lower()
+    
+    # СПИСОК ГОРОДОВ
+    if subcmd == "list":
+        t = "🏙️ <b>ГОРОДА РОССИИ</b>\n\n"
+        for city in CITIES_LIST:
+            t += f"{city['emoji']} <b>{city['name']}</b>\n"
+            t += f"   {city['desc']}\n\n"
+        return await m.answer(t, parse_mode="HTML")
+    
+    # ИНФОРМАЦИЯ О ГОРОДЕ (С УЧЕТОМ ВАКАНТНОГО МЭРА)
+    if subcmd == "info":
+        player_city = await get_player_city(cid, uid)
+        if not player_city:
+            return await m.answer("❌ Ты ещё не выбрал город!\nИспользуй: /city choose [город]")
+        
+        mayor = await get_mayor(cid, player_city['id'])
+        treasury = await get_city_treasury(cid, player_city['id'])
+        
+        t = f"{player_city['emoji']} <b>{player_city['name']}</b>\n\n"
+        t += f"📊 <b>Бонус города:</b> {player_city['bonus_desc']}\n"
+        t += f"💰 <b>Городская казна:</b> {fmt_money(treasury)}\n\n"
+        
+        # ⚠️ ЗДЕСЬ ЛОГИКА ВАКАНТНОГО МЭРА
+        if mayor:
+            try:
+                mayor_name = (await bot.get_chat_member(cid, mayor['user_id'])).user.full_name
+            except:
+                mayor_name = f"User{mayor['user_id']}"
+            days_left = int((mayor['expires_at'] - time.time()) / 86400)
+            t += f"🏛️ <b>Мэр:</b> {mayor_name}\n"
+            t += f"📊 Рейтинг: {mayor['approval_rating']}%\n"
+            t += f"⏰ Срок: ещё {days_left} дн."
+        else:
+            t += "🏛️ <b>Мэр:</b> <b>ВАКАНТНО</b> 🚫\n"
+            t += "⚠️ Никто не баллотировался или срок истек.\n"
+            t += "Город живет без управления!"
+        
+        return await m.answer(t, parse_mode="HTML")
+    
+    # ВЫБОР ГОРОДА
+    if subcmd == "choose":
+        if len(args) < 3:
+            return await m.answer("⚠️ Укажи город: /city choose Москва")
+        
+        city_name = " ".join(args[2:])
+        existing = await get_player_city(cid, uid)
+        if existing:
+            return await m.answer(f"❌ Ты уже живёшь в городе <b>{existing['name']}</b>!\nДля смены используй: /city move [город]", parse_mode="HTML")
+        
+        city = next((c for c in CITIES_LIST if c['name'].lower() == city_name.lower()), None)
+        if not city:
+            return await m.answer(f"❌ Город не найден! Список: /city list")
+        
+        await set_player_city(cid, uid, city['id'])
+        return await m.answer(f"🎉 <b>Добро пожаловать в {city['emoji']} {city['name']}!</b>\n\n📊 Твой бонус: {city['desc']}", parse_mode="HTML")
+    
+    # СМЕНА ГОРОДА
+    if subcmd == "move":
+        if len(args) < 3:
+            return await m.answer("⚠️ Укажи город: /city move Москва")
+        
+        city_name = " ".join(args[2:])
+        existing = await get_player_city(cid, uid)
+        if not existing:
+            return await m.answer("❌ Сначала выбери город: /city choose [город]")
+        
+        cooldown_left = CITY_MOVE_COOLDOWN - (time.time() - existing['moved_at'])
+        if cooldown_left > 0:
+            days = int(cooldown_left / 86400)
+            hours = int((cooldown_left % 86400) / 3600)
+            return await m.answer(f"⏳ Переезд возможен через {days} дн. {hours} ч.")
+        
+        city = next((c for c in CITIES_LIST if c['name'].lower() == city_name.lower()), None)
+        if not city:
+            return await m.answer(f"❌ Город не найден! Список: /city list")
+        
+        if city['id'] == existing['id']:
+            return await m.answer("❌ Ты уже живёшь в этом городе!")
+        
+        user = await get_user(cid, uid)
+        if user['balance'] < CITY_MOVE_COST:
+            return await m.answer(f"❌ Нужно {fmt_money(CITY_MOVE_COST)} для переезда. У тебя: {fmt_money(user['balance'])}")
+        
+        await update_balance(cid, uid, -CITY_MOVE_COST)
+        await set_player_city(cid, uid, city['id'])
+        return await m.answer(f"🚚 <b>ПЕРЕЕЗД ЗАВЕРШЁН!</b>\n\nТы теперь житель {city['emoji']} {city['name']}\n📊 Новый бонус: {city['desc']}", parse_mode="HTML")
+    
+    # ЖИТЕЛИ
+    if subcmd == "residents":
+        player_city = await get_player_city(cid, uid)
+        if not player_city:
+            return await m.answer("❌ Ты ещё не выбрал город!")
+        
+        try:
+            async with pool.acquire() as conn:
+                residents = await conn.fetch(
+                    "SELECT user_id FROM player_cities WHERE chat_id=$1 AND city_id=$2 LIMIT 20",
+                    cid, player_city['id']
+                )
+        except Exception:
+            return await m.answer("❌ Ошибка при загрузке")
+        
+        if not residents:
+            return await m.answer("🏙️ В твоём городе пока никого нет!")
+        
+        t = f"{player_city['emoji']} <b>Жители {player_city['name']}:</b>\n\n"
+        for i, r in enumerate(residents[:20], 1):
+            try:
+                name = (await bot.get_chat_member(cid, r['user_id'])).user.full_name
+            except:
+                name = f"User{r['user_id']}"
+            t += f"{i}. {name}\n"
+        return await m.answer(t, parse_mode="HTML")
+        
+    await m.answer("❓ Неизвестная команда. Используй /city")
 
 @dp.message(Command("debt_list"))
 async def cmd_debt_list(m: Message):
@@ -5008,6 +5278,8 @@ async def main():
     asyncio.create_task(stock_dividend_loop())
     asyncio.create_task(check_expired_debts_loop())
     print("🕒 Фоновая проверка долгов запущена")
+    await init_cities()
+    print("🏙️ Система городов готова к работе")
     await dp.start_polling(bot, timeout=30, drop_pending_updates=True, allowed_updates=["message", "callback_query", "my_chat_member"])
 
 if __name__ == "__main__":
