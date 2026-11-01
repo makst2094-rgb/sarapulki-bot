@@ -14,9 +14,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 from aiohttp import web
 
-BOT_OWNER_ID = 5967807166
-ADMIN_IDS = [5967807166]
-ADMIN_CHAT_ID = -1002595597314
 API_TOKEN = os.environ.get("BOT_TOKEN", "")
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "0").split(",") if x.strip().isdigit()]
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
@@ -88,6 +85,7 @@ CITIES_LIST = [
     {"id": 10, "name": "Владивосток", "emoji": "⚓", "bonus_type": "contraband", "bonus_value": 10, "desc": "+10% к контрабанде"}
 ]
 
+ADMIN_CHAT_ID = -1002595597314
 TAX_RATE_PERCENT = 5               # Стандартный налог на доход (5%)
 CITY_ASSIGNMENT_DAYS = 7           # Дней до принудительного распределения города
 PRESIDENT_DECREE_DURATION = 168  # 7 дней (пока президент у власти)
