@@ -89,6 +89,7 @@ CITY_MOVE_COOLDOWN = 604800  # 7 дней в секундах
 CITY_MOVE_COST = 10000       # Стоимость переезда
 MAYOR_ELECTION_FEE = 30000   # Взнос за выдвижение мэром
 MAYOR_TERM_DAYS = 7
+MAYOR_ELECTION_DURATION = 86400  # 24 часа в секундах
 MAYOR_VOTE_COST = 500
 MAYOR_WIN_BONUS = 30000
 LOTTERY_PRICE = 50
@@ -2957,11 +2958,11 @@ async def init_cities():
         print(f"❌ Ошибка инициализации городов: {e}")
 
 async def get_player_city(cid, uid):
-    """Получить город игрока. Возвращает dict с данными города."""
+    """Получить город игрока. Возвращает dict с данными города + moved_at из БД."""
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT city_id FROM player_cities WHERE chat_id=$1 AND user_id=$2",
+                "SELECT city_id, moved_at FROM player_cities WHERE chat_id=$1 AND user_id=$2",
                 cid, uid
             )
             if not row:
@@ -2971,7 +2972,10 @@ async def get_player_city(cid, uid):
             city_id = row['city_id']
             for city in CITIES_LIST:
                 if city['id'] == city_id:
-                    return city
+                    # Добавляем moved_at из БД к данным города
+                    city_copy = city.copy()
+                    city_copy['moved_at'] = row['moved_at']
+                    return city_copy
             return None
     except Exception:
         return None
@@ -3073,8 +3077,13 @@ async def vote_for_mayor(cid, uid, city_id, candidate_num):
             "SELECT * FROM mayor_votes WHERE chat_id=$1 AND city_id=$2 AND voter_id=$3 AND election_id=$4",
             cid, city_id, uid, election_id
         )
+
         if already_voted:
             return False, "❌ Ты уже проголосовал!"
+        
+        # ⭐ НОВОЕ: нельзя голосовать за себя
+        if target_candidate['user_id'] == uid:
+            return False, "❌ Нельзя голосовать за себя!"
         
         await update_balance(cid, uid, -MAYOR_VOTE_COST)
         await update_city_treasury(cid, city_id, MAYOR_VOTE_COST)
