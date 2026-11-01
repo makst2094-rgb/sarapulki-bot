@@ -85,6 +85,8 @@ CITIES_LIST = [
     {"id": 10, "name": "Владивосток", "emoji": "⚓", "bonus_type": "contraband", "bonus_value": 10, "desc": "+10% к контрабанде"}
 ]
 
+MAYOR_ELECTION_HOURS = 24  # Окно для выборов мэра: 24 часа
+MAYOR_ELECTION_DURATION = MAYOR_ELECTION_HOURS * 3600  # 86400 секунд
 FEDERAL_ELECTION_DURATION = 86400  # 24 часа в секундах
 PRESIDENT_ELECTION_FEE = 50000
 PRESIDENT_VOTE_COST = 1000
@@ -551,6 +553,16 @@ async def init_db():
             election_id TEXT NOT NULL,
             started_at REAL NOT NULL,
             PRIMARY KEY (chat_id, role, election_id)
+            )
+        """)
+            # Время начала выборов мэров
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS mayor_elections_start (
+            chat_id BIGINT NOT NULL,
+            city_id INTEGER NOT NULL,
+            election_id TEXT NOT NULL,
+            started_at REAL NOT NULL,
+            PRIMARY KEY (chat_id, city_id, election_id)
             )
         """)
 
