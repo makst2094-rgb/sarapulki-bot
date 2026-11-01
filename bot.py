@@ -3422,34 +3422,37 @@ async def cmd_city(m: Message):
     
     # СМЕНА ГОРОДА
     if subcmd == "move":
-        if len(args) < 3:
-            return await m.answer("⚠️ Укажи город: /city move Москва")
-        
-        city_name = " ".join(args[2:])
-        existing = await get_player_city(cid, uid)
-        if not existing:
-            return await m.answer("❌ Сначала выбери город: /city choose [город]")
-        
-        cooldown_left = CITY_MOVE_COOLDOWN - (time.time() - existing['moved_at'])
-        if cooldown_left > 0:
-            days = int(cooldown_left / 86400)
-            hours = int((cooldown_left % 86400) / 3600)
-            return await m.answer(f"⏳ Переезд возможен через {days} дн. {hours} ч.")
-        
-        city = next((c for c in CITIES_LIST if c['name'].lower() == city_name.lower()), None)
-        if not city:
-            return await m.answer(f"❌ Город не найден! Список: /city list")
-        
-        if city['id'] == existing['id']:
-            return await m.answer("❌ Ты уже живёшь в этом городе!")
-        
-        user = await get_user(cid, uid)
-        if user['balance'] < CITY_MOVE_COST:
-            return await m.answer(f"❌ Нужно {CITY_MOVE_COST} для переезда. У тебя: {user['balance']}")
-        
-        await update_balance(cid, uid, -CITY_MOVE_COST)
-        await set_player_city(cid, uid, city['id'])
-        return await m.answer(f"🚚 <b>ПЕРЕЕЗД ЗАВЕРШЁН!</b>\n\nТы теперь житель {city['emoji']} {city['name']}\n📊 Новый бонус: {city['desc']}", parse_mode="HTML")
+        try:
+            if len(args) < 3:
+                return await m.answer("⚠️ Укажи город: /city move Москва")
+            
+            city_name = " ".join(args[2:])
+            existing = await get_player_city(cid, uid)
+            if not existing:
+                return await m.answer("❌ Сначала выбери город: /city choose [город]")
+            
+            cooldown_left = CITY_MOVE_COOLDOWN - (time.time() - existing['moved_at'])
+            if cooldown_left > 0:
+                days = int(cooldown_left / 86400)
+                hours = int((cooldown_left % 86400) / 3600)
+                return await m.answer(f"⏳ Переезд возможен через {days} дн. {hours} ч.")
+            
+            city = next((c for c in CITIES_LIST if c['name'].lower() == city_name.lower()), None)
+            if not city:
+                return await m.answer(f"❌ Город не найден! Список: /city list")
+            
+            if city['id'] == existing['id']:
+                return await m.answer("❌ Ты уже живёшь в этом городе!")
+            
+            user = await get_user(cid, uid)
+            if user['balance'] < CITY_MOVE_COST:
+                return await m.answer(f"❌ Нужно {CITY_MOVE_COST} для переезда. У тебя: {user['balance']}")
+            
+            await update_balance(cid, uid, -CITY_MOVE_COST)
+            await set_player_city(cid, uid, city['id'])
+            return await m.answer(f"🚚 <b>ПЕРЕЕЗД ЗАВЕРШЁН!</b>\n\nТы теперь житель {city['emoji']} {city['name']}\n📊 Новый бонус: {city['desc']}", parse_mode="HTML")
+        except Exception as e:
+            return await m.answer(f"❌ Ошибка в move: {str(e)}")
     
     # ЖИТЕЛИ ГОРОДА
     if subcmd == "residents":
