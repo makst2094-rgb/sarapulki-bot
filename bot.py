@@ -7,7 +7,7 @@ import random as rnd
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -4662,6 +4662,44 @@ async def cmd_achievements(m: Message):
     t += f"━━━━━━━━━━━━━━━━━━━━\n📊 Прогресс: <b>{total_unlocked}/{total_available}</b> ({int(total_unlocked/total_available*100)}%)"
     await m.answer(t, parse_mode="HTML")
 
+@dp.message(Command("admin_panel"))
+async def cmd_admin_panel(m: Message):
+    """Админ-панель (работает только в ЛС бота)"""
+    uid = m.from_user.id
+    
+    print(f"🔍 ADMIN_PANEL: chat_type={m.chat.type}, uid={uid}, ADMIN_IDS={ADMIN_IDS}")
+    
+    if m.chat.type != 'private':
+        print(f"❌ Не ЛС: {m.chat.type}")
+        return await m.answer("❌ Эта команда работает только в личных сообщениях с ботом")
+    
+    if uid not in ADMIN_IDS:
+        print(f"❌ ID не в списке: {uid} not in {ADMIN_IDS}")
+        return await m.answer(f"❌ Доступ запрещён. Твой ID: {uid}")
+    
+    print(f"✅ Доступ разрешён для {uid}")
+    
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("🗳️ Голоса", callback_data="admin_votes"),
+        InlineKeyboardButton("➖ Снять голоса", callback_data="admin_remove_votes"),
+        InlineKeyboardButton("➕ Добавить голоса", callback_data="admin_add_votes"),
+        InlineKeyboardButton("💰 Выдать деньги", callback_data="admin_give_money"),
+        InlineKeyboardButton("🏙️ Казна городов", callback_data="admin_city_treasury"),
+        InlineKeyboardButton("🏛️ Фед. казна", callback_data="admin_state_treasury"),
+        InlineKeyboardButton("👥 Топ игроков", callback_data="admin_players"),
+    )
+    
+    await m.answer(
+        "🔒 <b>АДМИН-ПАНЕЛЬ</b>\n\n"
+        "Выберите действие:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    print(f"✅ Админ-панель отправлена")
+
 @dp.message(Command("shop"))
 async def cmd_shop(m: Message):
     cid, uid = m.chat.id, m.from_user.id
@@ -6485,45 +6523,6 @@ async def on_user_join(m: Message):
             continue
         await get_user(cid, user.id)
         await save_username(cid, user.id, user.full_name)
-
-
-@dp.message(Command("admin_panel"))
-async def cmd_admin_panel(m: Message):
-    """Админ-панель (работает только в ЛС бота)"""
-    uid = m.from_user.id
-    
-    print(f"🔍 ADMIN_PANEL: chat_type={m.chat.type}, uid={uid}, ADMIN_IDS={ADMIN_IDS}")
-    
-    if m.chat.type != 'private':
-        print(f"❌ Не ЛС: {m.chat.type}")
-        return await m.answer("❌ Эта команда работает только в личных сообщениях с ботом")
-    
-    if uid not in ADMIN_IDS:
-        print(f"❌ ID не в списке: {uid} not in {ADMIN_IDS}")
-        return await m.answer(f"❌ Доступ запрещён. Твой ID: {uid}")
-    
-    print(f"✅ Доступ разрешён для {uid}")
-    
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("🗳️ Голоса", callback_data="admin_votes"),
-        InlineKeyboardButton("➖ Снять голоса", callback_data="admin_remove_votes"),
-        InlineKeyboardButton("➕ Добавить голоса", callback_data="admin_add_votes"),
-        InlineKeyboardButton("💰 Выдать деньги", callback_data="admin_give_money"),
-        InlineKeyboardButton("🏙️ Казна городов", callback_data="admin_city_treasury"),
-        InlineKeyboardButton("🏛️ Фед. казна", callback_data="admin_state_treasury"),
-        InlineKeyboardButton("👥 Топ игроков", callback_data="admin_players"),
-    )
-    
-    await m.answer(
-        "🔒 <b>АДМИН-ПАНЕЛЬ</b>\n\n"
-        "Выберите действие:",
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
-    print(f"✅ Админ-панель отправлена")
 
 # ════════════════════════════════════════════════════════════════
 #  ФОНОВАЯ ЗАДАЧА: ПРОВЕРКА СРОКОВ И ВЫБОРОВ (ВСЕ УРОВНИ)
