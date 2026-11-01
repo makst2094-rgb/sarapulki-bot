@@ -6311,9 +6311,6 @@ async def check_all_elections_and_terms():
         except Exception as e:
             print(f"Ошибка проверки выборов и сроков: {e}")
 
-# Запуск единой фоновой задачи
-asyncio.create_task(check_all_elections_and_terms())
-print("⏰ Единая проверка сроков и выборов (мэры + президент + премьер) запущена")
 
 async def main():
     await init_db()
@@ -6323,17 +6320,17 @@ async def main():
     asyncio.create_task(auto_lottery_loop())
     asyncio.create_task(loan_interest_loop())
     asyncio.create_task(rob_debt_check_loop())
-    asyncio.create_task(mafia_threat_loop())
     asyncio.create_task(mafia_check_loop())
+    asyncio.create_task(mafia_threat_loop())
     asyncio.create_task(jail_fine_check_loop())
     asyncio.create_task(stock_market_loop())
     asyncio.create_task(stock_dividend_loop())
     asyncio.create_task(check_expired_debts_loop())
-    print("🕒 Фоновая проверка долгов запущена")
+    asyncio.create_task(check_all_elections_and_terms())  # ← вот она, внутри main()
+    print("🏛️ Единая проверка сроков и выборов запущена")
+    print("🕵️ Фоновая проверка долгов запущена")
     await init_cities()
     print("🏙️ Система городов готова к работе")
-    asyncio.create_task(check_all_elections_and_terms())
-    print("⏰ Единая проверка сроков и выборов (мэры + президент + премьер) запущена")
     await dp.start_polling(bot, timeout=30, drop_pending_updates=True, allowed_updates=["message", "callback_query", "my_chat_member"])
 
 if __name__ == "__main__":
