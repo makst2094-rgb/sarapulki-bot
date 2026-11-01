@@ -85,6 +85,14 @@ CITIES_LIST = [
     {"id": 10, "name": "Владивосток", "emoji": "⚓", "bonus_type": "contraband", "bonus_value": 10, "desc": "+10% к контрабанде"}
 ]
 
+PRESIDENT_ELECTION_FEE = 50000
+PRESIDENT_VOTE_COST = 1000
+PRESIDENT_WIN_BONUS = 50000
+PRESIDENT_TERM_DAYS = 7
+PRIME_MINISTER_ELECTION_FEE = 40000
+PRIME_MINISTER_VOTE_COST = 800
+PRIME_MINISTER_WIN_BONUS = 40000
+PRIME_MINISTER_TERM_DAYS = 7
 CITY_MOVE_COOLDOWN = 604800  # 7 дней в секундах
 CITY_MOVE_COST = 10000       # Стоимость переезда
 MAYOR_ELECTION_FEE = 30000   # Взнос за выдвижение мэром
@@ -486,6 +494,52 @@ async def init_db():
             active_until REAL NOT NULL
             )
         """)
+            # Федеральная казна
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS state_treasury (
+            chat_id BIGINT PRIMARY KEY,
+            amount BIGINT DEFAULT 0
+            )
+        """)
+    
+        # Федеральные должности
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS federal_roles (
+            chat_id BIGINT NOT NULL,
+            role TEXT NOT NULL,
+            user_id BIGINT NOT NULL,
+            elected_at REAL NOT NULL,
+            expires_at REAL NOT NULL,
+            approval_rating INTEGER DEFAULT 50,
+            PRIMARY KEY (chat_id, role)
+            )
+        """)
+    
+        # Кандидаты на федеральные посты
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS federal_candidates (
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            role TEXT NOT NULL,
+            user_id BIGINT NOT NULL,
+            votes BIGINT DEFAULT 0,
+            election_id TEXT NOT NULL,
+            UNIQUE(chat_id, role, user_id, election_id)
+            )
+        """)
+    
+        # Голоса на федеральных выборах
+        await conn.execute("""
+                CREATE TABLE IF NOT EXISTS federal_votes (
+                chat_id BIGINT NOT NULL,
+                role TEXT NOT NULL,
+                voter_id BIGINT NOT NULL,
+                candidate_id BIGINT NOT NULL,
+                election_id TEXT NOT NULL,
+                PRIMARY KEY (chat_id, role, voter_id, election_id)
+                )
+            """)
+            print("✅ Таблицы федерального уровня созданы")
         print("✅ База данных готова")
 
 async def save_username(cid, uid, name):
@@ -3262,6 +3316,144 @@ async def finalize_mayor_election(cid, city_id):
         "votes": winner['votes'],
         "bonus": MAYOR_WIN_BONUS
     }
+
+# ══════════════════════════════════════════
+#  ФУНКЦИИ ФЕДЕРАЛЬНЫХ ВЫБОРОВ
+# ══════════════════════════════════════════
+
+async def get_current_federal_election_id(cid, role):
+    week_num = int(time.time() // 604800)
+    return f"federal_{cid}_{role}_w{week_num}"
+
+async def nominate_federal(cid, uid, role):
+    """Выдвижение на федеральный пост"""
+    fee = PRESIDENT_ELECTION_FEE if role == 'president' else PRIME_MINISTER_ELECTION_FEE
+    
+    user = await get_user(cid, uid)
+    if user['balance'] < fee:
+        return False, f"❌ Нужно {fmt_money(fee)} для выдвижения. У тебя: {fmt_money(user['balance'])}"
+    
+    election_id = await get_current_federal_election_id(cid, role)
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT * FROM federal_candidates WHERE chat_id=$1 AND role=$2 AND user_id=$3 AND election_id=$4",
+            cid, role, uid, election_id
+        )
+        if existing:
+            return False, "❌ Ты уже выдвинут кандидатом!"
+        
+        await update_balance(cid, uid, -fee)
+        await conn.execute(
+            "INSERT INTO federal_candidates (chat_id, role, user_id, election_id) VALUES ($1,$2,$3,$4)",
+            cid, role, uid, election_id
+        )
+    
+    role_name = "Президент" if role == 'president' else "Премьер-министр"
+    return True, f"✅ Ты выдвинут кандидатом в {role_name}!\n💸 Взнос {fmt_money(fee)} списан."
+
+async def vote_federal(cid, uid, role, candidate_num):
+    """Голосование на федеральных выборах"""
+    cost = PRESIDENT_VOTE_COST if role == 'president' else PRIME_MINISTER_VOTE_COST
+    
+    user = await get_user(cid, uid)
+    if user['balance'] < cost:
+        return False, f"❌ Голос стоит {fmt_money(cost)}. У тебя: {fmt_money(user['balance'])}"
+    
+    election_id = await get_current_federal_election_id(cid, role)
+    
+    async with pool.acquire() as conn:
+        candidates = await conn.fetch(
+            "SELECT id, user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role=$2 AND election_id=$3 ORDER BY id ASC",
+            cid, role, election_id
+        )
+        
+        if not candidates:
+            return False, "❌ Пока нет кандидатов!"
+        
+        if candidate_num < 1 or candidate_num > len(candidates):
+            return False, f"❌ Неверный номер. Доступные: 1-{len(candidates)}"
+        
+        target_candidate = candidates[candidate_num - 1]
+        
+        # Нельзя голосовать за себя
+        if target_candidate['user_id'] == uid:
+            return False, "❌ Нельзя голосовать за себя!"
+        
+        already_voted = await conn.fetchrow(
+            "SELECT * FROM federal_votes WHERE chat_id=$1 AND role=$2 AND voter_id=$3 AND election_id=$4",
+            cid, role, uid, election_id
+        )
+        if already_voted:
+            return False, "❌ Ты уже проголосовал!"
+        
+        await update_balance(cid, uid, -cost)
+        await update_state_treasury(cid, cost)
+        
+        await conn.execute(
+            "INSERT INTO federal_votes (chat_id, role, voter_id, candidate_id, election_id) VALUES ($1,$2,$3,$4,$5)",
+            cid, role, uid, target_candidate['id'], election_id
+        )
+        
+        await conn.execute(
+            "UPDATE federal_candidates SET votes = votes + 1 WHERE id=$1",
+            target_candidate['id']
+        )
+    
+    return True, f"✅ Голос принят!\n💸 Списано: {fmt_money(cost)}"
+
+async def finalize_federal_election(cid, role):
+    """Подсчет голосов и назначение федерального чиновника"""
+    election_id = await get_current_federal_election_id(cid, role)
+    
+    async with pool.acquire() as conn:
+        candidates = await conn.fetch(
+            "SELECT * FROM federal_candidates WHERE chat_id=$1 AND role=$2 AND election_id=$3 ORDER BY votes DESC",
+            cid, role, election_id
+        )
+        
+        if not candidates:
+            await conn.execute("DELETE FROM federal_roles WHERE chat_id=$1 AND role=$2", cid, role)
+            return None
+        
+        winner = candidates[0]
+        term_days = PRESIDENT_TERM_DAYS if role == 'president' else PRIME_MINISTER_TERM_DAYS
+        win_bonus = PRESIDENT_WIN_BONUS if role == 'president' else PRIME_MINISTER_WIN_BONUS
+        election_fee = PRESIDENT_ELECTION_FEE if role == 'president' else PRIME_MINISTER_ELECTION_FEE
+        
+        expires_at = time.time() + term_days * 86400
+        await conn.execute(
+            """INSERT INTO federal_roles (chat_id, role, user_id, elected_at, expires_at, approval_rating) 
+               VALUES ($1,$2,$3,$4,$5,50)
+               ON CONFLICT (chat_id, role) DO UPDATE SET 
+                   user_id=$3, elected_at=$4, expires_at=$5, approval_rating=50""",
+            cid, role, winner['user_id'], time.time(), expires_at
+        )
+        
+        try:
+            await update_balance(cid, winner['user_id'], election_fee + win_bonus)
+        except Exception as e:
+            print(f"Ошибка бонуса: {e}")
+        
+        await conn.execute("DELETE FROM federal_votes WHERE chat_id=$1 AND role=$2 AND election_id=$3", cid, role, election_id)
+        await conn.execute("DELETE FROM federal_candidates WHERE chat_id=$1 AND role=$2 AND election_id=$3", cid, role, election_id)
+    
+    return {
+        "user_id": winner['user_id'],
+        "votes": winner['votes'],
+        "bonus": win_bonus
+    }
+
+async def get_federal_role(cid, role):
+    """Получить текущего федерального чиновника"""
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM federal_roles WHERE chat_id=$1 AND role=$2 AND expires_at > $3",
+                cid, role, time.time()
+            )
+            return row
+    except Exception:
+        return None
 
 @dp.message(Command("dice"))
 async def cmd_dice(m: Message):
