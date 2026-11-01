@@ -3192,19 +3192,7 @@ async def cmd_city(m: Message):
     args = m.text.split()
     
     if len(args) < 2:
-        return await m.answer(
-            "🏙️ <b>СИСТЕМА ГОРОДОВ</b>\n\n"
-            "📋 <b>Команды:</b>\n"
-            "/city list — список всех городов\n"
-            "/city choose [город] — выбрать город (1 раз бесплатно)\n"
-            "/city move [город] — сменить город (раз в 7 дней, 10к)\n"
-            "/city info — информация о твоём городе и мэре\n"
-            "/city residents — жители города\n\n"
-            "💡 <b>Как выбрать:</b>\n"
-            "/city choose Москва\n"
-            "/city choose Сарапул",
-            parse_mode="HTML"
-        )
+        return await m.answer("🏙️ Используй: /city list, /city choose [город], /city info, /city move [город]")
     
     subcmd = args[1].lower()
     
@@ -3212,39 +3200,44 @@ async def cmd_city(m: Message):
     if subcmd == "list":
         t = "🏙️ <b>ГОРОДА РОССИИ</b>\n\n"
         for city in CITIES_LIST:
-            t += f"{city['emoji']} <b>{city['name']}</b>\n"
-            t += f"   {city['desc']}\n\n"
+            t += f"{city['emoji']} <b>{city['name']}</b> — {city['desc']}\n\n"
         return await m.answer(t, parse_mode="HTML")
     
-    # ИНФОРМАЦИЯ О ГОРОДЕ (С УЧЕТОМ ВАКАНТНОГО МЭРА)
+    # ИНФОРМАЦИЯ О ГОРОДЕ (УПРОЩЕННАЯ ВЕРСИЯ)
     if subcmd == "info":
-        player_city = await get_player_city(cid, uid)
-        if not player_city:
-            return await m.answer("❌ Ты ещё не выбрал город!\nИспользуй: /city choose [город]")
-        
-        mayor = await get_mayor(cid, player_city['id'])
-        treasury = await get_city_treasury(cid, player_city['id'])
-        
-        t = f"{player_city['emoji']} <b>{player_city['name']}</b>\n\n"
-        t += f"📊 <b>Бонус города:</b> {player_city['bonus_desc']}\n"
-        t += f"💰 <b>Городская казна:</b> {fmt_money(treasury)}\n\n"
-        
-        # ⚠️ ЗДЕСЬ ЛОГИКА ВАКАНТНОГО МЭРА
-        if mayor:
-            try:
-                mayor_name = (await bot.get_chat_member(cid, mayor['user_id'])).user.full_name
-            except:
-                mayor_name = f"User{mayor['user_id']}"
-            days_left = int((mayor['expires_at'] - time.time()) / 86400)
-            t += f"🏛️ <b>Мэр:</b> {mayor_name}\n"
-            t += f"📊 Рейтинг: {mayor['approval_rating']}%\n"
-            t += f"⏰ Срок: ещё {days_left} дн."
-        else:
-            t += "🏛️ <b>Мэр:</b> <b>ВАКАНТНО</b> 🚫\n"
-            t += "⚠️ Никто не баллотировался или срок истек.\n"
-            t += "Город живет без управления!"
-        
-        return await m.answer(t, parse_mode="HTML")
+        try:
+            player_city = await get_player_city(cid, uid)
+            
+            if not player_city:
+                return await m.answer("❌ Ты ещё не выбрал город!\nИспользуй: /city choose [город]")
+            
+            # Получаем мэра
+            mayor = await get_mayor(cid, player_city['id'])
+            
+            # Получаем казну
+            treasury = await get_city_treasury(cid, player_city['id'])
+            
+            # Формируем ответ
+            t = f"{player_city['emoji']} <b>{player_city['name']}</b>\n\n"
+            t += f"📊 Бонус: {player_city['bonus_desc']}\n"
+            t += f"💰 Казна: {treasury}\n\n"
+            
+            if mayor:
+                try:
+                    mayor_name = (await bot.get_chat_member(cid, mayor['user_id'])).user.full_name
+                except:
+                    mayor_name = f"User{mayor['user_id']}"
+                days_left = int((mayor['expires_at'] - time.time()) / 86400)
+                t += f"🏛️ Мэр: {mayor_name}\n"
+                t += f"📊 Рейтинг: {mayor['approval_rating']}%\n"
+                t += f"⏰ Срок: ещё {days_left} дн."
+            else:
+                t += "🏛️ Мэр: ВАКАНТНО 🚫"
+            
+            return await m.answer(t, parse_mode="HTML")
+            
+        except Exception as e:
+            return await m.answer(f"❌ Ошибка: {str(e)}")
     
     # ВЫБОР ГОРОДА
     if subcmd == "choose":
@@ -3252,16 +3245,24 @@ async def cmd_city(m: Message):
             return await m.answer("⚠️ Укажи город: /city choose Москва")
         
         city_name = " ".join(args[2:])
+        
+        # Проверяем, не выбирал ли уже
         existing = await get_player_city(cid, uid)
         if existing:
-            return await m.answer(f"❌ Ты уже живёшь в городе <b>{existing['name']}</b>!\nДля смены используй: /city move [город]", parse_mode="HTML")
+            return await m.answer(f"❌ Ты уже в городе {existing['name']}! Для смены: /city move [город]")
         
-        city = next((c for c in CITIES_LIST if c['name'].lower() == city_name.lower()), None)
+        # Ищем город
+        city = None
+        for c in CITIES_LIST:
+            if c['name'].lower() == city_name.lower():
+                city = c
+                break
+        
         if not city:
             return await m.answer(f"❌ Город не найден! Список: /city list")
         
         await set_player_city(cid, uid, city['id'])
-        return await m.answer(f"🎉 <b>Добро пожаловать в {city['emoji']} {city['name']}!</b>\n\n📊 Твой бонус: {city['desc']}", parse_mode="HTML")
+        return await m.answer(f"🎉 Добро пожаловать в {city['emoji']} {city['name']}!\n\nБонус: {city['desc']}")
     
     # СМЕНА ГОРОДА
     if subcmd == "move":
@@ -3269,6 +3270,7 @@ async def cmd_city(m: Message):
             return await m.answer("⚠️ Укажи город: /city move Москва")
         
         city_name = " ".join(args[2:])
+        
         existing = await get_player_city(cid, uid)
         if not existing:
             return await m.answer("❌ Сначала выбери город: /city choose [город]")
@@ -3277,50 +3279,28 @@ async def cmd_city(m: Message):
         if cooldown_left > 0:
             days = int(cooldown_left / 86400)
             hours = int((cooldown_left % 86400) / 3600)
-            return await m.answer(f"⏳ Переезд возможен через {days} дн. {hours} ч.")
+            return await m.answer(f"⏳ Переезд через {days} дн. {hours} ч.")
         
-        city = next((c for c in CITIES_LIST if c['name'].lower() == city_name.lower()), None)
+        city = None
+        for c in CITIES_LIST:
+            if c['name'].lower() == city_name.lower():
+                city = c
+                break
+        
         if not city:
             return await m.answer(f"❌ Город не найден! Список: /city list")
         
         if city['id'] == existing['id']:
-            return await m.answer("❌ Ты уже живёшь в этом городе!")
+            return await m.answer("❌ Ты уже в этом городе!")
         
         user = await get_user(cid, uid)
         if user['balance'] < CITY_MOVE_COST:
-            return await m.answer(f"❌ Нужно {fmt_money(CITY_MOVE_COST)} для переезда. У тебя: {fmt_money(user['balance'])}")
+            return await m.answer(f"❌ Нужно {CITY_MOVE_COST} для переезда. У тебя: {user['balance']}")
         
         await update_balance(cid, uid, -CITY_MOVE_COST)
         await set_player_city(cid, uid, city['id'])
-        return await m.answer(f"🚚 <b>ПЕРЕЕЗД ЗАВЕРШЁН!</b>\n\nТы теперь житель {city['emoji']} {city['name']}\n📊 Новый бонус: {city['desc']}", parse_mode="HTML")
+        return await m.answer(f"🚚 Переезд завершён!\n\nТы теперь в {city['emoji']} {city['name']}\nБонус: {city['desc']}")
     
-    # ЖИТЕЛИ
-    if subcmd == "residents":
-        player_city = await get_player_city(cid, uid)
-        if not player_city:
-            return await m.answer("❌ Ты ещё не выбрал город!")
-        
-        try:
-            async with pool.acquire() as conn:
-                residents = await conn.fetch(
-                    "SELECT user_id FROM player_cities WHERE chat_id=$1 AND city_id=$2 LIMIT 20",
-                    cid, player_city['id']
-                )
-        except Exception:
-            return await m.answer("❌ Ошибка при загрузке")
-        
-        if not residents:
-            return await m.answer("🏙️ В твоём городе пока никого нет!")
-        
-        t = f"{player_city['emoji']} <b>Жители {player_city['name']}:</b>\n\n"
-        for i, r in enumerate(residents[:20], 1):
-            try:
-                name = (await bot.get_chat_member(cid, r['user_id'])).user.full_name
-            except:
-                name = f"User{r['user_id']}"
-            t += f"{i}. {name}\n"
-        return await m.answer(t, parse_mode="HTML")
-        
     await m.answer("❓ Неизвестная команда. Используй /city")
 
 @dp.message(Command("debt_list"))
