@@ -4989,7 +4989,7 @@ async def cmd_admin_panel(m: Message):
             inline_keyboard=[
                 [
                     InlineKeyboardButton(text="🏦 Банки игроков", callback_data="admin_banks"),
-                    InlineKeyboardButton(text="👑 Назначить должность", callback_data="admin_appoint"),
+                    InlineKeyboardButton(text="👑 Назначить", callback_data="admin_appoint"),
                 ],
                 [
                     InlineKeyboardButton(text="🗳️ Голоса", callback_data="admin_votes"),
