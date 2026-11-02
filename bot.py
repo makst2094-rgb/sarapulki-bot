@@ -5776,7 +5776,7 @@ async def cmd_appoint(m: Message):
     args = m.text.split()
     
     if len(args) < 3:
-        cities_list = ", ".join([c['id'] for c in CITIES_LIST])
+        cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
         return await m.answer(
             "👑 <b>НАЗНАЧЕНИЕ НА ДОЛЖНОСТЬ</b>\n\n"
             "Использование:\n"
@@ -5818,11 +5818,12 @@ async def cmd_appoint(m: Message):
                     except:
                         old_name = f"User{old['user_id']}"
                 
+                # ВСТАВКА БЕЗ appointed_at
                 await conn.execute(
-                    """INSERT INTO federal_roles (chat_id, role, user_id, appointed_at, term_ends_at) 
-                       VALUES ($1,'president',$2,$3,$4)
-                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, appointed_at=$3, term_ends_at=$4""",
-                    cid, target_uid, time.time(), time.time() + (30 * 86400)
+                    """INSERT INTO federal_roles (chat_id, role, user_id, term_ends_at) 
+                       VALUES ($1,'president',$2,$3)
+                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, term_ends_at=$3""",
+                    cid, target_uid, time.time() + (30 * 86400)
                 )
                 
                 msg = (
@@ -5848,11 +5849,12 @@ async def cmd_appoint(m: Message):
                     except:
                         old_name = f"User{old['user_id']}"
                 
+                # ВСТАВКА БЕЗ appointed_at
                 await conn.execute(
-                    """INSERT INTO federal_roles (chat_id, role, user_id, appointed_at, term_ends_at) 
-                       VALUES ($1,'prime_minister',$2,$3,$4)
-                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, appointed_at=$3, term_ends_at=$4""",
-                    cid, target_uid, time.time(), time.time() + (30 * 86400)
+                    """INSERT INTO federal_roles (chat_id, role, user_id, term_ends_at) 
+                       VALUES ($1,'prime_minister',$2,$3)
+                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, term_ends_at=$3""",
+                    cid, target_uid, time.time() + (30 * 86400)
                 )
                 
                 msg = (
@@ -5868,14 +5870,14 @@ async def cmd_appoint(m: Message):
             
             elif role == 'mayor':
                 if len(args) < 4:
-                    cities_list = ", ".join([c['id'] for c in CITIES_LIST])
+                    cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
                     return await m.answer(f"❌ Укажи город!\n\n/appoint mayor [user_id] [город_id]\n\nДоступные: {cities_list}")
                 
                 city_id = args[3]
                 city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
                 
                 if not city:
-                    cities_list = ", ".join([c['id'] for c in CITIES_LIST])
+                    cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
                     return await m.answer(f"❌ Город '{city_id}' не найден!\n\nДоступные: {cities_list}")
                 
                 old = await conn.fetchrow(
@@ -5889,11 +5891,12 @@ async def cmd_appoint(m: Message):
                     except:
                         old_name = f"User{old['user_id']}"
                 
+                # ВСТАВКА БЕЗ appointed_at
                 await conn.execute(
-                    """INSERT INTO mayors (chat_id, city_id, user_id, appointed_at, term_ends_at) 
-                       VALUES ($1,$2,$3,$4,$5)
-                       ON CONFLICT (chat_id, city_id) DO UPDATE SET user_id=$3, appointed_at=$4, term_ends_at=$5""",
-                    cid, city_id, target_uid, time.time(), time.time() + (30 * 86400)
+                    """INSERT INTO mayors (chat_id, city_id, user_id, term_ends_at) 
+                       VALUES ($1,$2,$3,$4)
+                       ON CONFLICT (chat_id, city_id) DO UPDATE SET user_id=$3, term_ends_at=$4""",
+                    cid, city_id, target_uid, time.time() + (30 * 86400)
                 )
                 
                 msg = (
