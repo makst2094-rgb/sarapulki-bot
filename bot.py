@@ -3174,6 +3174,45 @@ async def apply_income_tax(cid, uid, gross_income):
         
     return net_income, tax_amount, receiver, tax_rate
 
+async def apply_business_tax(cid, uid, gross_profit):
+    """
+    Применяет налог к прибыли бизнеса.
+    50% в казну города, 50% в федеральную казну.
+    Возвращает: (чистая_прибыль, сумма_налога, ставка_%)
+    """
+    # Проверяем федеральные указы о налоге
+    tax_cut = await get_active_federal_decree(cid, 'president', 'tax_cut')
+    tax_boost_president = await get_active_federal_decree(cid, 'president', 'tax_boost')
+    tax_boost_prime = await get_active_federal_decree(cid, 'prime_minister', 'tax_boost')
+    
+    # Определяем ставку налога
+    if tax_cut:
+        tax_rate = 2  # Указ Президента: снижение до 2%
+    elif tax_boost_president or tax_boost_prime:
+        tax_rate = 10  # Указ о повышении до 10%
+    else:
+        tax_rate = TAX_RATE_PERCENT  # Стандартные 5%
+    
+    tax_amount = int(gross_profit * tax_rate / 100)
+    net_profit = gross_profit - tax_amount
+    
+    # Делим налог пополам
+    city_tax = tax_amount // 2
+    state_tax = tax_amount - city_tax  # Остаток идет в фед. казну
+    
+    player_city = await get_player_city(cid, uid)
+    
+    if player_city:
+        # Половина в городскую казну
+        await update_city_treasury(cid, player_city['id'], city_tax)
+        # Половина в федеральную казну
+        await update_state_treasury(cid, state_tax)
+    else:
+        # Если нет прописки, весь налог в федеральную казну
+        await update_state_treasury(cid, tax_amount)
+    
+    return net_profit, tax_amount, tax_rate
+
 async def check_and_assign_city(cid, uid):
     """Проверяет, есть ли город у игрока. Если нет и прошло 7 дней — назначает случайно."""
     player_city = await get_player_city(cid, uid)
