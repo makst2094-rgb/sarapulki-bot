@@ -5311,8 +5311,23 @@ async def cmd_collect(m: Message):
                 waiting.append(f"⏳ {b['business_name']} — через {hours}ч {minutes}мин")
     
     if tot > 0:
-        await update_balance(cid, uid, tot)
-        msg = f"💼 <b>Прибыль собрана!</b>\n\n" + "\n".join(collected) + f"\n\n💰 Итого: <b>+{fmt_money(tot)}</b>"
+        # Применяем налог на бизнес (50% город, 50% федерация)
+        net_profit, tax_amount, tax_rate = await apply_business_tax(cid, uid, tot)
+        await update_balance(cid, uid, net_profit)
+        
+        # Получаем город для красивого отображения
+        player_city = await get_player_city(cid, uid)
+        city_name = player_city['name'] if player_city else "без прописки"
+        city_tax = tax_amount // 2
+        state_tax = tax_amount - city_tax
+        
+        msg = f"💼 <b>Прибыль собрана!</b>\n\n" + "\n".join(collected)
+        msg += f"\n\n💰 Доход: <b>{fmt_money(tot)}</b>"
+        msg += f"\n🏛️ Налог ({tax_rate}%): <b>-{fmt_money(tax_amount)}</b>"
+        msg += f"\n   ├─ 🏙️ Казна {city_name}: {fmt_money(city_tax)}"
+        msg += f"\n   └─ 🏛️ Фед. казна: {fmt_money(state_tax)}"
+        msg += f"\n\n✅ На руки: <b>{fmt_money(net_profit)}</b>"
+        
         if waiting:
             msg += f"\n\n⏳ <b>Следующий сбор:</b>\n" + "\n".join(waiting)
         await m.answer(msg, parse_mode="HTML")
