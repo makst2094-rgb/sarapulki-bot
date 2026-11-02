@@ -582,6 +582,20 @@ async def init_db():
             )
         """)
         print("✅ Таблица федеральных указов создана")
+            # Активные федеральные указы
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS active_federal_decrees (
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            decree_type TEXT NOT NULL,
+            issued_by BIGINT NOT NULL,
+            issued_at REAL NOT NULL,
+            expires_at REAL NOT NULL,
+            UNIQUE (chat_id, decree_type)
+            )
+        """)
+    
+        print("✅ Таблицы президентских указов созданы")
 
     print("✅ База данных готова")
 
@@ -3213,6 +3227,73 @@ async def apply_business_tax(cid, uid, gross_profit):
     
     return net_profit, tax_amount, tax_rate
 
+# ══════════════════════════════════════════
+#  ПРЕЗИДЕНТСКИЕ УКАЗЫ
+# ══════════════════════════════════════════
+
+async def create_federal_decree(cid, decree_type, issued_by, duration_days=7):
+    """Создать федеральный указ"""
+    async with pool.acquire() as conn:
+        expires_at = time.time() + (duration_days * 86400)
+        await conn.execute(
+            """INSERT INTO active_federal_decrees (chat_id, decree_type, issued_by, issued_at, expires_at) 
+               VALUES ($1,$2,$3,$4,$5)
+               ON CONFLICT (chat_id, decree_type) DO UPDATE SET expires_at=$5, issued_by=$3""",
+            cid, decree_type, issued_by, time.time(), expires_at
+        )
+
+async def get_active_federal_decree(cid, decree_type):
+    """Получить активный федеральный указ"""
+    async with pool.acquire() as conn:
+        return await conn.fetchrow(
+            "SELECT * FROM active_federal_decrees WHERE chat_id=$1 AND decree_type=$2 AND expires_at > $3",
+            cid, decree_type, time.time()
+        )
+
+async def jail_player(cid, uid, days=3):
+    """Посадить игрока в тюрьму"""
+    async with pool.acquire() as conn:
+        jail_until = time.time() + (days * 86400)
+        await conn.execute(
+            """INSERT INTO jail (chat_id, user_id, jail_until) 
+               VALUES ($1,$2,$3)
+               ON CONFLICT (chat_id, user_id) DO UPDATE SET jail_until=$3""",
+            cid, uid, jail_until
+        )
+
+async def unjail_player(cid, uid):
+    """Освободить из тюрьмы"""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM jail WHERE chat_id=$1 AND user_id=$2",
+            cid, uid
+        )
+
+async def clear_player_debts(cid, uid):
+    """Списать все кредиты игрока"""
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM credits WHERE chat_id=$1 AND user_id=$2",
+            cid, uid
+        )
+
+async def confiscate_businesses(cid, uid):
+    """Конфисковать все бизнесы игрока"""
+    async with pool.acquire() as conn:
+        businesses = await conn.fetch(
+            "SELECT * FROM businesses WHERE chat_id=$1 AND user_id=$2",
+            cid, uid
+        )
+        
+        total_income = sum(b['income'] for b in businesses)
+        
+        await conn.execute(
+            "DELETE FROM businesses WHERE chat_id=$1 AND user_id=$2",
+            cid, uid
+        )
+        
+        return len(businesses), total_income
+
 async def check_and_assign_city(cid, uid):
     """Проверяет, есть ли город у игрока. Если нет и прошло 7 дней — назначает случайно."""
     player_city = await get_player_city(cid, uid)
@@ -3746,6 +3827,198 @@ def get_federal_decree_name(decree_type):
         'investment': '🏗️ Инвестиции в города (казна +5000)',
     }
     return names.get(decree_type, 'Неизвестный указ')
+
+# ══════════════════════════════════════════
+#  КОМАНДЫ ПРЕЗИДЕНТСКИХ УКАЗОВ
+# ══════════════════════════════════════════
+
+@dp.message(Command("decree_executive_order"))
+async def cmd_decree_executive_order(m: Message):
+    """💀 Президентский приказ: тюрьма без суда"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    president = await get_federal_role(cid, 'president')
+    if not president or president['user_id'] != uid:
+        return await m.answer("❌ Только Президент!")
+    
+    args = m.text.split()
+    if len(args) < 2:
+        return await m.answer(
+            "💀 <b>ПРЕЗИДЕНТСКИЙ ПРИКАЗ</b>\n\n"
+            "Использование:\n"
+            "/decree_executive_order @username\n\n"
+            "⚠️ Сажает в тюрьму на 3 дня без суда\n"
+            "Кулдаун: 7 дней",
+            parse_mode="HTML"
+        )
+    
+    username = args[1].replace('@', '')
+    
+    try:
+        chat_member = await bot.get_chat_member(cid, (await bot.get_chat(username)).id)
+        target_uid = chat_member.user.id
+    except:
+        return await m.answer("❌ Игрок не найден!")
+    
+    # Кулдаун
+    last_decree = president.get('last_executive_order', 0)
+    if time.time() - last_decree < 604800:
+        days_left = int((604800 - (time.time() - last_decree)) / 86400)
+        return await m.answer(f"❌ Кулдаун: {days_left} дн.")
+    
+    await jail_player(cid, target_uid, 3)
+    
+    await bot.send_message(
+        cid,
+        f"💀 <b>ПРЕЗИДЕНТСКИЙ ПРИКАЗ!</b>\n\n"
+        f"👤 Президент @{(await bot.get_chat(uid)).username} приказал арестовать @{username}\n"
+        f"🔒 @{username} заключён в тюрьму на 3 дня\n"
+        f"⚖️ Без права на апелляцию",
+        parse_mode="HTML"
+    )
+    
+    await m.answer("✅ Приказ исполнен!")
+
+@dp.message(Command("decree_forced_nationalization"))
+async def cmd_decree_forced_nationalization(m: Message):
+    """🏭 Принудительная национализация"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    president = await get_federal_role(cid, 'president')
+    if not president or president['user_id'] != uid:
+        return await m.answer("❌ Только Президент!")
+    
+    args = m.text.split()
+    if len(args) < 2:
+        return await m.answer(
+            "🏭 <b>ПРИНУДИТЕЛЬНАЯ НАЦИОНАЛИЗАЦИЯ</b>\n\n"
+            "Использование:\n"
+            "/decree_forced_nationalization @username\n\n"
+            "⚠️ Конфискует ВСЕ бизнесы игрока\n"
+            "Кулдаун: 14 дней",
+            parse_mode="HTML"
+        )
+    
+    username = args[1].replace('@', '')
+    
+    try:
+        chat_member = await bot.get_chat_member(cid, (await bot.get_chat(username)).id)
+        target_uid = chat_member.user.id
+    except:
+        return await m.answer("❌ Игрок не найден!")
+    
+    # Кулдаун
+    last_decree = president.get('last_nationalization', 0)
+    if time.time() - last_decree < 1209600:
+        days_left = int((1209600 - (time.time() - last_decree)) / 86400)
+        return await m.answer(f"❌ Кулдаун: {days_left} дн.")
+    
+    biz_count, total_income = await confiscate_businesses(cid, target_uid)
+    
+    if biz_count == 0:
+        return await m.answer("❌ У игрока нет бизнесов!")
+    
+    await bot.send_message(
+        cid,
+        f"🏭 <b>ПРИНУДИТЕЛЬНАЯ НАЦИОНАЛИЗАЦИЯ!</b>\n\n"
+        f"👤 Президент @{(await bot.get_chat(uid)).username} конфисковал бизнесы @{username}\n"
+        f"📊 Изъято: {biz_count} бизнесов (доход {fmt_money(total_income)}/день)\n"
+        f"💰 Передано в федеральную казну",
+        parse_mode="HTML"
+    )
+    
+    await m.answer("✅ Национализация завершена!")
+
+@dp.message(Command("decree_federal_grant"))
+async def cmd_decree_federal_grant(m: Message):
+    """💰 Федеральная выплата всем"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    president = await get_federal_role(cid, 'president')
+    if not president or president['user_id'] != uid:
+        return await m.answer("❌ Только Президент!")
+    
+    grant_amount = 20000
+    
+    state_treasury = await get_state_treasury(cid)
+    
+    async with pool.acquire() as conn:
+        players = await conn.fetch("SELECT user_id FROM users WHERE chat_id=$1", cid)
+    
+    total_cost = grant_amount * len(players)
+    
+    if state_treasury < total_cost:
+        return await m.answer(f"❌ В казне только {fmt_money(state_treasury)}! Нужно: {fmt_money(total_cost)}")
+    
+    await update_state_treasury(cid, -total_cost)
+    
+    for player in players:
+        await update_balance(cid, player['user_id'], grant_amount)
+    
+    await bot.send_message(
+        cid,
+        f"💰 <b>ФЕДЕРАЛЬНАЯ ВЫПЛАТА!</b>\n\n"
+        f"👤 Президент @{(await bot.get_chat(uid)).username} подписал указ\n"
+        f"🎁 Каждый гражданин получил <b>{fmt_money(grant_amount)}</b>\n"
+        f"👥 Получателей: {len(players)}\n"
+        f"💸 Из казны: {fmt_money(total_cost)}",
+        parse_mode="HTML"
+    )
+    
+    await m.answer("✅ Выплата произведена!")
+
+@dp.message(Command("decree_stimulus"))
+async def cmd_decree_stimulus(m: Message):
+    """📈 Стимулирование экономики"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    president = await get_federal_role(cid, 'president')
+    if not president or president['user_id'] != uid:
+        return await m.answer("❌ Только Президент!")
+    
+    await create_federal_decree(cid, 'stimulus_package', uid, 7)
+    
+    await bot.send_message(
+        cid,
+        f"📈 <b>СТИМУЛИРОВАНИЕ ЭКОНОМИКИ!</b>\n\n"
+        f"👤 Президент @{(await bot.get_chat(uid)).username} запустил программу\n"
+        f"💰 Зарплаты всех граждан увеличены на <b>50%</b>\n"
+        f"⏳ Действует: 7 дней",
+        parse_mode="HTML"
+    )
+    
+    await m.answer("✅ Указ издан!")
+
+@dp.message(Command("decree_amnesty"))
+async def cmd_decree_amnesty(m: Message):
+    """🎉 Президентская амнистия"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    president = await get_federal_role(cid, 'president')
+    if not president or president['user_id'] != uid:
+        return await m.answer("❌ Только Президент!")
+    
+    async with pool.acquire() as conn:
+        prisoners = await conn.fetch("SELECT user_id FROM jail WHERE chat_id=$1", cid)
+        debtors = await conn.fetch("SELECT DISTINCT user_id FROM credits WHERE chat_id=$1", cid)
+    
+    for prisoner in prisoners:
+        await unjail_player(cid, prisoner['user_id'])
+    
+    for debtor in debtors:
+        await clear_player_debts(cid, debtor['user_id'])
+    
+    await bot.send_message(
+        cid,
+        f"🎉 <b>ПРЕЗИДЕНТСКАЯ АМНИСТИЯ!</b>\n\n"
+        f"👤 Президент @{(await bot.get_chat(uid)).username} подписал указ\n"
+        f"🔓 Освобождено из тюрьмы: {len(prisoners)}\n"
+        f"💳 Списано кредитов: {len(debtors)}\n"
+        f"⚖️ Все долги аннулированы!",
+        parse_mode="HTML"
+    )
+    
+    await m.answer("✅ Амнистия объявлена!")
 
 @dp.message(Command("dice"))
 async def cmd_dice(m: Message):
