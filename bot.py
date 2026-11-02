@@ -5167,9 +5167,19 @@ async def cmd_market(m: Message):
 
 @dp.message(Command("buy_market"))
 async def cmd_buy_market(m: Message):
-        # Проверяем указы мэра на скидки
-    player_city = await get_player_city(cid, uid)
+    cid, uid = m.chat.id, m.from_user.id
+    
+    args = m.text.split()
+    if len(args) < 2 or args[1] not in MARKET:
+        return await m.answer("🛒 <b>МАГАЗИН</b>\n\nИспользование:\n/buy_market [название предмета]\n\nДоступные предметы:\n" + "\n".join([f"• {k} — {fmt_money(v['price'])}" for k, v in MARKET.items()]))
+    
+    item_type = args[1]
+    it = MARKET[item_type]
+    price = it['price']
+    
+    # Проверяем указы мэра на скидки
     price_multiplier = 1.0
+    player_city = await get_player_city(cid, uid)
     
     if player_city:
         # Указ на скидку инструментов
@@ -5192,17 +5202,19 @@ async def cmd_buy_market(m: Message):
     
     # Применяем множитель к цене
     final_price = int(price * price_multiplier)
-    cid, uid = m.chat.id, m.from_user.id
+    
+    # Проверка тюрьмы
     if await is_in_jail(cid, uid):
         return await m.answer("🔒 В тюрьме нельзя!")
-    args = m.text.split()
-    if len(args) < 2 or args[1] not in MARKET:
-        return await m.answer("/market")
-    it = MARKET[args[1]]
+    
     u = await get_user(cid, uid)
-    if u['balance'] < it['price']:
-        return await m.answer(f"❌ Нужно {fmt_money(it['price'])}")
-    await update_balance(cid, uid, -it['price'])
+    if u['balance'] < final_price:
+        return await m.answer(f"❌ Нужно {fmt_money(final_price)}! У тебя: {fmt_money(u['balance'])}")
+    
+    # Списываем баланс
+    await update_balance(cid, uid, -final_price)
+    
+    # Обработка покупки
     if it['type'] == 'case':
         r = random.randint(1, 100)
         if r <= 5:
@@ -5210,16 +5222,28 @@ async def cmd_buy_market(m: Message):
         elif r <= 25:
             pr, rar = "💎 Алмаз", "rare"
         else:
-            pr, rar = " Бумага", "common"
+            pr, rar = "📦 Бумага", "common"
+        
         async with pool.acquire() as conn:
-            await conn.execute("INSERT INTO inventory (chat_id, user_id, item_name, item_type, rarity) VALUES ($1,$2,$3,'card',$4)", cid, uid, pr, rar)
-        await m.answer(f" Выпало: <b>{pr}</b> ({rar})", parse_mode="HTML")
+            await conn.execute("INSERT INTO inventory (chat_id, user_id, item_name, item_type, rarity) VALUES ($1,$2,$3,$4,$5)", cid, uid, pr, 'card', rar)
+        
+        await m.answer(f"✅ <b>Выпало: {pr}</b> ({rar})", parse_mode="HTML")
+    
     elif it['type'] == 'business':
         async with pool.acquire() as conn:
             await conn.execute("INSERT INTO businesses (chat_id, user_id, business_name, income, last_collect_time) VALUES ($1,$2,$3,$4,$5)", cid, uid, it['name'], it['income'], time.time())
-        await m.answer(f"✅ Куплен <b>{it['name']}</b>!", parse_mode="HTML")
-        new_achs = await check_achievements(cid, uid)
-        await notify_achievements(cid, uid, new_achs)
+        
+        await m.answer(f"✅ <b>Куплен бизнес: {it['name']}</b>\n💰 Доход: {fmt_money(it['income'])}/сбор", parse_mode="HTML")
+    
+    else:
+        async with pool.acquire() as conn:
+            await conn.execute("INSERT INTO inventory (chat_id, user_id, item_name, item_type, rarity) VALUES ($1,$2,$3,$4,$5)", cid, uid, it['name'], item_type, 'common')
+        
+        await m.answer(f"✅ <b>Куплено: {it['name']}</b>", parse_mode="HTML")
+    
+    # Проверка достижений
+    new_achs = await check_achievements(cid, uid)
+    await notify_achievements(cid, uid, new_achs)
 
 @dp.message(Command("collect"))
 async def cmd_collect(m: Message):
