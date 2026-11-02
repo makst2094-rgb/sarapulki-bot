@@ -4988,8 +4988,8 @@ async def cmd_admin_panel(m: Message):
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="🏦 Банки игроков", callback_data="admin_banks"),
-                    InlineKeyboardButton(text="👑 Назначить", callback_data="admin_appoint"),
+                    InlineKeyboardButton(text="🏦 Банки игроков", callback_data="new_banks"),
+                    InlineKeyboardButton(text="👑 Назначить", callback_data="new_appoint"),
                 ],
                 [
                     InlineKeyboardButton(text="🗳️ Голоса", callback_data="admin_votes"),
@@ -7410,6 +7410,66 @@ async def blackjack_bet(cb: types.CallbackQuery, state: FSMContext):
     await cb.answer(f"Ставка {bet} принята!")
     if all(p["bet"] > 0 for p in t["players"].values()):
         await blackjack_deal(cid, state)
+
+@dp.callback_query(lambda c: c.data.startswith("new_"))
+async def callback_admin_new(callback: CallbackQuery):
+    try:
+        uid = callback.from_user.id
+        
+        if uid not in ADMIN_IDS:
+            return await callback.answer("❌ Доступ запрещён", show_alert=True)
+        
+        action = callback.data.replace("new_", "")
+        
+        if action == "banks":
+            async with pool.acquire() as conn:
+                players = await conn.fetch(
+                    """SELECT u.user_id, u.balance, 
+                              COALESCE(SUM(c.amount), 0) as total_debt
+                       FROM users u
+                       LEFT JOIN credits c ON u.chat_id = c.chat_id AND u.user_id = c.user_id
+                       WHERE u.chat_id = $1
+                       GROUP BY u.user_id, u.balance
+                       ORDER BY u.balance DESC LIMIT 50""",
+                    ADMIN_CHAT_ID
+                )
+            
+            text = "🏦 <b>БАНКОВСКИЕ СЧЕТА (ТОП-50)</b>\n\n"
+            
+            for i, p in enumerate(players, 1):
+                try:
+                    name = (await bot.get_chat_member(ADMIN_CHAT_ID, p['user_id'])).user.full_name
+                except:
+                    name = f"User{p['user_id']}"
+                
+                debt = p['total_debt']
+                debt_str = f" | 💳 Долг: {fmt_money(debt)}" if debt > 0 else ""
+                
+                text += f"{i}. {name}\n"
+                text += f"   💰 Баланс: <b>{fmt_money(p['balance'])}</b>{debt_str}\n"
+                text += f"   🆔 ID: <code>{p['user_id']}</code>\n\n"
+            
+            text += "<i>Используй /appoint [должность] [user_id] для назначения</i>"
+            await callback.message.edit_text(text, parse_mode="HTML")
+        
+        elif action == "appoint":
+            cities_list = ", ".join([c['id'] for c in CITIES_LIST])
+            await callback.message.edit_text(
+                "👑 <b>НАЗНАЧЕНИЕ НА ДОЛЖНОСТЬ</b>\n\n"
+                "Введи в чат команду:\n\n"
+                "<b>Президент:</b>\n<code>/appoint president [user_id]</code>\n\n"
+                "<b>Премьер-министр:</b>\n<code>/appoint prime [user_id]</code>\n\n"
+                "<b>Мэр города:</b>\n<code>/appoint mayor [user_id] [город]</code>\n\n"
+                f"Города: {cities_list}\n\n"
+                "⚠️ Старый чиновник будет снят автоматически!",
+                parse_mode="HTML"
+            )
+        
+        await callback.answer()
+    
+    except Exception as e:
+        print(f"Ошибка new_admin: {e}")
+        await callback.answer(f"Ошибка: {str(e)}", show_alert=True)
 
 async def blackjack_deal(cid, state):
     t = bj_tables[cid]
