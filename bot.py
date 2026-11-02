@@ -5770,13 +5770,11 @@ async def cmd_appoint(m: Message):
     """Назначить игрока на должность (только админ)"""
     cid, uid = m.chat.id, m.from_user.id
     
-    # Проверка: только ЛС и только админ
     if m.chat.type != 'private' or uid not in ADMIN_IDS:
         return
     
     args = m.text.split()
     
-    # Если нет аргументов — показываем справку
     if len(args) < 3:
         cities_list = ", ".join([c['id'] for c in CITIES_LIST])
         return await m.answer(
@@ -5790,142 +5788,132 @@ async def cmd_appoint(m: Message):
             parse_mode="HTML"
         )
     
-    role = args[1].lower()
-    
     try:
-        target_uid = int(args[2])
-    except ValueError:
-        return await m.answer("❌ user_id должен быть числом!")
-    
-    # Проверяем, существует ли игрок в базе
-    target_user = await get_user(cid, target_uid)
-    if not target_user:
-        return await m.answer(f"❌ Игрок {target_uid} не найден в базе!")
-    
-    # Получаем имя для красивого сообщения
-    try:
-        target_name = (await bot.get_chat_member(cid, target_uid)).user.full_name
-    except:
-        target_name = f"User{target_uid}"
-    
-    async with pool.acquire() as conn:
-        # ═══════════════════════════════════════
-        #  ПРЕЗИДЕНТ
-        # ═══════════════════════════════════════
-        if role == 'president':
-            old = await conn.fetchrow(
-                "SELECT user_id FROM federal_roles WHERE chat_id=$1 AND role='president'",
-                cid
-            )
-            old_name = ""
-            if old:
-                try:
-                    old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
-                except:
-                    old_name = f"User{old['user_id']}"
-            
-            await conn.execute(
-                """INSERT INTO federal_roles (chat_id, role, user_id, appointed_at, term_ends_at) 
-                   VALUES ($1,'president',$2,$3,$4)
-                   ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, appointed_at=$3, term_ends_at=$4""",
-                cid, target_uid, time.time(), time.time() + (30 * 86400)
-            )
-            
-            msg = (
-                f"👑 <b>НАЗНАЧЕН ПРЕЗИДЕНТ!</b>\n\n"
-                f"👤 {target_name} (ID: {target_uid})\n"
-                f"⏳ Срок: 30 дней\n"
-            )
-            if old_name:
-                msg += f"📤 Снят предыдущий: {old_name}\n"
-            
-            await bot.send_message(cid, msg, parse_mode="HTML")
-            await m.answer("✅ Президент назначен!")
+        role = args[1].lower()
         
-        # ═══════════════════════════════════════
-        #  ПРЕМЬЕР-МИНИСТР
-        # ═══════════════════════════════════════
-        elif role == 'prime':
-            old = await conn.fetchrow(
-                "SELECT user_id FROM federal_roles WHERE chat_id=$1 AND role='prime_minister'",
-                cid
-            )
-            old_name = ""
-            if old:
-                try:
-                    old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
-                except:
-                    old_name = f"User{old['user_id']}"
-            
-            await conn.execute(
-                """INSERT INTO federal_roles (chat_id, role, user_id, appointed_at, term_ends_at) 
-                   VALUES ($1,'prime_minister',$2,$3,$4)
-                   ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, appointed_at=$3, term_ends_at=$4""",
-                cid, target_uid, time.time(), time.time() + (30 * 86400)
-            )
-            
-            msg = (
-                f"💼 <b>НАЗНАЧЕН ПРЕМЬЕР-МИНИСТР!</b>\n\n"
-                f"👤 {target_name} (ID: {target_uid})\n"
-                f"⏳ Срок: 30 дней\n"
-            )
-            if old_name:
-                msg += f"📤 Снят предыдущий: {old_name}\n"
-            
-            await bot.send_message(cid, msg, parse_mode="HTML")
-            await m.answer("✅ Премьер-министр назначен!")
+        try:
+            target_uid = int(args[2])
+        except ValueError:
+            return await m.answer("❌ user_id должен быть числом!")
         
-        # ═══════════════════════════════════════
-        #  МЭР ГОРОДА
-        # ═══════════════════════════════════════
-        elif role == 'mayor':
-            if len(args) < 4:
-                cities_list = ", ".join([c['id'] for c in CITIES_LIST])
-                return await m.answer(f"❌ Укажи город!\n\n/assign mayor [user_id] [город_id]\n\nДоступные города: {cities_list}")
-            
-            city_id = args[3]
-            city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
-            
-            if not city:
-                cities_list = ", ".join([c['id'] for c in CITIES_LIST])
-                return await m.answer(f"❌ Город '{city_id}' не найден!\n\nДоступные: {cities_list}")
-            
-            old = await conn.fetchrow(
-                "SELECT user_id FROM mayors WHERE chat_id=$1 AND city_id=$2",
-                cid, city_id
-            )
-            old_name = ""
-            if old:
-                try:
-                    old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
-                except:
-                    old_name = f"User{old['user_id']}"
-            
-            await conn.execute(
-                """INSERT INTO mayors (chat_id, city_id, user_id, appointed_at, term_ends_at) 
-                   VALUES ($1,$2,$3,$4,$5)
-                   ON CONFLICT (chat_id, city_id) DO UPDATE SET user_id=$3, appointed_at=$4, term_ends_at=$5""",
-                cid, city_id, target_uid, time.time(), time.time() + (30 * 86400)
-            )
-            
-            msg = (
-                f"🏛️ <b>НАЗНАЧЕН МЭР!</b>\n\n"
-                f"👤 {target_name} (ID: {target_uid})\n"
-                f"🏙️ Город: {city['emoji']} {city['name']}\n"
-                f"⏳ Срок: 30 дней\n"
-            )
-            if old_name:
-                msg += f"📤 Снят предыдущий: {old_name}\n"
-            
-            await bot.send_message(cid, msg, parse_mode="HTML")
-            await m.answer("✅ Мэр назначен!")
+        target_user = await get_user(cid, target_uid)
+        if not target_user:
+            return await m.answer(f"❌ Игрок {target_uid} не найден в базе!")
         
-        else:
-            return await m.answer("❌ Неверная должность!\n\nИспользуй: president, prime или mayor")
+        try:
+            target_name = (await bot.get_chat_member(cid, target_uid)).user.full_name
+        except:
+            target_name = f"User{target_uid}"
+        
+        async with pool.acquire() as conn:
+            if role == 'president':
+                old = await conn.fetchrow(
+                    "SELECT user_id FROM federal_roles WHERE chat_id=$1 AND role='president'",
+                    cid
+                )
+                old_name = ""
+                if old:
+                    try:
+                        old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
+                    except:
+                        old_name = f"User{old['user_id']}"
+                
+                await conn.execute(
+                    """INSERT INTO federal_roles (chat_id, role, user_id, appointed_at, term_ends_at) 
+                       VALUES ($1,'president',$2,$3,$4)
+                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, appointed_at=$3, term_ends_at=$4""",
+                    cid, target_uid, time.time(), time.time() + (30 * 86400)
+                )
+                
+                msg = (
+                    f"👑 <b>НАЗНАЧЕН ПРЕЗИДЕНТ!</b>\n\n"
+                    f"👤 {target_name} (ID: {target_uid})\n"
+                    f"⏳ Срок: 30 дней\n"
+                )
+                if old_name:
+                    msg += f"📤 Снят предыдущий: {old_name}\n"
+                
+                await bot.send_message(cid, msg, parse_mode="HTML")
+                await m.answer("✅ Президент назначен!")
+            
+            elif role == 'prime':
+                old = await conn.fetchrow(
+                    "SELECT user_id FROM federal_roles WHERE chat_id=$1 AND role='prime_minister'",
+                    cid
+                )
+                old_name = ""
+                if old:
+                    try:
+                        old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
+                    except:
+                        old_name = f"User{old['user_id']}"
+                
+                await conn.execute(
+                    """INSERT INTO federal_roles (chat_id, role, user_id, appointed_at, term_ends_at) 
+                       VALUES ($1,'prime_minister',$2,$3,$4)
+                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, appointed_at=$3, term_ends_at=$4""",
+                    cid, target_uid, time.time(), time.time() + (30 * 86400)
+                )
+                
+                msg = (
+                    f"💼 <b>НАЗНАЧЕН ПРЕМЬЕР-МИНИСТР!</b>\n\n"
+                    f"👤 {target_name} (ID: {target_uid})\n"
+                    f"⏳ Срок: 30 дней\n"
+                )
+                if old_name:
+                    msg += f"📤 Снят предыдущий: {old_name}\n"
+                
+                await bot.send_message(cid, msg, parse_mode="HTML")
+                await m.answer("✅ Премьер-министр назначен!")
+            
+            elif role == 'mayor':
+                if len(args) < 4:
+                    cities_list = ", ".join([c['id'] for c in CITIES_LIST])
+                    return await m.answer(f"❌ Укажи город!\n\n/appoint mayor [user_id] [город_id]\n\nДоступные: {cities_list}")
+                
+                city_id = args[3]
+                city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+                
+                if not city:
+                    cities_list = ", ".join([c['id'] for c in CITIES_LIST])
+                    return await m.answer(f"❌ Город '{city_id}' не найден!\n\nДоступные: {cities_list}")
+                
+                old = await conn.fetchrow(
+                    "SELECT user_id FROM mayors WHERE chat_id=$1 AND city_id=$2",
+                    cid, city_id
+                )
+                old_name = ""
+                if old:
+                    try:
+                        old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
+                    except:
+                        old_name = f"User{old['user_id']}"
+                
+                await conn.execute(
+                    """INSERT INTO mayors (chat_id, city_id, user_id, appointed_at, term_ends_at) 
+                       VALUES ($1,$2,$3,$4,$5)
+                       ON CONFLICT (chat_id, city_id) DO UPDATE SET user_id=$3, appointed_at=$4, term_ends_at=$5""",
+                    cid, city_id, target_uid, time.time(), time.time() + (30 * 86400)
+                )
+                
+                msg = (
+                    f"🏛️ <b>НАЗНАЧЕН МЭР!</b>\n\n"
+                    f"👤 {target_name} (ID: {target_uid})\n"
+                    f"🏙️ Город: {city['emoji']} {city['name']}\n"
+                    f"⏳ Срок: 30 дней\n"
+                )
+                if old_name:
+                    msg += f"📤 Снят предыдущий: {old_name}\n"
+                
+                await bot.send_message(cid, msg, parse_mode="HTML")
+                await m.answer("✅ Мэр назначен!")
+            
+            else:
+                await m.answer("❌ Неверная должность!\n\nИспользуй: president, prime или mayor")
     
     except Exception as e:
         print(f"Ошибка appoint: {e}")
-        await m.answer(f"❌ Ошибка назначения: {str(e)}")
+        await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("bank"))
 async def cmd_bank(m: Message):
