@@ -5805,6 +5805,8 @@ async def cmd_appoint(m: Message):
         except:
             target_name = f"User{target_uid}"
         
+        now = time.time()
+        
         async with pool.acquire() as conn:
             if role == 'president':
                 old = await conn.fetchrow(
@@ -5819,10 +5821,10 @@ async def cmd_appoint(m: Message):
                         old_name = f"User{old['user_id']}"
                 
                 await conn.execute(
-                    """INSERT INTO federal_roles (chat_id, role, user_id) 
-                       VALUES ($1,'president',$2)
-                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2""",
-                    cid, target_uid
+                    """INSERT INTO federal_roles (chat_id, role, user_id, elected_at, votes) 
+                       VALUES ($1,'president',$2,$3,$4)
+                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, elected_at=$3""",
+                    cid, target_uid, now, 50
                 )
                 
                 msg = (
@@ -5849,10 +5851,10 @@ async def cmd_appoint(m: Message):
                         old_name = f"User{old['user_id']}"
                 
                 await conn.execute(
-                    """INSERT INTO federal_roles (chat_id, role, user_id) 
-                       VALUES ($1,'prime_minister',$2)
-                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2""",
-                    cid, target_uid
+                    """INSERT INTO federal_roles (chat_id, role, user_id, elected_at, votes) 
+                       VALUES ($1,'prime_minister',$2,$3,$4)
+                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, elected_at=$3""",
+                    cid, target_uid, now, 50
                 )
                 
                 msg = (
@@ -5890,10 +5892,10 @@ async def cmd_appoint(m: Message):
                         old_name = f"User{old['user_id']}"
                 
                 await conn.execute(
-                    """INSERT INTO mayors (chat_id, city_id, user_id) 
-                       VALUES ($1,$2,$3)
-                       ON CONFLICT (chat_id, city_id) DO UPDATE SET user_id=$3""",
-                    cid, city_id, target_uid
+                    """INSERT INTO mayors (chat_id, city_id, user_id, elected_at, votes) 
+                       VALUES ($1,$2,$3,$4,$5)
+                       ON CONFLICT (chat_id, city_id) DO UPDATE SET user_id=$3, elected_at=$4""",
+                    cid, city_id, target_uid, now, 50
                 )
                 
                 msg = (
