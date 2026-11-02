@@ -5818,12 +5818,11 @@ async def cmd_appoint(m: Message):
                     except:
                         old_name = f"User{old['user_id']}"
                 
-                # ВСТАВКА БЕЗ appointed_at
                 await conn.execute(
-                    """INSERT INTO federal_roles (chat_id, role, user_id, term_ends_at) 
-                       VALUES ($1,'president',$2,$3)
-                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, term_ends_at=$3""",
-                    cid, target_uid, time.time() + (30 * 86400)
+                    """INSERT INTO federal_roles (chat_id, role, user_id) 
+                       VALUES ($1,'president',$2)
+                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2""",
+                    cid, target_uid
                 )
                 
                 msg = (
@@ -5849,12 +5848,11 @@ async def cmd_appoint(m: Message):
                     except:
                         old_name = f"User{old['user_id']}"
                 
-                # ВСТАВКА БЕЗ appointed_at
                 await conn.execute(
-                    """INSERT INTO federal_roles (chat_id, role, user_id, term_ends_at) 
-                       VALUES ($1,'prime_minister',$2,$3)
-                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, term_ends_at=$3""",
-                    cid, target_uid, time.time() + (30 * 86400)
+                    """INSERT INTO federal_roles (chat_id, role, user_id) 
+                       VALUES ($1,'prime_minister',$2)
+                       ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2""",
+                    cid, target_uid
                 )
                 
                 msg = (
@@ -5891,12 +5889,11 @@ async def cmd_appoint(m: Message):
                     except:
                         old_name = f"User{old['user_id']}"
                 
-                # ВСТАВКА БЕЗ appointed_at
                 await conn.execute(
-                    """INSERT INTO mayors (chat_id, city_id, user_id, term_ends_at) 
-                       VALUES ($1,$2,$3,$4)
-                       ON CONFLICT (chat_id, city_id) DO UPDATE SET user_id=$3, term_ends_at=$4""",
-                    cid, city_id, target_uid, time.time() + (30 * 86400)
+                    """INSERT INTO mayors (chat_id, city_id, user_id) 
+                       VALUES ($1,$2,$3)
+                       ON CONFLICT (chat_id, city_id) DO UPDATE SET user_id=$3""",
+                    cid, city_id, target_uid
                 )
                 
                 msg = (
