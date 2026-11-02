@@ -7423,14 +7423,9 @@ async def callback_admin_new(callback: CallbackQuery):
         
         if action == "banks":
             async with pool.acquire() as conn:
+                # ПРОСТОЙ ЗАПРОС — БЕЗ CREDITS
                 players = await conn.fetch(
-                    """SELECT u.user_id, u.balance, 
-                              COALESCE(SUM(c.amount), 0) as total_debt
-                       FROM users u
-                       LEFT JOIN credits c ON u.chat_id = c.chat_id AND u.user_id = c.user_id
-                       WHERE u.chat_id = $1
-                       GROUP BY u.user_id, u.balance
-                       ORDER BY u.balance DESC LIMIT 50""",
+                    "SELECT user_id, balance FROM users WHERE chat_id=$1 ORDER BY balance DESC LIMIT 50",
                     ADMIN_CHAT_ID
                 )
             
@@ -7442,18 +7437,15 @@ async def callback_admin_new(callback: CallbackQuery):
                 except:
                     name = f"User{p['user_id']}"
                 
-                debt = p['total_debt']
-                debt_str = f" | 💳 Долг: {fmt_money(debt)}" if debt > 0 else ""
-                
                 text += f"{i}. {name}\n"
-                text += f"   💰 Баланс: <b>{fmt_money(p['balance'])}</b>{debt_str}\n"
-                text += f"   🆔 ID: <code>{p['user_id']}</code>\n\n"
+                text += f"   💰 Баланс: <b>{fmt_money(p['balance'])}</b>\n"
+                text += f"   🆔 ID: <code>{str(p['user_id'])}</code>\n\n"
             
             text += "<i>Используй /appoint [должность] [user_id] для назначения</i>"
             await callback.message.edit_text(text, parse_mode="HTML")
         
         elif action == "appoint":
-            cities_list = ", ".join([c['id'] for c in CITIES_LIST])
+            cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
             await callback.message.edit_text(
                 "👑 <b>НАЗНАЧЕНИЕ НА ДОЛЖНОСТЬ</b>\n\n"
                 "Введи в чат команду:\n\n"
