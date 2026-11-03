@@ -73,16 +73,9 @@ CRAFT_RECIPES = {
 # ══════════════════════════════════════════
 
 CITIES_LIST = [
-    {"id": 1, "name": "Москва", "emoji": "🏛️", "bonus_type": "income", "bonus_value": 10, "desc": "+10% к доходам (столичный эффект)"},
-    {"id": 2, "name": "Сарапул", "emoji": "🏭", "bonus_type": "work", "bonus_value": 15, "desc": "+15% к работе (рабочий город)"},
-    {"id": 3, "name": "Санкт-Петербург", "emoji": "🎭", "bonus_type": "reputation", "bonus_value": 10, "desc": "+10% к репутации"},
-    {"id": 4, "name": "Казань", "emoji": "🕌", "bonus_type": "heist", "bonus_value": 10, "desc": "+10% к ограблениям"},
-    {"id": 5, "name": "Новосибирск", "emoji": "🔬", "bonus_type": "business", "bonus_value": 10, "desc": "+10% к доходу бизнесов"},
-    {"id": 6, "name": "Екатеринбург", "emoji": "⚙️", "bonus_type": "production", "bonus_value": 10, "desc": "+10% к производству"},
-    {"id": 7, "name": "Нижний Новгород", "emoji": "🚗", "bonus_type": "cars", "bonus_value": 10, "desc": "+10% к машинам/ремонту"},
-    {"id": 8, "name": "Краснодар", "emoji": "🌾", "bonus_type": "farm", "bonus_value": 10, "desc": "+10% к фермерским бизнесам"},
-    {"id": 9, "name": "Сочи", "emoji": "🏖️", "bonus_type": "entertainment", "bonus_value": 10, "desc": "+10% к развлечениям"},
-    {"id": 10, "name": "Владивосток", "emoji": "⚓", "bonus_type": "contraband", "bonus_value": 10, "desc": "+10% к контрабанде"}
+    {"id": 1, "name": "Москва", "emoji": "🏛️", "work_bonus": 0.20},
+    {"id": 2, "name": "Сарапул", "emoji": "🏘️", "market_discount": 0.15},
+    {"id": 3, "name": "Сыктывкар", "emoji": "🌲", "rob_bonus": -10},
 ]
 
 ADMIN_CHAT_ID = -1002595597314
@@ -2264,6 +2257,13 @@ async def cmd_work(m: Message):
             net_sal -= debt_deduction
             deduction_msg = f"\n💸 Погашено долга: <b>{fmt_money(debt_deduction)}</b>"
 
+        # Бонус Москвы: +20% к зарплате
+    player_city = await get_player_city(cid, uid)
+    if player_city:
+        city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
+        if city and city.get('work_bonus'):
+            salary = int(salary * (1 + city['work_bonus']))
+
     # 9. ВЫДАЧА ДЕНЕГ
     await update_balance(cid, uid, net_sal)
     async with pool.acquire() as conn:
@@ -2354,6 +2354,13 @@ async def cmd_rob(m: Message):
     vb = await get_user(cid, vid)
     if vb['balance'] < 50:
         return await m.answer("❌ У жертвы мало денег!")
+            # Бонус Сыктывкара: +10% к шансу успешного ограбления
+    rob_success_rate = ROB_SUCCESS_RATE
+    player_city = await get_player_city(cid, uid)
+    if player_city:
+        city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
+        if city and city.get('rob_bonus'):
+            rob_success_rate += 0.10  # +10% к успеху (=-10% к поимке)
     if random.random() < ROB_SUCCESS_RATE:
         st = int(vb['balance'] * random.uniform(ROB_MIN_PERCENT, ROB_MAX_PERCENT))
         await update_balance(cid, vid, -st)
@@ -5561,6 +5568,13 @@ async def cmd_buy_market(m: Message):
     
     # Применяем множитель к цене
     final_price = int(price * price_multiplier)
+
+        # Бонус Сарапула: -15% цены
+    player_city = await get_player_city(cid, uid)
+    if player_city:
+        city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
+        if city and city.get('market_discount'):
+            final_price = int(final_price * (1 - city['market_discount']))
     
     # Проверка тюрьмы
     if await is_in_jail(cid, uid):
