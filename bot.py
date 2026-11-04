@@ -4995,10 +4995,12 @@ async def cmd_admin_panel(m: Message):
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
+                    # ✅ ИСПРАВЛЕНО: Используем префикс new_, чтобы попасть в работающую функцию callback_admin_new
                     InlineKeyboardButton(text="🏦 Банки игроков", callback_data="new_banks"),
                     InlineKeyboardButton(text="👑 Назначить", callback_data="new_appoint"),
                 ],
                 [
+                    # Остальные кнопки оставляем как есть, они работают через старую функцию
                     InlineKeyboardButton(text="🗳️ Голоса", callback_data="admin_votes"),
                     InlineKeyboardButton(text="➖ Снять голоса", callback_data="admin_remove_votes"),
                 ],
