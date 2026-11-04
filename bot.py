@@ -589,6 +589,21 @@ async def init_db():
         """)
     
         print("✅ Таблицы президентских указов созданы")
+        # Таблица отчётов мэров
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS mayor_reports (
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            city_id INTEGER NOT NULL,
+            mayor_id BIGINT NOT NULL,
+            budget_allocated BIGINT DEFAULT 0,
+            budget_spent BIGINT DEFAULT 0,
+            report_deadline REAL NOT NULL,
+            status TEXT DEFAULT 'pending', -- pending, approved, rejected
+            created_at REAL NOT NULL
+            )
+        """)
+        print("✅ Таблица mayor_reports создана")
 
     print("✅ База данных готова")
 
@@ -3615,6 +3630,27 @@ async def finalize_mayor_election(cid, city_id):
         "bonus": MAYOR_WIN_BONUS
     }
 
+async def create_mayor_report(cid, city_id, mayor_id, budget):
+    """Создать отчёт для мэра. Бюджет выделяется из казны города."""
+    treasury = await get_city_treasury(cid, city_id)
+    if treasury < budget:
+        return False, f"❌ В казне только {fmt_money(treasury)}, нужно {fmt_money(budget)}"
+    
+    # Списываем бюджет из казны
+    await update_city_treasury(cid, city_id, -budget)
+    
+    deadline = time.time() + (7 * 86400)  # 7 дней на выполнение
+    
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO mayor_reports (chat_id, city_id, mayor_id, budget_allocated, 
+               budget_spent, report_deadline, status, created_at)
+               VALUES ($1,$2,$3,$4,0,$5,'pending',$6)""",
+            cid, city_id, mayor_id, budget, deadline, time.time()
+        )
+    
+    return True, f"✅ Бюджет {fmt_money(budget)} выделен! У мэра 7 дней на отчёт."
+
 # ══════════════════════════════════════════
 #  ФУНКЦИИ ФЕДЕРАЛЬНЫХ ВЫБОРОВ
 # ══════════════════════════════════════════
@@ -4257,6 +4293,177 @@ async def cmd_prime_decrees(m: Message):
         t += f"  ⏰ Осталось: {hours_left} ч.\n\n"
     
     return await m.answer(t, parse_mode="HTML")
+
+@dp.message(Command("mayor_report"))
+async def cmd_mayor_report(m: Message):
+    """Мэр сдаёт отчёт о выполнении работ"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    player_city = await get_player_city(cid, uid)
+    if not player_city:
+        return await m.answer("❌ Ты ещё не выбрал город!")
+    
+    mayor = await get_mayor(cid, player_city['id'])
+    if not mayor or mayor['user_id'] != uid:
+        return await m.answer("❌ Только действующий мэр может сдать отчёт!")
+    
+    args = m.text.split(maxsplit=1)
+    if len(args) < 2:
+        return await m.answer(
+            "📊 <b>ОТЧЁТ МЭРА</b>\n\n"
+            "Использование:\n"
+            "/mayor_report [описание выполненных работ]\n\n"
+            "Пример: /mayor_report Построена новая школа и парк",
+            parse_mode="HTML"
+        )
+    
+    description = args[1]
+    
+    async with pool.acquire() as conn:
+        report = await conn.fetchrow(
+            """SELECT * FROM mayor_reports 
+               WHERE chat_id=$1 AND city_id=$2 AND mayor_id=$3 AND status='pending'
+               ORDER BY created_at DESC LIMIT 1""",
+            cid, player_city['id'], uid
+        )
+        
+        if not report:
+            return await m.answer("❌ Нет активных заданий! Дождись выделения бюджета.")
+        
+        if time.time() > report['report_deadline']:
+            return await m.answer("⏰ Срок сдачи истёк! Теперь тебя проверит президент.")
+        
+        # Обновляем статус
+        await conn.execute(
+            "UPDATE mayor_reports SET status='submitted', budget_spent=budget_allocated WHERE id=$1",
+            report['id']
+        )
+    
+    msg = (
+        f"📊 <b>ОТЧЁТ СДАН!</b>\n\n"
+        f"🏙️ Город: {player_city['emoji']} {player_city['name']}\n"
+        f"💰 Бюджет: {fmt_money(report['budget_allocated'])}\n"
+        f"📋 Работы: {description}\n\n"
+        f"⏳ Ожидает проверки президентом..."
+    )
+    await bot.send_message(cid, msg, parse_mode="HTML")
+    await m.answer("✅ Отчёт отправлен!")
+
+@dp.message(Command("president_check_mayor"))
+async def cmd_president_check_mayor(m: Message):
+    """Президент проверяет отчёт мэра и наказывает/поощряет"""
+    cid, uid = m.chat.id, m.from_user.id
+    
+    president = await get_federal_role(cid, 'president')
+    if not president or president['user_id'] != uid:
+        return await m.answer("❌ Только Президент может проверять мэров!")
+    
+    args = m.text.split()
+    if len(args) < 2:
+        cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
+        return await m.answer(
+            "⚖️ <b>ПРОВЕРКА МЭРА</b>\n\n"
+            "Использование:\n"
+            "/president_check_mayor [город_id] [approve/reject]\n\n"
+            f"Города: {cities_list}\n\n"
+            "approve — одобрить (+рейтинг)\n"
+            "reject — отклонить (штраф/тюрьма)",
+            parse_mode="HTML"
+        )
+    
+    try:
+        city_id = int(args[1])
+    except ValueError:
+        return await m.answer("❌ ID города должен быть числом!")
+    
+    action = args[2].lower() if len(args) > 2 else None
+    if action not in ['approve', 'reject']:
+        return await m.answer("❌ Используй approve или reject!")
+    
+    city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+    if not city:
+        return await m.answer(f"❌ Город не найден! Доступные: {', '.join(str(c['id']) for c in CITIES_LIST)}")
+    
+    async with pool.acquire() as conn:
+        report = await conn.fetchrow(
+            """SELECT * FROM mayor_reports 
+               WHERE chat_id=$1 AND city_id=$2 AND status IN ('pending','submitted')
+               ORDER BY created_at DESC LIMIT 1""",
+            cid, city_id
+        )
+        
+        if not report:
+            return await m.answer(f"✅ В {city['emoji']} {city['name']} нет активных отчётов!")
+        
+        mayor_name = ""
+        try:
+            mayor_name = (await bot.get_chat_member(cid, report['mayor_id'])).user.full_name
+        except:
+            mayor_name = f"User{report['mayor_id']}"
+        
+        if action == 'approve':
+            # Одобрение: возвращаем остаток бюджета, +рейтинг
+            remaining = report['budget_allocated'] - report['budget_spent']
+            if remaining > 0:
+                await update_city_treasury(cid, city_id, remaining)
+            
+            await conn.execute(
+                """UPDATE mayors SET approval_rating = LEAST(100, approval_rating + 10)
+                   WHERE chat_id=$1 AND city_id=$2""",
+                cid, city_id
+            )
+            await conn.execute("UPDATE mayor_reports SET status='approved' WHERE id=$1", report['id'])
+            
+            msg = (
+                f"✅ <b>ОТЧЁТ ОДОБРЕН!</b>\n\n"
+                f"🏙️ {city['emoji']} {city['name']}\n"
+                f"👤 Мэр: {mayor_name}\n"
+                f"💰 Возвращено в казну: {fmt_money(remaining)}\n"
+                f"📈 Рейтинг мэра: +10%"
+            )
+            await bot.send_message(cid, msg, parse_mode="HTML")
+            await m.answer("✅ Мэр поощрён!")
+        
+        elif action == 'reject':
+            # Отклонение: штраф или тюрьма
+            penalty_type = random.choice(['fine', 'jail'])
+            
+            if penalty_type == 'fine':
+                fine_amount = int(report['budget_allocated'] * 0.5)
+                await update_balance(cid, report['mayor_id'], -fine_amount)
+                
+                msg = (
+                    f"❌ <b>ОТЧЁТ ОТКЛОНЁН!</b>\n\n"
+                    f"🏙️ {city['emoji']} {city['name']}\n"
+                    f"👤 Мэр: {mayor_name}\n"
+                    f"💸 Штраф: {fmt_money(fine_amount)}\n"
+                    f"📉 Рейтинг мэра: -15%"
+                )
+                await conn.execute(
+                    """UPDATE mayors SET approval_rating = GREATEST(0, approval_rating - 15)
+                       WHERE chat_id=$1 AND city_id=$2""",
+                    cid, city_id
+                )
+            else:
+                jail_hours = 4
+                await send_to_jail(cid, report['mayor_id'], jail_hours)
+                
+                msg = (
+                    f"🔒 <b>МЭР ПОСАЖЕН В ТЮРЬМУ!</b>\n\n"
+                    f"🏙️ {city['emoji']} {city['name']}\n"
+                    f"👤 {mayor_name} заключён на {jail_hours} часа\n"
+                    f"⚠️ Причина: невыполнение обязанностей\n"
+                    f"📉 Рейтинг мэра: -25%"
+                )
+                await conn.execute(
+                    """UPDATE mayors SET approval_rating = GREATEST(0, approval_rating - 25)
+                       WHERE chat_id=$1 AND city_id=$2""",
+                    cid, city_id
+                )
+            
+            await conn.execute("UPDATE mayor_reports SET status='rejected' WHERE id=$1", report['id'])
+            await bot.send_message(cid, msg, parse_mode="HTML")
+            await m.answer("✅ Наказание применено!")
 
 @dp.message(Command("president_vote"))
 async def cmd_president_vote(m: Message):
@@ -7692,6 +7899,42 @@ async def check_all_elections_and_terms():
                             await bot.send_message(cid, msg, parse_mode="HTML")
                         except:
                             pass
+
+                # ══════════════════════════════════════════
+                # 5. АВТОМАТИЧЕСКИЕ НАКАЗАНИЯ ЗА ПРОСРОЧКУ
+                # ══════════════════════════════════════════
+                overdue_reports = await conn.fetch(
+                    """SELECT * FROM mayor_reports 
+                       WHERE status='pending' AND report_deadline < $1""",
+                    now
+                )
+                for rpt in overdue_reports:
+                    cid = rpt['chat_id']
+                    city_id = rpt['city_id']
+                    mayor_id = rpt['mayor_id']
+                    
+                    # Автоматически сажаем в тюрьму
+                    await send_to_jail(cid, mayor_id, 6)
+                    
+                    city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+                    mayor_name = ""
+                    try:
+                        mayor_name = (await bot.get_chat_member(cid, mayor_id)).user.full_name
+                    except:
+                        mayor_name = f"User{mayor_id}"
+                    
+                    msg = (
+                        f"🚨 <b>МЭР НЕ СДАЛ ОТЧЁТ!</b>\n\n"
+                        f"🏙️ {city['emoji']} {city['name'] if city else ''}\n"
+                        f"👤 {mayor_name} автоматически посажен в тюрьму на 6 часов\n"
+                        f"💰 Бюджет {fmt_money(rpt['budget_allocated'])} заморожен"
+                    )
+                    try:
+                        await bot.send_message(cid, msg, parse_mode="HTML")
+                    except:
+                        pass
+                    
+                    await conn.execute("UPDATE mayor_reports SET status='overdue' WHERE id=$1", rpt['id'])
                 
                 # ══════════════════════════════════════════
                 # 3. ФЕДЕРАЛЬНЫЙ УРОВЕНЬ: Проверка истёкших сроков (7 дней)
