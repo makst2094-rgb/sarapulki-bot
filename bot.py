@@ -73,9 +73,9 @@ CRAFT_RECIPES = {
 # ══════════════════════════════════════════
 
 CITIES_LIST = [
-    {"id": 1, "name": "Москва", "emoji": "🏛️", "work_bonus": 0.20},
-    {"id": 2, "name": "Сарапул", "emoji": "🏘️", "market_discount": 0.15},
-    {"id": 3, "name": "Сыктывкар", "emoji": "🌲", "rob_bonus": -10},
+    {"id": 1, "name": "Москва", "emoji": "🏛️", "work_bonus": 0.20, "desc": "+20% к зарплате", "bonus_type": "work", "bonus_value": 20},
+    {"id": 2, "name": "Сарапул", "emoji": "🏘️", "market_discount": 0.15, "desc": "-15% на покупки в магазине", "bonus_type": "market", "bonus_value": 15},
+    {"id": 3, "name": "Сыктывкар", "emoji": "🌲", "rob_bonus": 0.10, "desc": "+10% к шансу успешного ограбления", "bonus_type": "rob", "bonus_value": 10},
 ]
 
 ADMIN_CHAT_ID = -1002595597314
@@ -2347,13 +2347,13 @@ async def cmd_rob(m: Message):
     if vb['balance'] < 50:
         return await m.answer("❌ У жертвы мало денег!")
     
-    # ✅ БОНУС СЫКТЫВКАРА (+10% к шансу успеха)
+        # Бонус города к шансу успешного ограбления
     rob_success_rate = ROB_SUCCESS_RATE
     player_city = await get_player_city(cid, uid)
     if player_city:
         city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
         if city and city.get('rob_bonus'):
-            rob_success_rate += 0.10 
+            rob_success_rate += city['rob_bonus']  # Используем значение из словаря
 
     if random.random() < rob_success_rate:
         st = int(vb['balance'] * random.uniform(ROB_MIN_PERCENT, ROB_MAX_PERCENT))
