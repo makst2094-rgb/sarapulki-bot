@@ -3492,7 +3492,15 @@ async def nominate_mayor(cid, uid, city_id):
     """Выдвижение кандидата. Возвращает (успех, сообщение)"""
     user = await get_user(cid, uid)
     if user['balance'] < MAYOR_ELECTION_FEE:
-        return False, f" Нужно {fmt_money(MAYOR_ELECTION_FEE)} для выдвижения. У тебя: {fmt_money(user['balance'])}"
+        return False, f"❌ Нужно {fmt_money(MAYOR_ELECTION_FEE)} для выдвижения. У тебя: {fmt_money(user['balance'])}"
+    
+    # ⚠️ ПРОВЕРКА: ЕСТЬ ЛИ ДЕЙСТВУЮЩИЙ МЭР?
+    current_mayor = await get_mayor(cid, city_id)
+    if current_mayor:
+        days_left = int((current_mayor['expires_at'] - time.time()) / 86400)
+        city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+        city_name = city['name'] if city else f"город #{city_id}"
+        return False, f"❌ В {city_name} уже есть мэр! Срок истекает через {days_left} дн."
     
     election_id = await get_current_election_id(cid, city_id)
     async with pool.acquire() as conn:
@@ -3502,13 +3510,11 @@ async def nominate_mayor(cid, uid, city_id):
         )
         if existing:
             return False, "❌ Ты уже выдвинут кандидатом!"
-        
         await update_balance(cid, uid, -MAYOR_ELECTION_FEE)
         await conn.execute(
             "INSERT INTO mayor_candidates (chat_id, city_id, user_id, election_id) VALUES ($1,$2,$3,$4)",
             cid, city_id, uid, election_id
         )
-        
         # ⭐ НОВОЕ: Записываем время начала выборов мэра
         existing_start = await conn.fetchrow(
             "SELECT * FROM mayor_elections_start WHERE chat_id=$1 AND city_id=$2 AND election_id=$3",
@@ -3519,8 +3525,7 @@ async def nominate_mayor(cid, uid, city_id):
                 "INSERT INTO mayor_elections_start (chat_id, city_id, election_id, started_at) VALUES ($1,$2,$3,$4)",
                 cid, city_id, election_id, time.time()
             )
-    
-    return True, f"✅ Ты выдвинут кандидатом в мэры!\n Взнос {fmt_money(MAYOR_ELECTION_FEE)} списан."
+    return True, f"✅ Ты выдвинут кандидатом в мэры!\n💸 Взнос {fmt_money(MAYOR_ELECTION_FEE)} списан."
 
 async def vote_for_mayor(cid, uid, city_id, candidate_num):
     """Голосование. Возвращает (успех, сообщение)"""
@@ -3621,10 +3626,16 @@ async def get_current_federal_election_id(cid, role):
 async def nominate_federal(cid, uid, role):
     """Выдвижение на федеральный пост"""
     fee = PRESIDENT_ELECTION_FEE if role == 'president' else PRIME_MINISTER_ELECTION_FEE
-    
     user = await get_user(cid, uid)
     if user['balance'] < fee:
         return False, f"❌ Нужно {fmt_money(fee)} для выдвижения. У тебя: {fmt_money(user['balance'])}"
+    
+    # ⚠️ ПРОВЕРКА: ЕСТЬ ЛИ ДЕЙСТВУЮЩИЙ ЧИНОВНИК?
+    current_official = await get_federal_role(cid, role)
+    if current_official:
+        days_left = int((current_official['expires_at'] - time.time()) / 86400)
+        role_name = "Президент" if role == 'president' else "Премьер-министр"
+        return False, f"❌ {role_name} ещё у власти! Срок истекает через {days_left} дн."
     
     election_id = await get_current_federal_election_id(cid, role)
     async with pool.acquire() as conn:
@@ -3635,16 +3646,13 @@ async def nominate_federal(cid, uid, role):
         )
         if existing:
             return False, "❌ Ты уже выдвинут кандидатом!"
-        
         # Списываем взнос
         await update_balance(cid, uid, -fee)
-        
         # Регистрируем кандидата
         await conn.execute(
             "INSERT INTO federal_candidates (chat_id, role, user_id, election_id) VALUES ($1,$2,$3,$4)",
             cid, role, uid, election_id
         )
-        
         # ⭐ НОВОЕ: Запоминаем время начала выборов (если это первый кандидат)
         existing_start = await conn.fetchrow(
             "SELECT * FROM federal_elections_start WHERE chat_id=$1 AND role=$2 AND election_id=$3",
@@ -3655,7 +3663,6 @@ async def nominate_federal(cid, uid, role):
                 "INSERT INTO federal_elections_start (chat_id, role, election_id, started_at) VALUES ($1,$2,$3,$4)",
                 cid, role, election_id, time.time()
             )
-    
     role_name = "Президент" if role == 'president' else "Премьер-министр"
     return True, f"✅ Ты выдвинут кандидатом в {role_name}!\n💸 Взнос {fmt_money(fee)} списан."
 
