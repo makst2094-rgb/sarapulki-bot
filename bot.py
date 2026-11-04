@@ -2157,45 +2157,40 @@ async def cmd_balance(m: Message):
 async def cmd_work(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     
-    # 0. ПРИНУДИТЕЛЬНАЯ ПРОПИСКА (если прошло 7 дней без выбора)
+    # 0. ПРИНУДИТЕЛЬНАЯ ПРОПИСКА
     assigned_city_name = await check_and_assign_city(cid, uid)
     if assigned_city_name:
         await m.answer(f"⚠️ <b>ВНИМАНИЕ!</b>\n\nВы не выбрали город проживания за 7 дней.\nСистема случайно распределила вас в город: <b>{assigned_city_name}</b>!\n\nИспользуйте /city info, чтобы узнать свой бонус.", parse_mode="HTML")
-
+    
     # 1. ПРОВЕРКА ТЮРЬМЫ
     if await is_in_jail(cid, uid):
         info = await get_jail_info(cid, uid)
         return await m.answer(f"🔒 Вы в тюрьме! Осталось: {format_time(int(info['release_time'] - time.time()))}\n Используйте /jail_pay")
-
+    
     # 2. ПРОВЕРКА КРЕДИТА
     user = await get_user(cid, uid)
     loan = await get_loan(cid, uid)
-    
     if loan['amount'] > 0 and time.time() > loan['due_date']:
         total_debt = loan['amount'] + loan['interest']
         arrested, confiscated_value = await arrest_player(cid, uid)
         remaining_debt = total_debt - confiscated_value
-        
         if remaining_debt > 0:
             new_balance = user['balance'] - remaining_debt
             async with pool.acquire() as conn:
                 await conn.execute("UPDATE users SET balance=$1 WHERE chat_id=$2 AND user_id=$3", new_balance, cid, uid)
-        
         await clear_loan(cid, uid)
         msg = f"🚔 <b>АРЕСТ ИМУЩЕСТВА!</b>\n\n💰 Долг: <b>{fmt_money(total_debt)}</b>\n📦 Конфисковано на: <b>{fmt_money(confiscated_value)}</b>\n\n"
         msg += "<b>Конфисковано:</b>\n" + "\n".join([f"• {item}" for item in arrested])
         if remaining_debt > 0:
             msg += f"\n\n⛔ Остаток долга: <b>{fmt_money(remaining_debt)}</b>\nРаботайте и гасите через /repay"
-        
         try: await bot.send_message(cid, msg, parse_mode="HTML")
         except: pass
         return await m.answer(f"⛔ Ваше имущество конфисковано за неуплату кредита!", parse_mode="HTML")
-
+    
     # 3. ПРОФИЛЬ И РАБОТА
     await save_username(cid, uid, m.from_user.full_name)
     p = await get_profile(cid, uid)
     jk = p['job_key']
-    
     if jk != 'novice':
         edu = await get_education(cid, uid)
         if jk not in edu['completed_courses']:
@@ -2203,19 +2198,20 @@ async def cmd_work(m: Message):
                 await conn.execute("UPDATE profiles SET job_key='novice' WHERE chat_id=$1 AND user_id=$2", cid, uid)
             jk = 'novice'
             p['job_key'] = 'novice'
-
+    
     j = JOBS[jk]
     ct = time.time()
-
+    
     # 4. РАСЧЕТ БОНУСОВ (Город + Мэр + Премьер)
     work_bonus_multiplier = 1.0
     player_city = await get_player_city(cid, uid)
     
     if player_city:
-        # Бонус самого города
-        if player_city.get('bonus_type') == 'work':
-            work_bonus_multiplier += player_city.get('bonus_value', 0) / 100
-        
+        # ✅ БОНУС ГОРОДА (Москва +20%)
+        city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
+        if city and city.get('work_bonus'):
+            work_bonus_multiplier += city['work_bonus']
+            
         # Указ мэра "Рабочая смена" (+20%)
         work_decree = await get_active_decree(cid, player_city['id'], 'work_bonus')
         if work_decree:
@@ -2225,61 +2221,50 @@ async def cmd_work(m: Message):
         subsidy_decree = await get_active_federal_decree(cid, 'prime_minister', 'subsidy')
         if subsidy_decree:
             work_bonus_multiplier += 0.10
-
+    
     # 5. КУЛДАУН С УЧЕТОМ КОФЕ
     coffee_level = p.get('coffee_level', 0)
     coffee_bonus = 1.0 - (coffee_level * 0.1)
     cd = j['cooldown'] * coffee_bonus
-
     if ct - p['last_work_time'] < cd:
         rest_seconds = cd - (ct - p['last_work_time'])
         return await m.answer(f"⏳ Отдых {int(rest_seconds // 60)} мин. {int(rest_seconds % 60)} сек.")
-
-    # 6. РАСЧЕТ ЗАРПЛАТЫ (ГРЯЗНЫЙ ДОХОД)
+    
+    # 6. РАСЧЕТ ЗАРПЛАТЫ
     gross_sal = j['base_pay'] * p['level'] + random.randint(0, 5)
     gross_sal = int(gross_sal * work_bonus_multiplier)
     
     edu = await get_education(cid, uid)
     if edu['has_mba']:
         gross_sal = int(gross_sal * 1.5)
-
-    # 7. 💸 ПРИМЕНЕНИЕ НАЛОГА (ПЛАТЯТ ВСЕ!)
+    
+    # 7. НАЛОГ
     net_sal, tax_paid, tax_receiver, tax_rate = await apply_income_tax(cid, uid, gross_sal)
-
-    # 8. АВТО-СПИСАНИЕ ДОЛГА С ЧИСТОЙ ЗАРПЛАТЫ
+    
+    # 8. АВТО-СПИСАНИЕ ДОЛГА
     debt_deduction = 0
     deduction_msg = ""
-
     if user['balance'] < 0:
         debt_deduction = int(net_sal * 0.5)
         debt_deduction = min(debt_deduction, abs(user['balance']))
         if debt_deduction > 0:
             net_sal -= debt_deduction
             deduction_msg = f"\n💸 Погашено долга: <b>{fmt_money(debt_deduction)}</b>"
-
-        # Бонус Москвы: +20% к зарплате
-    player_city = await get_player_city(cid, uid)
-    if player_city:
-        city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
-        if city and city.get('work_bonus'):
-            salary = int(salary * (1 + city['work_bonus']))
-
+    
     # 9. ВЫДАЧА ДЕНЕГ
     await update_balance(cid, uid, net_sal)
     async with pool.acquire() as conn:
         await conn.execute("UPDATE profiles SET last_work_time=$1 WHERE chat_id=$2 AND user_id=$3", ct, cid, uid)
-
-    # Формируем красивый ответ
+    
     response = f"💼 <b>{j['name']}</b> (Ур.{p['level']}):\n"
     response += f"💰 Начислено: <b>{fmt_money(gross_sal)}</b>\n"
     response += f"🏛️ Налог ({tax_rate}%): <b>-{fmt_money(tax_paid)}</b> (в {tax_receiver})\n"
     response += f"✅ <b>На руки: +{fmt_money(net_sal)}</b>"
-    
     if deduction_msg:
         response += deduction_msg
-
+        
     await m.answer(response, parse_mode="HTML")
-
+    
     new_achs = await check_achievements(cid, uid)
     await notify_achievements(cid, uid, new_achs)
 
@@ -2332,36 +2317,45 @@ async def cmd_pay(m: Message):
 @dp.message(Command("rob"))
 async def cmd_rob(m: Message):
     cid, uid = m.chat.id, m.from_user.id
+    
     if await is_in_jail(cid, uid):
         info = await get_jail_info(cid, uid)
         return await m.answer(f"🔒 Вы в тюрьме! Осталось: {format_time(int(info['release_time'] - time.time()))}")
+        
     user = await get_user(cid, uid)
     if user['balance'] < 0:
         return await m.answer(f" У вас долг! Сначала погасите его.")
+        
     if not m.reply_to_message:
         return await m.answer("🔫 Ответьте на жертву!")
+        
     rid, vid = uid, m.reply_to_message.from_user.id
     if rid == vid:
         return await m.answer("❌ Себя нельзя!")
+        
     if await is_in_jail(cid, vid):
         return await m.answer("❌ Жертва в тюрьме!")
+        
     async with pool.acquire() as conn:
         lr = await conn.fetchval("SELECT last_robbery FROM robbery WHERE chat_id=$1 AND user_id=$2", cid, rid) or 0
         ct = time.time()
         if ct - lr < ROB_COOLDOWN:
             return await m.answer(f"⏳ Кулдаун {format_time(ROB_COOLDOWN - (ct - lr))}")
         await conn.execute("INSERT INTO robbery (chat_id, user_id, last_robbery, debt_amount, debt_time) VALUES ($1,$2,$3,0,0) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_robbery=$3", cid, rid, ct)
+        
     vb = await get_user(cid, vid)
     if vb['balance'] < 50:
         return await m.answer("❌ У жертвы мало денег!")
-            # Бонус Сыктывкара: +10% к шансу успешного ограбления
+    
+    # ✅ БОНУС СЫКТЫВКАРА (+10% к шансу успеха)
     rob_success_rate = ROB_SUCCESS_RATE
     player_city = await get_player_city(cid, uid)
     if player_city:
         city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
         if city and city.get('rob_bonus'):
-            rob_success_rate += 0.10  # +10% к успеху (=-10% к поимке)
-    if random.random() < ROB_SUCCESS_RATE:
+            rob_success_rate += 0.10 
+
+    if random.random() < rob_success_rate:
         st = int(vb['balance'] * random.uniform(ROB_MIN_PERCENT, ROB_MAX_PERCENT))
         await update_balance(cid, vid, -st)
         await update_balance(cid, rid, st)
@@ -5536,8 +5530,8 @@ async def cmd_market(m: Message):
 @dp.message(Command("buy_market"))
 async def cmd_buy_market(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    
     args = m.text.split()
+    
     if len(args) < 2 or args[1] not in MARKET:
         return await m.answer("🛒 <b>МАГАЗИН</b>\n\nИспользование:\n/buy_market [название предмета]\n\nДоступные предметы:\n" + "\n".join([f"• {k} — {fmt_money(v['price'])}" for k, v in MARKET.items()]))
     
@@ -5554,25 +5548,23 @@ async def cmd_buy_market(m: Message):
         if 'tool' in item_type or 'инструмент' in item_type.lower():
             tool_decree = await get_active_decree(cid, player_city['id'], 'tool_discount')
             if tool_decree:
-                price_multiplier -= 0.30  # -30%
-        
+                price_multiplier -= 0.30 
+                
         # Указ на скидку машин
         if 'car' in item_type or 'машин' in item_type.lower():
             car_decree = await get_active_decree(cid, player_city['id'], 'car_discount')
             if car_decree:
-                price_multiplier -= 0.25  # -25%
-        
+                price_multiplier -= 0.25 
+                
         # Указ на бонус бизнесам
         if 'biz' in item_type or 'бизнес' in item_type.lower():
             biz_decree = await get_active_decree(cid, player_city['id'], 'business_bonus')
             if biz_decree:
-                price_multiplier -= 0.15  # -15%
+                price_multiplier -= 0.15 
     
-    # Применяем множитель к цене
     final_price = int(price * price_multiplier)
-
-        # Бонус Сарапула: -15% цены
-    player_city = await get_player_city(cid, uid)
+    
+    # ✅ БОНУС САРАПУЛА (-15% ко всем покупкам)
     if player_city:
         city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
         if city and city.get('market_discount'):
@@ -5581,7 +5573,7 @@ async def cmd_buy_market(m: Message):
     # Проверка тюрьмы
     if await is_in_jail(cid, uid):
         return await m.answer("🔒 В тюрьме нельзя!")
-    
+        
     u = await get_user(cid, uid)
     if u['balance'] < final_price:
         return await m.answer(f"❌ Нужно {fmt_money(final_price)}! У тебя: {fmt_money(u['balance'])}")
@@ -5598,22 +5590,18 @@ async def cmd_buy_market(m: Message):
             pr, rar = "💎 Алмаз", "rare"
         else:
             pr, rar = "📦 Бумага", "common"
-        
         async with pool.acquire() as conn:
             await conn.execute("INSERT INTO inventory (chat_id, user_id, item_name, item_type, rarity) VALUES ($1,$2,$3,$4,$5)", cid, uid, pr, 'card', rar)
-        
         await m.answer(f"✅ <b>Выпало: {pr}</b> ({rar})", parse_mode="HTML")
-    
+        
     elif it['type'] == 'business':
         async with pool.acquire() as conn:
             await conn.execute("INSERT INTO businesses (chat_id, user_id, business_name, income, last_collect_time) VALUES ($1,$2,$3,$4,$5)", cid, uid, it['name'], it['income'], time.time())
-        
         await m.answer(f"✅ <b>Куплен бизнес: {it['name']}</b>\n💰 Доход: {fmt_money(it['income'])}/сбор", parse_mode="HTML")
-    
+        
     else:
         async with pool.acquire() as conn:
             await conn.execute("INSERT INTO inventory (chat_id, user_id, item_name, item_type, rarity) VALUES ($1,$2,$3,$4,$5)", cid, uid, it['name'], item_type, 'common')
-        
         await m.answer(f"✅ <b>Куплено: {it['name']}</b>", parse_mode="HTML")
     
     # Проверка достижений
