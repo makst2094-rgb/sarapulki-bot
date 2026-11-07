@@ -237,6 +237,17 @@ async def init_db():
         await conn.execute("""CREATE TABLE IF NOT EXISTS federal_decrees (id SERIAL PRIMARY KEY, chat_id BIGINT NOT NULL, role TEXT NOT NULL, decree_type TEXT NOT NULL, active_until REAL NOT NULL, UNIQUE (chat_id, role, decree_type))""")
         await conn.execute("""CREATE TABLE IF NOT EXISTS active_federal_decrees (id SERIAL PRIMARY KEY, chat_id BIGINT NOT NULL, decree_type TEXT NOT NULL, issued_by BIGINT NOT NULL, issued_at REAL NOT NULL, expires_at REAL NOT NULL, UNIQUE (chat_id, decree_type))""")
         await conn.execute("""CREATE TABLE IF NOT EXISTS mayor_reports (id SERIAL PRIMARY KEY, chat_id BIGINT NOT NULL, city_id INTEGER NOT NULL, mayor_id BIGINT NOT NULL, budget_allocated BIGINT DEFAULT 0, budget_spent BIGINT DEFAULT 0, report_deadline REAL NOT NULL, status TEXT DEFAULT 'pending', created_at REAL NOT NULL)""")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS impeachment_votes (
+            id SERIAL PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            role TEXT NOT NULL,
+            voter_id BIGINT NOT NULL,
+            voted_at REAL NOT NULL,
+            UNIQUE(chat_id, role, voter_id)
+            )
+        """)
+        print("✅ Таблица impeachment_votes создана")
     print("✅ База данных готова")
 
 async def save_username(cid, uid, name):
