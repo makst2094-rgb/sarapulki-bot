@@ -1349,7 +1349,9 @@ async def cmd_check(m: Message):
 @dp.message(Command("appoint"))
 async def cmd_appoint(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if m.chat.type != 'private' or uid not in ADMIN_IDS: return
+    # Работает и в группе, и в ЛС
+    if uid not in ADMIN_IDS:
+        return
     args = m.text.split()
     if len(args) < 3:
         cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
@@ -1804,16 +1806,27 @@ async def cmd_buy(m: Message):
 async def cmd_admin_panel(m: Message):
     try:
         uid = m.from_user.id
-        if m.chat.type != 'private': return
-        if uid not in ADMIN_IDS: return
+        # Убрали проверку на private — теперь работает везде
+        if uid not in ADMIN_IDS:
+            return
+        
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏦 Банки", callback_data="new_banks"), InlineKeyboardButton(text="👑 Назначить", callback_data="new_appoint")],
-            [InlineKeyboardButton(text="🗳️ Голоса", callback_data="admin_votes"), InlineKeyboardButton(text="➖ Снять", callback_data="admin_remove_votes")],
-            [InlineKeyboardButton(text="➕ Добавить", callback_data="admin_add_votes"), InlineKeyboardButton(text="💰 Выдать", callback_data="admin_give_money")],
-            [InlineKeyboardButton(text="🏙️ Казна городов", callback_data="admin_city_treasury"), InlineKeyboardButton(text="🏛️ Фед. казна", callback_data="admin_state_treasury")],
+            [InlineKeyboardButton(text="🏦 Банки игроков", callback_data="new_banks"), 
+             InlineKeyboardButton(text="👑 Назначить", callback_data="new_appoint")],
+            [InlineKeyboardButton(text="🗳️ Голоса", callback_data="admin_votes"), 
+             InlineKeyboardButton(text="➖ Снять", callback_data="admin_remove_votes")],
+            [InlineKeyboardButton(text="➕ Добавить", callback_data="admin_add_votes"), 
+             InlineKeyboardButton(text="💰 Выдать", callback_data="admin_give_money")],
+            [InlineKeyboardButton(text="🏙️ Казна городов", callback_data="admin_city_treasury"), 
+             InlineKeyboardButton(text="🏛️ Фед. казна", callback_data="admin_state_treasury")],
             [InlineKeyboardButton(text="👥 Топ игроков", callback_data="admin_players")],
         ])
-        await m.answer("🔒 <b>АДМИН-ПАНЕЛЬ</b>\n\nВыберите:", reply_markup=keyboard, parse_mode="HTML")
+        
+        await m.answer(
+            "🔒 <b>АДМИН-ПАНЕЛЬ</b>\n\nВыберите действие:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
     except Exception as e:
         print(f"Ошибка admin_panel: {e}")
         await m.answer(f"❌ Ошибка: {str(e)}")
@@ -1822,21 +1835,70 @@ async def cmd_admin_panel(m: Message):
 async def callback_admin_new(callback: CallbackQuery):
     try:
         uid = callback.from_user.id
-        if uid not in ADMIN_IDS: return await callback.answer("❌ Доступ запрещён", show_alert=True)
+        if uid not in ADMIN_IDS:
+            return await callback.answer("❌ Доступ запрещён", show_alert=True)
         action = callback.data.replace("new_", "")
+        
         if action == "banks":
             async with pool.acquire() as conn:
-                players = await conn.fetch("SELECT user_id, balance FROM users WHERE chat_id=$1 ORDER BY balance DESC LIMIT 50", ADMIN_CHAT_ID)
-            text = "🏦 <b>БАНКИ (ТОП-50)</b>\n\n"
+                # Запрос с балансом И банковским счетом
+                players = await conn.fetch("""
+                    SELECT u.user_id, u.balance, COALESCE(b.deposit, 0) as deposit
+                    FROM users u
+                    LEFT JOIN bank b ON u.chat_id = b.chat_id AND u.user_id = b.user_id
+                    WHERE u.chat_id = $1
+                    ORDER BY (u.balance + COALESCE(b.deposit, 0)) DESC
+                    LIMIT 50
+                """, ADMIN_CHAT_ID)
+            
+            text = "🏦 <b>БАНКИ ИГРОКОВ (ТОП-50)</b>\n\n"
             for i, p in enumerate(players, 1):
-                try: name = (await bot.get_chat_member(ADMIN_CHAT_ID, p['user_id'])).user.full_name
-                except: name = f"User{p['user_id']}"
-                text += f"{i}. {name}\n   💰 <b>{fmt_money(p['balance'])}</b>\n   🆔 <code>{str(p['user_id'])}</code>\n\n"
-            text += "<i>/appoint [должность] [user_id]</i>"
+                try:
+                    name = (await bot.get_chat_member(ADMIN_CHAT_ID, p['user_id'])).user.full_name
+                except:
+                    name = f"User{p['user_id']}"
+                
+                balance = p['balance']
+                deposit = p['deposit']
+                total = balance + deposit
+                
+                text += f"<b>{i}. {name}</b>\n"
+                text += f"   💵 Наличные: <b>{fmt_money(balance)}</b>\n"
+                text += f"   🏦 В банке: <b>{fmt_money(deposit)}</b>\n"
+                text += f"   💰 Всего: <b>{fmt_money(total)}</b>\n"
+                text += f"   🆔 ID: <code>{str(p['user_id'])}</code>\n\n"
+            
+            text += "━━━━━━━━━━━━━━━━━━━━\n"
+            text += "<i>Для назначения: /appoint [должность] [user_id] [город_id если мэр]</i>\n\n"
+            text += "<b>Примеры:</b>\n"
+            text += "/appoint president 123456789\n"
+            text += "/appoint prime 123456789\n"
+            text += "/appoint mayor 123456789 1\n\n"
+            text += "<b>Города:</b>\n"
+            cities_list = ", ".join([f"{c['emoji']} {c['name']} (ID: {c['id']})" for c in CITIES_LIST])
+            text += cities_list
+            
             await callback.message.edit_text(text, parse_mode="HTML")
+        
         elif action == "appoint":
-            cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
-            await callback.message.edit_text(f"👑 <b>НАЗНАЧЕНИЕ</b>\n\n/appoint president [user_id]\n/appoint prime [user_id]\n/appoint mayor [user_id] [город]\n\nГорода: {cities_list}\n\n⚠️ Старый будет снят!", parse_mode="HTML")
+            cities_list = ", ".join([f"{c['emoji']} {c['name']} (ID: {c['id']})" for c in CITIES_LIST])
+            await callback.message.edit_text(
+                f"👑 <b>НАЗНАЧЕНИЕ НА ДОЛЖНОСТЬ</b>\n\n"
+                f"<b>Команды (работают прямо здесь в группе):</b>\n\n"
+                f"🇷🇺 <b>Президент (90 дней):</b>\n"
+                f"<code>/appoint president [user_id]</code>\n\n"
+                f"💼 <b>Премьер-министр (90 дней):</b>\n"
+                f"<code>/appoint prime [user_id]</code>\n\n"
+                f"🏛️ <b>Мэр города (60 дней):</b>\n"
+                f"<code>/appoint mayor [user_id] [город_id]</code>\n\n"
+                f"<b>Доступные города:</b>\n{cities_list}\n\n"
+                f"⚠️ <b>Важно:</b>\n"
+                f"• Команды работают прямо в этом чате\n"
+                f"• Старый чиновник будет снят автоматически\n"
+                f"• user_id можно скопировать из списка банков выше",
+                parse_mode="HTML"
+            )
+        
         await callback.answer()
     except Exception as e:
         print(f"Ошибка new_admin: {e}")
