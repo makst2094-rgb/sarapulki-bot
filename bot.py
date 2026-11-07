@@ -685,12 +685,22 @@ async def check_all_elections_and_terms():
 async def cmd_start(m: Message):
     await save_username(m.chat.id, m.from_user.id, m.from_user.full_name)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💰 Финансы", callback_data="menu_finance"), InlineKeyboardButton(text="💼 Работа", callback_data="menu_work")],
-        [InlineKeyboardButton(text="🏪 Бизнес", callback_data="menu_business"), InlineKeyboardButton(text="🚗 Авто", callback_data="menu_cars")],
-        [InlineKeyboardButton(text="🎓 Образование", callback_data="menu_edu"), InlineKeyboardButton(text="🎮 Игры", callback_data="menu_games")],
-        [InlineKeyboardButton(text="📊 Инфо", callback_data="menu_info")],
+        [InlineKeyboardButton(text="💰 Финансы", callback_data="menu_finance"), 
+         InlineKeyboardButton(text="💼 Работа", callback_data="menu_work")],
+        [InlineKeyboardButton(text="🏪 Бизнес", callback_data="menu_business"), 
+         InlineKeyboardButton(text="🚗 Авто", callback_data="menu_cars")],
+        [InlineKeyboardButton(text="🎓 Образование", callback_data="menu_edu"), 
+         InlineKeyboardButton(text="🎮 Игры", callback_data="menu_games")],
+        [InlineKeyboardButton(text="🏛️ Политика", callback_data="menu_politics"), 
+         InlineKeyboardButton(text="📊 Инфо", callback_data="menu_info")],
     ])
-    await m.answer(f"🎩 <b>Добро пожаловать!</b>\n\n👤 {m.from_user.full_name}\n\nВыберите раздел:", reply_markup=keyboard, parse_mode="HTML")
+    await m.answer(
+        f"🎩 <b>Добро пожаловать!</b>\n\n"
+        f"👤 {m.from_user.full_name}\n\n"
+        f"Выберите раздел:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
 
 @dp.callback_query(lambda c: c.data.startswith("menu_"))
 async def callback_menu(callback: CallbackQuery):
@@ -731,6 +741,56 @@ async def callback_menu(callback: CallbackQuery):
         jail_text = "\n🔒 <b>В ТЮРЬМЕ!</b>" if in_jail else ""
         debt_text = f"\n⛔ ДОЛГ: {fmt_money(abs(u['balance']))}" if u['balance'] < 0 else ""
         text = f"📊 <b>КАРТОЧКА</b>\n\n👤 {callback.from_user.full_name}\n💰 {fmt_money(u['balance'])}\n💼 {JOBS[p['job_key']]['name']} (Ур.{p['level']}){jail_text}{debt_text}\n\n/info\n/rating\n/achievements"
+        await callback.message.edit_text(text, parse_mode="HTML")
+    elif action == "politics":
+        player_city = await get_player_city(cid, uid)
+        city_text = ""
+        if player_city:
+            mayor = await get_mayor(cid, player_city['id'])
+            mayor_text = "ВАКАНТНО"
+            if mayor:
+                try:
+                    mayor_name = (await bot.get_chat_member(cid, mayor['user_id'])).user.full_name
+                except:
+                    mayor_name = f"User{mayor['user_id']}"
+                days_left = int((mayor['expires_at'] - time.time()) / 86400)
+                mayor_text = f"{mayor_name} ({days_left} дн.)"
+            city_text = (
+                f"🏙️ <b>Твой город:</b> {player_city['emoji']} {player_city['name']}\n"
+                f"🏛️ Мэр: {mayor_text}\n\n"
+            )
+        text = (
+            f"🏛️ <b>ПОЛИТИКА</b>\n\n"
+            f"{city_text}"
+            f"📋 <b>Города:</b>\n"
+            f"/city list — список городов\n"
+            f"/city choose [город] — выбрать\n"
+            f"/city move [город] — переехать\n"
+            f"/city info — инфо о городе\n"
+            f"/city residents — жители\n\n"
+            f"🏛️ <b>Мэр:</b>\n"
+            f"/mayor_nominate — выдвинуться (30к)\n"
+            f"/mayor_vote — проголосовать (500)\n"
+            f"/mayor_decree — указы мэра\n"
+            f"/mayor_report — отчёт мэра\n"
+            f"/mayor_finalize — завершить выборы\n\n"
+            f"🇷🇺 <b>Президент (90 дней):</b>\n"
+            f"/president_nominate — выдвинуться (50к)\n"
+            f"/president_vote — проголосовать (1000)\n"
+            f"/president_decree — указы\n"
+            f"/president_decrees — активные указы\n"
+            f"/president_finalize — завершить выборы\n"
+            f"/president_check_mayor — проверить мэра\n\n"
+            f"💼 <b>Премьер (90 дней):</b>\n"
+            f"/prime_nominate — выдвинуться (40к)\n"
+            f"/prime_vote — проголосовать (800)\n"
+            f"/prime_decree — указы\n"
+            f"/prime_decrees — активные указы\n"
+            f"/prime_finalize — завершить выборы\n\n"
+            f"⚖️ <b>Импичмент:</b>\n"
+            f"/impeach president — против Президента\n"
+            f"/impeach prime — против Премьера"
+        )
         await callback.message.edit_text(text, parse_mode="HTML")
     await callback.answer()
 
