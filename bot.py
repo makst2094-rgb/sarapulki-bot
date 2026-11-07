@@ -2459,21 +2459,33 @@ async def cmd_debt_list(m: Message):
     async with pool.acquire() as conn:
         i_owe = await conn.fetch("SELECT * FROM debts WHERE borrower_id=$1 AND status='active'", uid)
         owed_me = await conn.fetch("SELECT * FROM debts WHERE lender_id=$1 AND status='active'", uid)
+    
     t = "📋 <b>ДОЛГИ</b>\n\n"
+    
     if i_owe:
         t += "📤 <b>Я должен:</b>\n"
         for d in i_owe:
-            try: lender = await bot.get_chat_member(cid, d['lender_id'])
-            except: lender = None
-            t += f"• {lender.user.full_name if lender else f'User{d[\"lender_id\"]}'}: {fmt_money(d['amount'])}\n"
-    else: t += "✅ Никому не должен\n"
+            try:
+                lender = await bot.get_chat_member(cid, d['lender_id'])
+                lender_name = lender.user.full_name
+            except:
+                lender_name = f"User{d['lender_id']}"
+            t += f"• {lender_name}: {fmt_money(d['amount'])}\n"
+    else:
+        t += "✅ Я никому не должен\n"
+    
     if owed_me:
         t += "\n📥 <b>Мне должны:</b>\n"
         for d in owed_me:
-            try: borrower = await bot.get_chat_member(cid, d['borrower_id'])
-            except: borrower = None
-            t += f"• {borrower.user.full_name if borrower else f'User{d[\"borrower_id\"]}'}: {fmt_money(d['amount'])}\n"
-    else: t += "\n✅ Мне никто не должен"
+            try:
+                borrower = await bot.get_chat_member(cid, d['borrower_id'])
+                borrower_name = borrower.user.full_name
+            except:
+                borrower_name = f"User{d['borrower_id']}"
+            t += f"• {borrower_name}: {fmt_money(d['amount'])}\n"
+    else:
+        t += "\n✅ Мне никто не должен"
+    
     await m.answer(t, parse_mode="HTML")
 
 @dp.message(Command("mayor_decree"))
