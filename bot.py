@@ -734,6 +734,7 @@ async def callback_menu(callback: CallbackQuery):
     elif action == "games":
         text = f"🎮 <b>ИГРЫ</b>\n\n🎲 /dice сумма\n🎟️ /buy_ticket\n🎁 /daily"
         await callback.message.edit_text(text, parse_mode="HTML")
+
     elif action == "info":
         u = await get_user(cid, uid)
         p = await get_profile(cid, uid)
@@ -742,56 +743,77 @@ async def callback_menu(callback: CallbackQuery):
         debt_text = f"\n⛔ ДОЛГ: {fmt_money(abs(u['balance']))}" if u['balance'] < 0 else ""
         text = f"📊 <b>КАРТОЧКА</b>\n\n👤 {callback.from_user.full_name}\n💰 {fmt_money(u['balance'])}\n💼 {JOBS[p['job_key']]['name']} (Ур.{p['level']}){jail_text}{debt_text}\n\n/info\n/rating\n/achievements"
         await callback.message.edit_text(text, parse_mode="HTML")
+    
     elif action == "politics":
-        player_city = await get_player_city(cid, uid)
-        city_text = ""
-        if player_city:
-            mayor = await get_mayor(cid, player_city['id'])
-            mayor_text = "ВАКАНТНО"
+        # Получаем текущего Президента
+        president = await get_federal_role(cid, 'president')
+        president_text = "👤 ВАКАНТНО\n⏳ Выборы не проведены"
+        if president:
+            try:
+                p_name = (await bot.get_chat_member(cid, president['user_id'])).user.full_name
+            except:
+                p_name = f"User{president['user_id']}"
+            days_left = int((president['expires_at'] - time.time()) / 86400)
+            president_text = f"👤 {p_name}\n📊 Рейтинг: {president['approval_rating']}%\n⏳ Осталось: {days_left} дн."
+        
+        # Получаем текущего Премьера
+        prime = await get_federal_role(cid, 'prime_minister')
+        prime_text = "👤 ВАКАНТНО\n⏳ Выборы не проведены"
+        if prime:
+            try:
+                pr_name = (await bot.get_chat_member(cid, prime['user_id'])).user.full_name
+            except:
+                pr_name = f"User{prime['user_id']}"
+            days_left = int((prime['expires_at'] - time.time()) / 86400)
+            prime_text = f"👤 {pr_name}\n📊 Рейтинг: {prime['approval_rating']}%\n⏳ Осталось: {days_left} дн."
+        
+        # Федеральная казна
+        state_treasury = await get_state_treasury(cid)
+        
+        # Мэры городов
+        mayors_text = ""
+        for city in CITIES_LIST:
+            mayor = await get_mayor(cid, city['id'])
+            city_treasury = await get_city_treasury(cid, city['id'])
             if mayor:
                 try:
-                    mayor_name = (await bot.get_chat_member(cid, mayor['user_id'])).user.full_name
+                    m_name = (await bot.get_chat_member(cid, mayor['user_id'])).user.full_name
                 except:
-                    mayor_name = f"User{mayor['user_id']}"
+                    m_name = f"User{mayor['user_id']}"
                 days_left = int((mayor['expires_at'] - time.time()) / 86400)
-                mayor_text = f"{mayor_name} ({days_left} дн.)"
-            city_text = (
-                f"🏙️ <b>Твой город:</b> {player_city['emoji']} {player_city['name']}\n"
-                f"🏛️ Мэр: {mayor_text}\n\n"
-            )
+                mayors_text += f"{city['emoji']} <b>{city['name']}</b>\n"
+                mayors_text += f"   👤 Мэр: {m_name}\n"
+                mayors_text += f"   📊 Рейтинг: {mayor['approval_rating']}%\n"
+                mayors_text += f"   ⏳ Осталось: {days_left} дн.\n"
+                mayors_text += f"   💰 Казна: {fmt_money(city_treasury)}\n\n"
+            else:
+                mayors_text += f"{city['emoji']} <b>{city['name']}</b>\n"
+                mayors_text += f"   👤 Мэр: ВАКАНТНО\n"
+                mayors_text += f"   💰 Казна: {fmt_money(city_treasury)}\n\n"
+        
         text = (
-            f"🏛️ <b>ПОЛИТИКА</b>\n\n"
-            f"{city_text}"
-            f"📋 <b>Города:</b>\n"
-            f"/city list — список городов\n"
-            f"/city choose [город] — выбрать\n"
-            f"/city move [город] — переехать\n"
-            f"/city info — инфо о городе\n"
-            f"/city residents — жители\n\n"
-            f"🏛️ <b>Мэр:</b>\n"
-            f"/mayor_nominate — выдвинуться (30к)\n"
-            f"/mayor_vote — проголосовать (500)\n"
-            f"/mayor_decree — указы мэра\n"
-            f"/mayor_report — отчёт мэра\n"
-            f"/mayor_finalize — завершить выборы\n\n"
-            f"🇷🇺 <b>Президент (90 дней):</b>\n"
-            f"/president_nominate — выдвинуться (50к)\n"
-            f"/president_vote — проголосовать (1000)\n"
-            f"/president_decree — указы\n"
-            f"/president_decrees — активные указы\n"
-            f"/president_finalize — завершить выборы\n"
-            f"/president_check_mayor — проверить мэра\n\n"
-            f"💼 <b>Премьер (90 дней):</b>\n"
-            f"/prime_nominate — выдвинуться (40к)\n"
-            f"/prime_vote — проголосовать (800)\n"
-            f"/prime_decree — указы\n"
-            f"/prime_decrees — активные указы\n"
-            f"/prime_finalize — завершить выборы\n\n"
-            f"⚖️ <b>Импичмент:</b>\n"
-            f"/impeach president — против Президента\n"
-            f"/impeach prime — против Премьера"
+            f"🏛️ <b>ПОЛИТИЧЕСКАЯ СИСТЕМА</b>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🇷🇺 <b>ПРЕЗИДЕНТ</b> (90 дней)\n"
+            f"{president_text}\n\n"
+            f"💼 <b>ПРЕМЬЕР-МИНИСТР</b> (90 дней)\n"
+            f"{prime_text}\n\n"
+            f"🏛️ <b>ФЕДЕРАЛЬНАЯ КАЗНА</b>\n"
+            f"💰 {fmt_money(state_treasury)}\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🏙️ <b>МЭРЫ ГОРОДОВ</b>\n\n"
+            f"{mayors_text}"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📋 <b>Команды:</b>\n"
+            f"/city list — города\n"
+            f"/mayor_nominate — в мэры (30к)\n"
+            f"/president_nominate — в Президенты (50к)\n"
+            f"/prime_nominate — в Премьеры (40к)\n"
+            f"/impeach president — импичмент Президента\n"
+            f"/impeach prime — импичмент Премьера"
         )
         await callback.message.edit_text(text, parse_mode="HTML")
+    
     await callback.answer()
 
 @dp.message(Command("balance"))
@@ -3500,6 +3522,73 @@ async def cmd_prime_decrees(m: Message):
         hours_left = int((d['active_until'] - time.time()) / 3600)
         t += f"• {get_federal_decree_name(d['decree_type'])}\n  ⏰ {hours_left} ч.\n\n"
     return await m.answer(t, parse_mode="HTML")
+
+@dp.message(Command("impeach"))
+async def cmd_impeach(m: Message):
+    """Голосование за импичмент"""
+    cid, uid = m.chat.id, m.from_user.id
+    args = m.text.split()
+    if len(args) < 2:
+        return await m.answer(
+            "⚖️ <b>ИМПИЧМЕНТ</b>\n\n"
+            "Использование:\n"
+            "/impeach president — против Президента\n"
+            "/impeach prime — против Премьера\n\n"
+            "Нужно 10 голосов за 7 дней",
+            parse_mode="HTML"
+        )
+    role = args[1].lower()
+    if role not in ['president', 'prime']:
+        return await m.answer("❌ Используй president или prime")
+    db_role = 'president' if role == 'president' else 'prime_minister'
+    official = await get_federal_role(cid, db_role)
+    if not official:
+        return await m.answer("❌ Сейчас нет действующего чиновника!")
+    if official['user_id'] == uid:
+        return await m.answer("❌ Нельзя голосовать против себя!")
+    async with pool.acquire() as conn:
+        already_voted = await conn.fetchrow(
+            "SELECT * FROM impeachment_votes WHERE chat_id=$1 AND role=$2 AND voter_id=$3",
+            cid, db_role, uid
+        )
+        if already_voted:
+            return await m.answer("❌ Ты уже голосовал за импичмент!")
+        await conn.execute(
+            "INSERT INTO impeachment_votes (chat_id, role, voter_id, voted_at) VALUES ($1,$2,$3,$4)",
+            cid, db_role, uid, time.time()
+        )
+        votes = await conn.fetchval(
+            "SELECT COUNT(*) FROM impeachment_votes WHERE chat_id=$1 AND role=$2",
+            cid, db_role
+        )
+    role_name = "Президент" if role == 'president' else "Премьер"
+    if votes >= 10:
+        await conn.execute(
+            "DELETE FROM federal_roles WHERE chat_id=$1 AND role=$2",
+            cid, db_role
+        )
+        await conn.execute(
+            "DELETE FROM impeachment_votes WHERE chat_id=$1 AND role=$2",
+            cid, db_role
+        )
+        try:
+            official_name = (await bot.get_chat_member(cid, official['user_id'])).user.full_name
+        except:
+            official_name = f"User{official['user_id']}"
+        msg = (
+            f"⚖️ <b>ИМПИЧМЕНТ УСПЕШЕН!</b>\n\n"
+            f"👤 {role_name} {official_name} отстранён от должности!\n"
+            f"🗳️ Голосов: {votes}/10\n\n"
+            f"⏳ Новые выборы через 24 часа"
+        )
+        await bot.send_message(cid, msg, parse_mode="HTML")
+        await m.answer("✅ Импичмент проведён!")
+    else:
+        await m.answer(
+            f"⚖️ Голос за импичмент {role_name} принят!\n"
+            f"📊 Голосов: {votes}/10",
+            parse_mode="HTML"
+        )
 
 async def main():
     await init_db()
