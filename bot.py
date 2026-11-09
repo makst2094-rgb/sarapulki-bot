@@ -6,6 +6,8 @@ import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 from aiohttp import web
@@ -17,10 +19,21 @@ ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "-1002595597314"))
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
 pool = None
 exam_sessions = {}
 active_cases = {}
+bj_tables = {}
+ROULETTE_TABLES = {}
+active_contraband_runs = {}
+contraband_cooldowns = {}
+heist_lobbies = {}
+
+class BlackjackStates(StatesGroup):
+    waiting = State()
+    betting = State()
+    playing = State()
 
 # ═══════════════════════════════════════════
 # ГОРОДА
@@ -34,8 +47,7 @@ CITIES_LIST = [
 # ═══════════════════════════════════════════
 # КОНСТАНТЫ
 # ═══════════════════════════════════════════
-TAX_RATE_PERCENT = 5
-CITY_ASSIGNMENT_DAYS = 7
+TAX_RATE_PERCENT = 10
 PRESIDENT_DECREE_DURATION = 168
 PRIME_MINISTER_DECREE_DURATION = 168
 MAYOR_ELECTION_DURATION = 86400
@@ -80,6 +92,78 @@ JAIL_FINE_RATE = 0.25
 JAIL_DEBT_THRESHOLD = 500
 JAIL_DEBT_TIMEOUT = 7200
 MAX_BUSINESSES_PER_TYPE = 10
+
+# Расходы казны (в день)
+FEDERAL_SALARY_PRESIDENT = 5000
+FEDERAL_SALARY_PRIME = 3000
+FEDERAL_SOCIAL_AID = 100
+FEDERAL_INFRASTRUCTURE = 2000
+CITY_SALARY_MAYOR = 2000
+CITY_UTILITIES = 500
+CITY_SOCIAL_PROGRAMS = 300
+MIN_TREASURY_BALANCE = 10000
+
+# Мафия
+MAFIA_BALANCE_THRESHOLD = 30000
+MAFIA_BANK_THRESHOLD = 50000
+MAFIA_CHECK_INTERVAL = 86400
+MAFIA_CHANCE = 0.15
+MAFIA_RANSOM_RATE = 0.20
+MAFIA_PENALTY_RATE = 0.30
+MAFIA_DEADLINE_HOURS = 1
+
+# Рулетка
+ROULETTE_WAIT_TIME = 60
+ROULETTE_MIN_PLAYERS = 2
+ROULETTE_MAX_PLAYERS = 6
+ROULETTE_BULLET_CHANCE = 1/6
+
+# Блэкджек
+BJ_MIN_BALANCE = 50
+BJ_MAX_PLAYERS = 5
+BJ_WAIT_TIME = 60
+BJ_DEALER_STOP = 17
+
+# Биржа
+STOCK_MARKET_EVENTS = [
+    {"name": "📈 Рост спроса", "effect": 1.3},
+    {"name": "📉 Падение рынка", "effect": 0.7},
+    {"name": "🔥 Вирусный тренд", "effect": 1.5},
+    {"name": "🔥 Конкурент демпингует", "effect": 0.8},
+    {"name": "💼 Инвестфонд вошёл", "effect": 1.4},
+]
+
+# Контрабанда
+CONTRABAND_COOLDOWN = 21600
+CONTRABAND_ITEMS = {
+    "docs": {"name": "📄 Фальшивые документы", "price": 5000, "reward": 12000, "fail_chance": 30, "penalty_percent": 10, "jail_hours": 2, "duration": 180},
+    "fake_money": {"name": "💵 Фейковые деньги", "price": 15000, "reward": 40000, "fail_chance": 50, "penalty_percent": 25, "jail_hours": 4, "duration": 300},
+    "drugs": {"name": "💊 Запрещенные вещества", "price": 50000, "reward": 150000, "fail_chance": 70, "penalty_percent": 50, "jail_hours": 8, "duration": 480},
+    "weapons": {"name": "🔫 Оружие", "price": 100000, "reward": 350000, "fail_chance": 85, "penalty_percent": 75, "jail_hours": 12, "duration": 720, "seize_business": True}
+}
+CONTRABAND_ROLES = {
+    "driver": {"name": "🚛 Водитель", "desc": "Снижает шанс провала на 15%"},
+    "navigator": {"name": "🗺️ Навигатор", "desc": "Ускоряет рейс на 20%"},
+    "guard": {"name": "🛡️ Охранник", "desc": "Дает шанс отбиться при проверке"},
+    "coordinator": {"name": "📡 Связной", "desc": "Увеличивает награду на 10%"}
+}
+
+# Ограбления банков
+HEIST_COOLDOWN = 86400
+BANKS = {
+    "local": {"name": "🏦 Местный банк", "reward": 5000, "chance": 70, "jail": 4},
+    "city": {"name": "🏛️ Городской банк", "reward": 20000, "chance": 50, "jail": 6},
+    "central": {"name": "🏛️ Центральный банк", "reward": 100000, "chance": 30, "jail": 8},
+    "swiss": {"name": "🇨🇭 Швейцарский банк", "reward": 500000, "chance": 15, "jail": 12}
+}
+TOOLS = {
+    "lockpick": {"name": "🔑 Отмычка", "price": 15000, "bonus_chance": 15, "extra_attempts": 1, "wire_reduce": 0, "jail_reduce": 1},
+    "crowbar": {"name": "🔧 Монтировка", "price": 35000, "bonus_chance": 25, "extra_attempts": 1, "wire_reduce": 0, "jail_reduce": 1},
+    "c4": {"name": "💣 Взрывчатка C4", "price": 85000, "bonus_chance": 40, "extra_attempts": 2, "wire_reduce": 1, "jail_reduce": 2},
+    "mask": {"name": "🎭 Маска", "price": 8000, "bonus_chance": 0, "extra_attempts": 0, "wire_reduce": 0, "jail_reduce": 2}
+}
+BASE_TOOL = {"name": "👊 Голыми руками", "bonus_chance": 0, "extra_attempts": 0, "wire_reduce": 0, "jail_reduce": 0}
+HEIST_ROLES = {"hacker": "🔓 Взломщик", "coder": "💻 Хакер", "sapper": "💣 Сапёр"}
 
 COURSES = {
     "miner": {"name": "📘 Курс шахтёра", "price": 500, "required_for": "miner", "questions": [
@@ -212,10 +296,8 @@ async def init_db():
     global pool
     pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10, command_timeout=30)
     async with pool.acquire() as conn:
-        for table in ["stock_holdings", "stocks", "marketplace", "robbery", "mafia_threats",
-                      "auctions", "auction_bids", "heist_cooldowns"]:
+        for table in ["stock_holdings", "stocks", "marketplace", "robbery", "mafia_threats", "auctions", "auction_bids", "heist_cooldowns", "credits"]:
             await conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
-        print("🗑️ Старые таблицы удалены")
         
         tables = [
             "CREATE TABLE IF NOT EXISTS users (chat_id BIGINT, user_id BIGINT, balance INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id))",
@@ -252,19 +334,23 @@ async def init_db():
             "CREATE TABLE IF NOT EXISTS mayor_reports (id SERIAL PRIMARY KEY, chat_id BIGINT NOT NULL, city_id INTEGER NOT NULL, mayor_id BIGINT NOT NULL, budget_allocated BIGINT DEFAULT 0, budget_spent BIGINT DEFAULT 0, report_deadline REAL NOT NULL, status TEXT DEFAULT 'pending', created_at REAL NOT NULL)",
             "CREATE TABLE IF NOT EXISTS impeachment_votes (id SERIAL PRIMARY KEY, chat_id BIGINT NOT NULL, role TEXT NOT NULL, voter_id BIGINT NOT NULL, voted_at REAL NOT NULL, UNIQUE(chat_id, role, voter_id))",
             "CREATE TABLE IF NOT EXISTS mayor_projects (id SERIAL PRIMARY KEY, chat_id BIGINT NOT NULL, city_id INTEGER NOT NULL, mayor_id BIGINT NOT NULL, project_type TEXT NOT NULL, budget BIGINT NOT NULL, description TEXT DEFAULT '', status TEXT DEFAULT 'active', started_at REAL NOT NULL, deadline REAL NOT NULL, completed_at REAL, fail_count INTEGER DEFAULT 0, reviewed_by BIGINT, review_result TEXT)",
+            "CREATE TABLE IF NOT EXISTS mafia_threats (id SERIAL PRIMARY KEY, chat_id BIGINT, user_id BIGINT, threat_time REAL DEFAULT 0, deadline REAL DEFAULT 0, ransom_amount INTEGER DEFAULT 0, threat_type TEXT DEFAULT 'asset', target_asset TEXT DEFAULT '', paid BOOLEAN DEFAULT FALSE)",
+            "CREATE TABLE IF NOT EXISTS marketplace (id SERIAL PRIMARY KEY, chat_id BIGINT, seller_id BIGINT, item_type TEXT, item_name TEXT, item_key TEXT, price INTEGER, created_at REAL DEFAULT 0)",
+            "CREATE TABLE IF NOT EXISTS stocks (id SERIAL PRIMARY KEY, chat_id BIGINT, business_id INTEGER, owner_id BIGINT, shares_issued INTEGER DEFAULT 10, shares_available INTEGER DEFAULT 10, price_per_share INTEGER DEFAULT 100, dividend_per_share INTEGER DEFAULT 10, last_price_change REAL DEFAULT 0)",
+            "CREATE TABLE IF NOT EXISTS stock_holdings (id SERIAL PRIMARY KEY, stock_id INTEGER, user_id BIGINT, shares_owned INTEGER DEFAULT 0)",
+            "CREATE TABLE IF NOT EXISTS auctions (id SERIAL PRIMARY KEY, chat_id BIGINT, item_type TEXT, item_key TEXT, item_name TEXT, starting_price INTEGER, current_bid INTEGER DEFAULT 0, current_bidder_id BIGINT, start_time REAL DEFAULT 0, end_time REAL DEFAULT 0, status TEXT DEFAULT 'active', min_increment INTEGER DEFAULT 100)",
+            "CREATE TABLE IF NOT EXISTS auction_bids (id SERIAL PRIMARY KEY, auction_id INTEGER, user_id BIGINT, bid_amount INTEGER, bid_time REAL DEFAULT 0)",
+            "CREATE TABLE IF NOT EXISTS heist_cooldowns (chat_id BIGINT, user_id BIGINT, last_heist_time REAL DEFAULT 0, PRIMARY KEY (chat_id, user_id))",
         ]
         for t in tables:
             await conn.execute(t)
-        
         try:
             await conn.execute("ALTER TABLE profiles ADD COLUMN coffee_level INTEGER DEFAULT 0")
-        except:
-            pass
-        
+        except: pass
         print("✅ База данных готова")
 
 # ═══════════════════════════════════════════
-# БАЗОВЫЕ ФУНКЦИИ
+# БАЗОВЫЕ ФУНКЦИИ БД
 # ═══════════════════════════════════════════
 async def save_username(cid, uid, name):
     async with pool.acquire() as conn:
@@ -465,8 +551,7 @@ async def notify_achievements(cid, uid, new_achs):
         ach_text = "\n".join([f"{a['icon']} <b>{a['name']}</b> — {a['desc']}" for a in new_achs])
         try:
             await bot.send_message(cid, f"🏆 <b>Новые достижения!</b>\n\n{ach_text}", parse_mode="HTML")
-        except:
-            pass
+        except: pass
 
 # ═══════════════════════════════════════════
 # ВЕБ-СЕРВЕР И ФОНОВЫЕ ЗАДАЧИ
@@ -509,8 +594,7 @@ async def auto_lottery_loop():
                     await conn.execute("DELETE FROM lottery_tickets WHERE chat_id=$1", cid)
                     try:
                         await bot.send_message(cid, f"🎉 <b>АВТО-РОЗЫГРЫШ!</b>\n\n🏆 {wname}\n💰 {fmt_money(bank)}", parse_mode="HTML")
-                    except:
-                        pass
+                    except: pass
 
 async def loan_interest_loop():
     print("💳 Цикл кредитов запущен")
@@ -535,8 +619,7 @@ async def loan_interest_loop():
                         msg += f"\n\n⛔ Остаток: <b>{fmt_money(remaining_debt)}</b>"
                     try:
                         await bot.send_message(cid, msg, parse_mode="HTML")
-                    except:
-                        pass
+                    except: pass
                 else:
                     daily_interest = int(loan['amount'] * CREDIT_DAILY_RATE)
                     await update_loan(cid, uid, loan['amount'], loan['interest'] + daily_interest, loan['taken_at'], loan['due_date'])
@@ -549,18 +632,15 @@ async def jail_fine_check_loop():
             fines = await conn.fetch("SELECT * FROM jail_fines WHERE paid=FALSE AND fine_amount > 0")
             for fine in fines:
                 cid, uid = fine['chat_id'], fine['user_id']
-                if await is_in_jail(cid, uid):
-                    continue
+                if await is_in_jail(cid, uid): continue
                 user = await get_user(cid, uid)
                 bank = await get_bank(cid, uid)
                 total_available = user['balance'] + bank['deposit']
                 if total_available >= fine['fine_amount']:
                     paid_from_balance = min(fine['fine_amount'], user['balance'])
                     remaining = fine['fine_amount'] - paid_from_balance
-                    if paid_from_balance > 0:
-                        await update_balance(cid, uid, -paid_from_balance)
-                    if remaining > 0 and bank['deposit'] > 0:
-                        await update_bank(cid, uid, -min(remaining, bank['deposit']))
+                    if paid_from_balance > 0: await update_balance(cid, uid, -paid_from_balance)
+                    if remaining > 0 and bank['deposit'] > 0: await update_bank(cid, uid, -min(remaining, bank['deposit']))
                     await conn.execute("UPDATE jail_fines SET paid=TRUE WHERE chat_id=$1 AND user_id=$2", cid, uid)
                     continue
                 if fine['debt_time'] > 0 and time.time() - fine['debt_time'] > JAIL_DEBT_TIMEOUT:
@@ -571,8 +651,7 @@ async def jail_fine_check_loop():
                         try:
                             msg = f"🚔 <b>АРЕСТ ЗА НЕОПЛАЧЕННЫЙ ШТРАФ!</b>\n\n👤 {username}\n\n<b>Конфисковано:</b>\n" + "\n".join([f"• {i}" for i in arrested])
                             await bot.send_message(cid, msg, parse_mode="HTML")
-                        except:
-                            pass
+                        except: pass
 
 async def check_expired_debts_loop():
     print("🕵️ Фоновая проверка долгов запущена")
@@ -598,8 +677,7 @@ async def run_collectors(debt):
     async with pool.acquire() as conn:
         cars = await conn.fetch("SELECT id, car_name FROM garage WHERE chat_id=$1 AND user_id=$2", cid, borrower_id)
         for car in cars:
-            if collected >= total_debt:
-                break
+            if collected >= total_debt: break
             car_price = next((data['price'] for data in CARS.values() if data['name'] in car['car_name'] or car['car_name'] in data['name']), 0)
             if car_price > 0:
                 await conn.execute("DELETE FROM garage WHERE id=$1", car['id'])
@@ -608,8 +686,7 @@ async def run_collectors(debt):
         if collected < total_debt:
             businesses = await conn.fetch("SELECT id, business_name FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, borrower_id)
             for biz in businesses:
-                if collected >= total_debt:
-                    break
+                if collected >= total_debt: break
                 biz_price = next((data['price'] for data in MARKET.values() if data['name'] in biz['business_name'] or biz['business_name'] in data['name']), 50000)
                 if biz_price > 0:
                     await conn.execute("DELETE FROM businesses WHERE id=$1", biz['id'])
@@ -627,17 +704,83 @@ async def run_collectors(debt):
             await update_balance(cid, borrower_id, -remaining)
         await conn.execute("UPDATE debts SET status='collected' WHERE id=$1", debt['id'])
         await update_balance(cid, lender_id, debt_amount)
-    try:
-        b_name = (await bot.get_chat_member(cid, borrower_id)).user.full_name
-    except:
-        b_name = "Должник"
-    try:
-        l_name = (await bot.get_chat_member(cid, lender_id)).user.full_name
-    except:
-        l_name = "Кредитор"
+    try: b_name = (await bot.get_chat_member(cid, borrower_id)).user.full_name
+    except: b_name = "Должник"
+    try: l_name = (await bot.get_chat_member(cid, lender_id)).user.full_name
+    except: l_name = "Кредитор"
     seized_text = "\n".join(seized_items) if seized_items else "Ничего не найдено"
     await bot.send_message(cid, f"🚨 <b>КОЛЛЕКТОРЫ ЯВИЛИСЬ!</b>\n\n👤 {b_name}\n📜 Долг: {fmt_money(debt_amount)} + {fmt_money(penalty)} штраф\n\n🗑️ <b>Изъято:</b>\n{seized_text}", parse_mode="HTML")
     await bot.send_message(cid, f"✅ <b>ДОЛГ ВОЗВРАЩЁН</b>\n\n👤 От {b_name}\n💰 Получено: {fmt_money(debt_amount)}", parse_mode="HTML")
+
+# ═══════════════════════════════════════════
+# РАСХОДЫ КАЗНЫ
+# ═══════════════════════════════════════════
+async def federal_expenses_loop():
+    print("🏛️ Цикл федеральных расходов запущен")
+    while True:
+        await asyncio.sleep(86400)
+        try:
+            async with pool.acquire() as conn:
+                chats = await conn.fetch("SELECT DISTINCT chat_id FROM state_treasury")
+                for row in chats:
+                    cid = row['chat_id']
+                    treasury = await get_state_treasury(cid)
+                    if treasury < MIN_TREASURY_BALANCE: continue
+                    president = await get_federal_role(cid, 'president')
+                    prime = await get_federal_role(cid, 'prime_minister')
+                    total_expenses = 0
+                    if president:
+                        await update_balance(cid, president['user_id'], FEDERAL_SALARY_PRESIDENT)
+                        total_expenses += FEDERAL_SALARY_PRESIDENT
+                    if prime:
+                        await update_balance(cid, prime['user_id'], FEDERAL_SALARY_PRIME)
+                        total_expenses += FEDERAL_SALARY_PRIME
+                    players = await conn.fetch("SELECT user_id, balance FROM users WHERE chat_id=$1 AND balance < 0", cid)
+                    social_aid = len(players) * FEDERAL_SOCIAL_AID
+                    if social_aid > 0 and treasury >= social_aid:
+                        for player in players:
+                            aid = min(FEDERAL_SOCIAL_AID, abs(player['balance']))
+                            await update_balance(cid, player['user_id'], aid)
+                        total_expenses += social_aid
+                    if treasury >= FEDERAL_INFRASTRUCTURE:
+                        total_expenses += FEDERAL_INFRASTRUCTURE
+                    if total_expenses > 0:
+                        await update_state_treasury(cid, -total_expenses)
+        except Exception as e:
+            print(f"Ошибка федеральных расходов: {e}")
+
+async def city_expenses_loop():
+    print("🏙️ Цикл городских расходов запущен")
+    while True:
+        await asyncio.sleep(86400)
+        try:
+            async with pool.acquire() as conn:
+                treasuries = await conn.fetch("SELECT DISTINCT chat_id, city_id FROM city_treasury")
+                for row in treasuries:
+                    cid = row['chat_id']
+                    city_id = row['city_id']
+                    treasury = await get_city_treasury(cid, city_id)
+                    if treasury < MIN_TREASURY_BALANCE: continue
+                    city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+                    if not city: continue
+                    total_expenses = 0
+                    mayor = await get_mayor(cid, city_id)
+                    if mayor:
+                        await update_balance(cid, mayor['user_id'], CITY_SALARY_MAYOR)
+                        total_expenses += CITY_SALARY_MAYOR
+                    if treasury >= CITY_UTILITIES:
+                        total_expenses += CITY_UTILITIES
+                    residents = await conn.fetch("SELECT u.user_id, u.balance FROM users u JOIN player_cities pc ON u.chat_id = pc.chat_id AND u.user_id = pc.user_id WHERE pc.chat_id=$1 AND pc.city_id=$2 AND u.balance < 0", cid, city_id)
+                    social_expenses = len(residents) * CITY_SOCIAL_PROGRAMS
+                    if social_expenses > 0 and treasury >= social_expenses:
+                        for resident in residents:
+                            aid = min(CITY_SOCIAL_PROGRAMS, abs(resident['balance']))
+                            await update_balance(cid, resident['user_id'], aid)
+                        total_expenses += social_expenses
+                    if total_expenses > 0:
+                        await update_city_treasury(cid, city_id, -total_expenses)
+        except Exception as e:
+            print(f"Ошибка городских расходов: {e}")
 
 # ═══════════════════════════════════════════
 # ФУНКЦИИ ГОРОДОВ И ПОЛИТИКИ
@@ -655,8 +798,7 @@ async def get_player_city(cid, uid):
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT city_id, moved_at FROM player_cities WHERE chat_id=$1 AND user_id=$2", cid, uid)
-            if not row:
-                return None
+            if not row: return None
             city_id = row['city_id']
             for city in CITIES_LIST:
                 if city['id'] == city_id:
@@ -664,8 +806,7 @@ async def get_player_city(cid, uid):
                     city_copy['moved_at'] = row['moved_at']
                     return city_copy
             return None
-    except Exception:
-        return None
+    except Exception: return None
 
 async def set_player_city(cid, uid, city_id):
     async with pool.acquire() as conn:
@@ -676,8 +817,7 @@ async def get_city_treasury(cid, city_id):
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT amount FROM city_treasury WHERE chat_id=$1 AND city_id=$2", cid, city_id)
             return row['amount'] if row else 0
-    except Exception:
-        return 0
+    except Exception: return 0
 
 async def update_city_treasury(cid, city_id, amount):
     async with pool.acquire() as conn:
@@ -702,8 +842,7 @@ async def get_mayor(cid, city_id):
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM mayors WHERE chat_id=$1 AND city_id=$2 AND expires_at > $3", cid, city_id, time.time())
             return row
-    except Exception:
-        return None
+    except Exception: return None
 
 async def get_current_election_id(cid, city_id):
     week_num = int(time.time() // 604800)
@@ -722,8 +861,7 @@ async def nominate_mayor(cid, uid, city_id):
     election_id = await get_current_election_id(cid, city_id)
     async with pool.acquire() as conn:
         existing = await conn.fetchrow("SELECT * FROM mayor_candidates WHERE chat_id=$1 AND city_id=$2 AND user_id=$3 AND election_id=$4", cid, city_id, uid, election_id)
-        if existing:
-            return False, "❌ Уже выдвинут!"
+        if existing: return False, "❌ Уже выдвинут!"
         await update_balance(cid, uid, -MAYOR_ELECTION_FEE)
         await conn.execute("INSERT INTO mayor_candidates (chat_id, city_id, user_id, election_id) VALUES ($1,$2,$3,$4)", cid, city_id, uid, election_id)
         existing_start = await conn.fetchrow("SELECT * FROM mayor_elections_start WHERE chat_id=$1 AND city_id=$2 AND election_id=$3", cid, city_id, election_id)
@@ -738,16 +876,12 @@ async def vote_for_mayor(cid, uid, city_id, candidate_num):
     election_id = await get_current_election_id(cid, city_id)
     async with pool.acquire() as conn:
         candidates = await conn.fetch("SELECT id, user_id, votes FROM mayor_candidates WHERE chat_id=$1 AND city_id=$2 AND election_id=$3 ORDER BY id ASC", cid, city_id, election_id)
-        if not candidates:
-            return False, "❌ Нет кандидатов!"
-        if candidate_num < 1 or candidate_num > len(candidates):
-            return False, f"❌ 1-{len(candidates)}"
+        if not candidates: return False, "❌ Нет кандидатов!"
+        if candidate_num < 1 or candidate_num > len(candidates): return False, f"❌ 1-{len(candidates)}"
         target_candidate = candidates[candidate_num - 1]
         already_voted = await conn.fetchrow("SELECT * FROM mayor_votes WHERE chat_id=$1 AND city_id=$2 AND voter_id=$3 AND election_id=$4", cid, city_id, uid, election_id)
-        if already_voted:
-            return False, "❌ Уже голосовал!"
-        if target_candidate['user_id'] == uid:
-            return False, "❌ Нельзя за себя!"
+        if already_voted: return False, "❌ Уже голосовал!"
+        if target_candidate['user_id'] == uid: return False, "❌ Нельзя за себя!"
         await update_balance(cid, uid, -MAYOR_VOTE_COST)
         await update_city_treasury(cid, city_id, MAYOR_VOTE_COST)
         await conn.execute("INSERT INTO mayor_votes (chat_id, city_id, voter_id, candidate_id, election_id) VALUES ($1,$2,$3,$4,$5)", cid, city_id, uid, target_candidate['id'], election_id)
@@ -764,10 +898,8 @@ async def finalize_mayor_election(cid, city_id):
         winner = candidates[0]
         expires_at = time.time() + MAYOR_TERM_DAYS * 86400
         await conn.execute("""INSERT INTO mayors (chat_id, city_id, user_id, elected_at, expires_at, approval_rating) VALUES ($1,$2,$3,$4,$5,50) ON CONFLICT (chat_id, city_id) DO UPDATE SET user_id=$3, elected_at=$4, expires_at=$5, approval_rating=50""", cid, city_id, winner['user_id'], time.time(), expires_at)
-        try:
-            await update_balance(cid, winner['user_id'], MAYOR_ELECTION_FEE + MAYOR_WIN_BONUS)
-        except Exception as e:
-            print(f"Ошибка бонуса: {e}")
+        try: await update_balance(cid, winner['user_id'], MAYOR_ELECTION_FEE + MAYOR_WIN_BONUS)
+        except Exception as e: print(f"Ошибка бонуса: {e}")
         await conn.execute("DELETE FROM mayor_votes WHERE chat_id=$1 AND city_id=$2 AND election_id=$3", cid, city_id, election_id)
         await conn.execute("DELETE FROM mayor_candidates WHERE chat_id=$1 AND city_id=$2 AND election_id=$3", cid, city_id, election_id)
     return {"user_id": winner['user_id'], "votes": winner['votes'], "bonus": MAYOR_WIN_BONUS}
@@ -789,8 +921,7 @@ async def nominate_federal(cid, uid, role):
     election_id = await get_current_federal_election_id(cid, role)
     async with pool.acquire() as conn:
         existing = await conn.fetchrow("SELECT * FROM federal_candidates WHERE chat_id=$1 AND role=$2 AND user_id=$3 AND election_id=$4", cid, role, uid, election_id)
-        if existing:
-            return False, "❌ Уже выдвинут!"
+        if existing: return False, "❌ Уже выдвинут!"
         await update_balance(cid, uid, -fee)
         await conn.execute("INSERT INTO federal_candidates (chat_id, role, user_id, election_id) VALUES ($1,$2,$3,$4)", cid, role, uid, election_id)
         existing_start = await conn.fetchrow("SELECT * FROM federal_elections_start WHERE chat_id=$1 AND role=$2 AND election_id=$3", cid, role, election_id)
@@ -807,16 +938,12 @@ async def vote_federal(cid, uid, role, candidate_num):
     election_id = await get_current_federal_election_id(cid, role)
     async with pool.acquire() as conn:
         candidates = await conn.fetch("SELECT id, user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role=$2 AND election_id=$3 ORDER BY id ASC", cid, role, election_id)
-        if not candidates:
-            return False, "❌ Нет кандидатов!"
-        if candidate_num < 1 or candidate_num > len(candidates):
-            return False, f"❌ 1-{len(candidates)}"
+        if not candidates: return False, "❌ Нет кандидатов!"
+        if candidate_num < 1 or candidate_num > len(candidates): return False, f"❌ 1-{len(candidates)}"
         target_candidate = candidates[candidate_num - 1]
-        if target_candidate['user_id'] == uid:
-            return False, "❌ Нельзя за себя!"
+        if target_candidate['user_id'] == uid: return False, "❌ Нельзя за себя!"
         already_voted = await conn.fetchrow("SELECT * FROM federal_votes WHERE chat_id=$1 AND role=$2 AND voter_id=$3 AND election_id=$4", cid, role, uid, election_id)
-        if already_voted:
-            return False, "❌ Уже голосовал!"
+        if already_voted: return False, "❌ Уже голосовал!"
         await update_balance(cid, uid, -cost)
         await update_state_treasury(cid, cost)
         await conn.execute("INSERT INTO federal_votes (chat_id, role, voter_id, candidate_id, election_id) VALUES ($1,$2,$3,$4,$5)", cid, role, uid, target_candidate['id'], election_id)
@@ -836,10 +963,8 @@ async def finalize_federal_election(cid, role):
         election_fee = PRESIDENT_ELECTION_FEE if role == 'president' else PRIME_MINISTER_ELECTION_FEE
         expires_at = time.time() + term_days * 86400
         await conn.execute("""INSERT INTO federal_roles (chat_id, role, user_id, elected_at, expires_at, approval_rating) VALUES ($1,$2,$3,$4,$5,50) ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$3, elected_at=$4, expires_at=$5, approval_rating=50""", cid, role, winner['user_id'], time.time(), expires_at)
-        try:
-            await update_balance(cid, winner['user_id'], election_fee + win_bonus)
-        except Exception as e:
-            print(f"Ошибка бонуса: {e}")
+        try: await update_balance(cid, winner['user_id'], election_fee + win_bonus)
+        except Exception as e: print(f"Ошибка бонуса: {e}")
         await conn.execute("DELETE FROM federal_votes WHERE chat_id=$1 AND role=$2 AND election_id=$3", cid, role, election_id)
         await conn.execute("DELETE FROM federal_candidates WHERE chat_id=$1 AND role=$2 AND election_id=$3", cid, role, election_id)
     return {"user_id": winner['user_id'], "votes": winner['votes'], "bonus": win_bonus}
@@ -849,19 +974,16 @@ async def get_federal_role(cid, role):
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM federal_roles WHERE chat_id=$1 AND role=$2 AND expires_at > $3", cid, role, time.time())
             return row
-    except Exception:
-        return None
+    except Exception: return None
 
 async def is_mayor(cid, uid, city_id):
     mayor = await get_mayor(cid, city_id)
-    if mayor and mayor['user_id'] == uid:
-        return True
+    if mayor and mayor['user_id'] == uid: return True
     return False
 
 async def is_federal_official(cid, uid, role):
     official = await get_federal_role(cid, role)
-    if official and official['user_id'] == uid:
-        return True
+    if official and official['user_id'] == uid: return True
     return False
 
 async def get_active_decree(cid, city_id, decree_type):
@@ -869,33 +991,31 @@ async def get_active_decree(cid, city_id, decree_type):
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM city_decrees WHERE chat_id=$1 AND city_id=$2 AND decree_type=$3 AND active_until > $4", cid, city_id, decree_type, time.time())
             return row
-    except Exception:
-        return None
+    except Exception: return None
 
 async def get_active_federal_decree(cid, role, decree_type):
     try:
         async with pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM federal_decrees WHERE chat_id=$1 AND role=$2 AND decree_type=$3 AND active_until > $4", cid, role, decree_type, time.time())
             return row
-    except Exception:
-        return None
+    except Exception: return None
 
 async def apply_income_tax(cid, uid, gross_income):
     tax_cut = await get_active_federal_decree(cid, 'president', 'tax_cut')
     tax_boost_president = await get_active_federal_decree(cid, 'president', 'tax_boost')
     tax_boost_prime = await get_active_federal_decree(cid, 'prime_minister', 'tax_boost')
-    if tax_cut:
-        tax_rate = 2
-    elif tax_boost_president or tax_boost_prime:
-        tax_rate = 10
-    else:
-        tax_rate = TAX_RATE_PERCENT
+    if tax_cut: tax_rate = 5
+    elif tax_boost_president or tax_boost_prime: tax_rate = 15
+    else: tax_rate = TAX_RATE_PERCENT
     tax_amount = int(gross_income * tax_rate / 100)
     net_income = gross_income - tax_amount
     player_city = await get_player_city(cid, uid)
     if player_city:
-        await update_city_treasury(cid, player_city['id'], tax_amount)
-        receiver = f"казну г. {player_city['name']}"
+        city_tax = int(tax_amount * 0.7)
+        federal_tax = tax_amount - city_tax
+        await update_city_treasury(cid, player_city['id'], city_tax)
+        await update_state_treasury(cid, federal_tax)
+        receiver = f"казну г. {player_city['name']} ({fmt_money(city_tax)}) + фед. ({fmt_money(federal_tax)})"
     else:
         await update_state_treasury(cid, tax_amount)
         receiver = "фед. казну"
@@ -905,15 +1025,12 @@ async def apply_business_tax(cid, uid, gross_profit):
     tax_cut = await get_active_federal_decree(cid, 'president', 'tax_cut')
     tax_boost_president = await get_active_federal_decree(cid, 'president', 'tax_boost')
     tax_boost_prime = await get_active_federal_decree(cid, 'prime_minister', 'tax_boost')
-    if tax_cut:
-        tax_rate = 2
-    elif tax_boost_president or tax_boost_prime:
-        tax_rate = 10
-    else:
-        tax_rate = TAX_RATE_PERCENT
+    if tax_cut: tax_rate = 8
+    elif tax_boost_president or tax_boost_prime: tax_rate = 18
+    else: tax_rate = 12
     tax_amount = int(gross_profit * tax_rate / 100)
     net_profit = gross_profit - tax_amount
-    city_tax = tax_amount // 2
+    city_tax = int(tax_amount * 0.6)
     state_tax = tax_amount - city_tax
     player_city = await get_player_city(cid, uid)
     if player_city:
@@ -964,7 +1081,7 @@ async def create_federal_decree(cid, uid, role, decree_type):
     return True, f"✅ Указ {role_name} издан!\n⏰ {duration} часов."
 
 def get_federal_decree_name(decree_type):
-    names = {'amnesty': '🕊️ Амнистия', 'tax_cut': '📉 Снижение налога до 2%', 'tax_boost': '📈 Повышение до 10%', 'emergency': '🚨 ЧП', 'subsidy': '💰 Субсидии (+10%)', 'investment': '🏗️ Инвестиции (+5000)'}
+    names = {'amnesty': '🕊️ Амнистия', 'tax_cut': '📉 Снижение налога до 5%', 'tax_boost': '📈 Повышение до 15%', 'emergency': '🚨 ЧП', 'subsidy': '💰 Субсидии (+10%)', 'investment': '🏗️ Инвестиции (+5000)'}
     return names.get(decree_type, 'Неизвестный указ')
 
 # ═══════════════════════════════════════════
@@ -974,27 +1091,22 @@ def get_federal_decree_name(decree_type):
 async def cmd_mayor_project(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     player_city = await get_player_city(cid, uid)
-    if not player_city:
-        return await m.answer("❌ Нет города!")
+    if not player_city: return await m.answer("❌ Нет города!")
     mayor = await get_mayor(cid, player_city['id'])
-    if not mayor or mayor['user_id'] != uid:
-        return await m.answer("❌ Только мэр!")
+    if not mayor or mayor['user_id'] != uid: return await m.answer("❌ Только мэр!")
     args = m.text.split(maxsplit=1)
     if len(args) < 2:
         proj_list = "\n".join([f"• /mayor_project {k} — {v['name']} ({fmt_money(v['cost'])})" for k, v in PROJECT_TYPES.items()])
         return await m.answer(f"🏗️ <b>ПРОЕКТЫ МЭРА</b>\n\nВыбери проект:\n{proj_list}\n\n⏰ Срок: 24 часа\n⚠️ 1-й провал = штраф 50%\n⚠️ 2-й провал = тюрьма + снятие", parse_mode="HTML")
     project_key = args[1].lower().strip()
-    if project_key not in PROJECT_TYPES:
-        return await m.answer("❌ Неизвестный проект!")
+    if project_key not in PROJECT_TYPES: return await m.answer("❌ Неизвестный проект!")
     project = PROJECT_TYPES[project_key]
     cost = project['cost']
     treasury = await get_city_treasury(cid, player_city['id'])
-    if treasury < cost:
-        return await m.answer(f"❌ В казне только {fmt_money(treasury)}! Нужно {fmt_money(cost)}")
+    if treasury < cost: return await m.answer(f"❌ В казне только {fmt_money(treasury)}! Нужно {fmt_money(cost)}")
     async with pool.acquire() as conn:
         active = await conn.fetchrow("SELECT * FROM mayor_projects WHERE chat_id=$1 AND city_id=$2 AND mayor_id=$3 AND status='active'", cid, player_city['id'], uid)
-        if active:
-            return await m.answer("⚠️ У тебя уже есть активный проект!")
+        if active: return await m.answer("⚠️ У тебя уже есть активный проект!")
     await update_city_treasury(cid, player_city['id'], -cost)
     deadline = time.time() + 86400
     async with pool.acquire() as conn:
@@ -1005,14 +1117,11 @@ async def cmd_mayor_project(m: Message):
 async def cmd_project_done(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     player_city = await get_player_city(cid, uid)
-    if not player_city:
-        return await m.answer("❌ Нет города!")
+    if not player_city: return await m.answer("❌ Нет города!")
     async with pool.acquire() as conn:
         project = await conn.fetchrow("""SELECT * FROM mayor_projects WHERE chat_id=$1 AND city_id=$2 AND mayor_id=$3 AND status='active' ORDER BY started_at DESC LIMIT 1""", cid, player_city['id'], uid)
-        if not project:
-            return await m.answer("❌ Нет активного проекта!")
-        if time.time() > project['deadline']:
-            return await m.answer("⏰ Срок уже истёк! Жди проверки Президента.")
+        if not project: return await m.answer("❌ Нет активного проекта!")
+        if time.time() > project['deadline']: return await m.answer("⏰ Срок уже истёк! Жди проверки Президента.")
         await conn.execute("UPDATE mayor_projects SET status='completed', completed_at=$1 WHERE id=$2", time.time(), project['id'])
     await m.answer(f"✅ <b>ПРОЕКТ ЗАВЕРШЁН!</b>\n\n📋 {PROJECT_TYPES[project['project_type']]['name']}\n⏳ Ожидает проверки Президентом", parse_mode="HTML")
 
@@ -1020,30 +1129,21 @@ async def cmd_project_done(m: Message):
 async def cmd_project_check(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     president = await get_federal_role(cid, 'president')
-    if not president or president['user_id'] != uid:
-        return await m.answer("❌ Только Президент!")
+    if not president or president['user_id'] != uid: return await m.answer("❌ Только Президент!")
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer("⚖️ <b>ПРОВЕРКА ПРОЕКТА</b>\n\n/project_check [город_id] [approve/reject]", parse_mode="HTML")
-    try:
-        city_id = int(args[1])
-    except ValueError:
-        return await m.answer("❌ ID города должен быть числом!")
+    if len(args) < 2: return await m.answer("⚖️ <b>ПРОВЕРКА ПРОЕКТА</b>\n\n/project_check [город_id] [approve/reject]", parse_mode="HTML")
+    try: city_id = int(args[1])
+    except ValueError: return await m.answer("❌ ID города должен быть числом!")
     action = args[2].lower() if len(args) > 2 else None
-    if action not in ['approve', 'reject']:
-        return await m.answer("❌ Используй approve или reject!")
+    if action not in ['approve', 'reject']: return await m.answer("❌ Используй approve или reject!")
     city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
-    if not city:
-        return await m.answer("❌ Город не найден!")
+    if not city: return await m.answer("❌ Город не найден!")
     async with pool.acquire() as conn:
         project = await conn.fetchrow("""SELECT * FROM mayor_projects WHERE chat_id=$1 AND city_id=$2 AND status IN ('active','completed') ORDER BY started_at DESC LIMIT 1""", cid, city_id)
-        if not project:
-            return await m.answer(f"✅ В {city['emoji']} {city['name']} нет проектов!")
+        if not project: return await m.answer(f"✅ В {city['emoji']} {city['name']} нет проектов!")
         mayor_name = ""
-        try:
-            mayor_name = (await bot.get_chat_member(cid, project['mayor_id'])).user.full_name
-        except:
-            mayor_name = f"User{project['mayor_id']}"
+        try: mayor_name = (await bot.get_chat_member(cid, project['mayor_id'])).user.full_name
+        except: mayor_name = f"User{project['mayor_id']}"
         project_info = PROJECT_TYPES.get(project['project_type'], {"name": "Неизвестно"})
         if action == 'approve':
             bonus = int(project['budget'] * 0.30)
@@ -1075,36 +1175,28 @@ async def cmd_project_status(m: Message):
     args = m.text.split()
     if len(args) < 2:
         player_city = await get_player_city(cid, uid)
-        if not player_city:
-            return await m.answer("❌ Нет города!")
+        if not player_city: return await m.answer("❌ Нет города!")
         city_id = player_city['id']
         city_name = player_city['name']
         city_emoji = player_city['emoji']
     else:
-        try:
-            city_id = int(args[1])
-        except ValueError:
-            return await m.answer("❌ ID города должен быть числом!")
+        try: city_id = int(args[1])
+        except ValueError: return await m.answer("❌ ID города должен быть числом!")
         city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
-        if not city:
-            return await m.answer("❌ Город не найден!")
+        if not city: return await m.answer("❌ Город не найден!")
         city_name = city['name']
         city_emoji = city['emoji']
     async with pool.acquire() as conn:
         projects = await conn.fetch("""SELECT * FROM mayor_projects WHERE chat_id=$1 AND city_id=$2 ORDER BY started_at DESC LIMIT 5""", cid, city_id)
-    if not projects:
-        return await m.answer(f"🏙️ {city_emoji} {city_name}\n\n📋 Нет проектов")
+    if not projects: return await m.answer(f"🏙️ {city_emoji} {city_name}\n\n📋 Нет проектов")
     t = f"🏙️ <b>{city_emoji} {city_name}</b>\n\n📋 <b>Проекты:</b>\n\n"
     for p in projects:
         proj_info = PROJECT_TYPES.get(p['project_type'], {"name": "Неизвестно"})
         status_emoji = {'active': '🔄', 'completed': '✅', 'approved': '🏆', 'failed': '❌'}.get(p['status'], '❓')
         time_left = int(p['deadline'] - time.time())
-        if time_left > 0 and p['status'] == 'active':
-            time_text = f"⏰ {time_left//3600}ч {(time_left%3600)//60}мин"
-        elif p['status'] == 'active':
-            time_text = "⚠️ ПРОСРОЧЕНО"
-        else:
-            time_text = ""
+        if time_left > 0 and p['status'] == 'active': time_text = f"⏰ {time_left//3600}ч {(time_left%3600)//60}мин"
+        elif p['status'] == 'active': time_text = "⚠️ ПРОСРОЧЕНО"
+        else: time_text = ""
         t += f"{status_emoji} <b>{proj_info['name']}</b>\n   💰 {fmt_money(p['budget'])} {time_text}\n   📊 Статус: {p['status']}\n\n"
     await m.answer(t, parse_mode="HTML")
 
@@ -1122,10 +1214,8 @@ async def check_overdue_projects():
                     fail_count = proj['fail_count'] + 1
                     city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
                     city_name = city['name'] if city else f"город #{city_id}"
-                    try:
-                        mayor_name = (await bot.get_chat_member(cid, mayor_id)).user.full_name
-                    except:
-                        mayor_name = f"User{mayor_id}"
+                    try: mayor_name = (await bot.get_chat_member(cid, mayor_id)).user.full_name
+                    except: mayor_name = f"User{mayor_id}"
                     if fail_count >= 2:
                         await send_to_jail(cid, mayor_id, 6)
                         await conn.execute("DELETE FROM mayors WHERE chat_id=$1 AND city_id=$2", cid, city_id)
@@ -1137,10 +1227,8 @@ async def check_overdue_projects():
                         await conn.execute("""UPDATE mayors SET approval_rating = GREATEST(0, approval_rating - 20) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
                         await conn.execute("UPDATE mayor_projects SET status='failed', fail_count=$1, review_result='Авто-штраф' WHERE id=$2", fail_count, proj['id'])
                         msg = f"⏰ <b>ПРОЕКТ ПРОСРОЧЕН!</b>\n\n🏙️ {city_name}\n👤 Мэр: {mayor_name}\n💸 Авто-штраф: {fmt_money(fine)}\n📉 Рейтинг: -20%\n⚠️ Провалов: {fail_count}/2"
-                    try:
-                        await bot.send_message(cid, msg, parse_mode="HTML")
-                    except:
-                        pass
+                    try: await bot.send_message(cid, msg, parse_mode="HTML")
+                    except: pass
         except Exception as e:
             print(f"Ошибка проверки проектов: {e}")
 
@@ -1162,10 +1250,8 @@ async def check_all_elections_and_terms():
                     await conn.execute("DELETE FROM mayor_elections_start WHERE chat_id=$1 AND city_id=$2", cid, city_id)
                     city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
                     if city:
-                        try:
-                            await bot.send_message(cid, f"🏛️ <b>СРОК МЭРА В {city['emoji']} {city['name']} ИСТЁК!</b>\n\n⏳ Открыто окно для новых выборов на 24 часа.\nИспользуйте /mayor_nominate", parse_mode="HTML")
-                        except:
-                            pass
+                        try: await bot.send_message(cid, f"🏛️ <b>СРОК МЭРА В {city['emoji']} {city['name']} ИСТЁК!</b>\n\n⏳ Открыто окно для новых выборов на 24 часа.\nИспользуйте /mayor_nominate", parse_mode="HTML")
+                        except: pass
                 expired_mayor_elections = await conn.fetch("SELECT chat_id, city_id, election_id FROM mayor_elections_start WHERE started_at < $1", now - MAYOR_ELECTION_DURATION)
                 for elec in expired_mayor_elections:
                     cid = elec['chat_id']
@@ -1175,17 +1261,12 @@ async def check_all_elections_and_terms():
                     city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
                     if city:
                         if result:
-                            try:
-                                winner_name = (await bot.get_chat_member(cid, result['user_id'])).user.full_name
-                            except:
-                                winner_name = f"User{result['user_id']}"
+                            try: winner_name = (await bot.get_chat_member(cid, result['user_id'])).user.full_name
+                            except: winner_name = f"User{result['user_id']}"
                             msg = f"🎉 <b>ВЫБОРЫ МЭРА В {city['emoji']} {city['name']} ЗАВЕРШЕНЫ!</b>\n\n👤 Победитель: {winner_name}\n🗳️ Голосов: {result['votes']}\n⏰ Срок: {MAYOR_TERM_DAYS} дней"
-                        else:
-                            msg = f"🏛️ <b>ВЫБОРЫ МЭРА В {city['emoji']} {city['name']} ЗАВЕРШЕНЫ</b>\n\n❌ Никто не баллотировался."
-                        try:
-                            await bot.send_message(cid, msg, parse_mode="HTML")
-                        except:
-                            pass
+                        else: msg = f"🏛️ <b>ВЫБОРЫ МЭРА В {city['emoji']} {city['name']} ЗАВЕРШЕНЫ</b>\n\n❌ Никто не баллотировался."
+                        try: await bot.send_message(cid, msg, parse_mode="HTML")
+                        except: pass
                 expired_federal = await conn.fetch("SELECT chat_id, role FROM federal_roles WHERE expires_at <= $1", now)
                 for role_data in expired_federal:
                     cid = role_data['chat_id']
@@ -1194,10 +1275,8 @@ async def check_all_elections_and_terms():
                     await conn.execute("DELETE FROM federal_elections_start WHERE chat_id=$1 AND role=$2", cid, role)
                     role_name = "Президент" if role == 'president' else "Премьер-министр"
                     emoji = "🏛️" if role == 'president' else "💼"
-                    try:
-                        await bot.send_message(cid, f"{emoji} <b>СРОК ПОЛНОМОЧИЙ {role_name.upper()} ИСТЁК!</b>\n\n⏳ Открыто окно для новых выборов на 24 часа.\nИспользуйте /{'president' if role=='president' else 'prime'}_nominate", parse_mode="HTML")
-                    except:
-                        pass
+                    try: await bot.send_message(cid, f"{emoji} <b>СРОК ПОЛНОМОЧИЙ {role_name.upper()} ИСТЁК!</b>\n\n⏳ Открыто окно для новых выборов на 24 часа.\nИспользуйте /{'president' if role=='president' else 'prime'}_nominate", parse_mode="HTML")
+                    except: pass
                 expired_federal_elections = await conn.fetch("SELECT chat_id, role, election_id FROM federal_elections_start WHERE started_at < $1", now - FEDERAL_ELECTION_DURATION)
                 for elec in expired_federal_elections:
                     cid = elec['chat_id']
@@ -1207,22 +1286,193 @@ async def check_all_elections_and_terms():
                     role_name = "Президент" if role == 'president' else "Премьер-министр"
                     emoji = "🏛️" if role == 'president' else "💼"
                     if result:
-                        try:
-                            winner_name = (await bot.get_chat_member(cid, result['user_id'])).user.full_name
-                        except:
-                            winner_name = f"User{result['user_id']}"
+                        try: winner_name = (await bot.get_chat_member(cid, result['user_id'])).user.full_name
+                        except: winner_name = f"User{result['user_id']}"
                         msg = f"{emoji} <b>ВЫБОРЫ {role_name.upper()} ЗАВЕРШЕНЫ!</b>\n\n👤 Победитель: {winner_name}\n🗳️ Голосов: {result['votes']}\n⏰ Срок: {PRESIDENT_TERM_DAYS} дней"
-                    else:
-                        msg = f"{emoji} <b>ВЫБОРЫ {role_name.upper()} ЗАВЕРШЕНЫ</b>\n\n❌ Никто не баллотировался."
-                    try:
-                        await bot.send_message(cid, msg, parse_mode="HTML")
-                    except:
-                        pass
+                    else: msg = f"{emoji} <b>ВЫБОРЫ {role_name.upper()} ЗАВЕРШЕНЫ</b>\n\n❌ Никто не баллотировался."
+                    try: await bot.send_message(cid, msg, parse_mode="HTML")
+                    except: pass
         except Exception as e:
             print(f"Ошибка проверки выборов и сроков: {e}")
 
 # ═══════════════════════════════════════════
-# МЕНЮ И КОМАНДЫ
+# МАФИЯ
+# ═══════════════════════════════════════════
+async def mafia_threat_loop():
+    print("🕴️ Цикл мафии запущен")
+    while True:
+        await asyncio.sleep(MAFIA_CHECK_INTERVAL)
+        async with pool.acquire() as conn:
+            users = await conn.fetch("SELECT u.chat_id, u.user_id, u.balance, COALESCE(b.deposit, 0) as deposit FROM users u LEFT JOIN bank b ON u.chat_id=b.chat_id AND u.user_id=b.user_id WHERE u.balance > $1 OR COALESCE(b.deposit, 0) > $2", MAFIA_BALANCE_THRESHOLD, MAFIA_BANK_THRESHOLD)
+            for user in users:
+                cid, uid = user['chat_id'], user['user_id']
+                balance = user['balance'] or 0
+                deposit = user['deposit'] or 0
+                total_wealth = balance + deposit
+                active_threat = await conn.fetchval("SELECT COUNT(*) FROM mafia_threats WHERE chat_id=$1 AND user_id=$2 AND paid=FALSE AND deadline > $3", cid, uid, time.time())
+                if active_threat > 0: continue
+                if random.random() > MAFIA_CHANCE: continue
+                ransom = int(total_wealth * MAFIA_RANSOM_RATE)
+                deadline = time.time() + (MAFIA_DEADLINE_HOURS * 3600)
+                businesses = await conn.fetch("SELECT business_name, income FROM businesses WHERE chat_id=$1 AND user_id=$2 ORDER BY income DESC", cid, uid)
+                cars = await conn.fetch("SELECT car_key, car_name FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
+                if businesses or cars:
+                    threat_type = 'asset'
+                    if businesses and (not cars or businesses[0]['income'] * 6 >= (CARS.get(cars[0]['car_key'], {}).get('price', 0) if cars else 0)):
+                        target = businesses[0]['business_name']
+                        target_desc = f"🏢 Бизнес <b>{target}</b> (доход {fmt_money(businesses[0]['income'])}/сутки)"
+                    else:
+                        target = cars[0]['car_name']
+                        target_desc = f"🚗 Машину <b>{target}</b>"
+                else:
+                    threat_type = 'balance'
+                    target = 'balance'
+                    penalty = int(total_wealth * MAFIA_PENALTY_RATE)
+                    target_desc = f"💰 <b>{fmt_money(penalty)}</b> с вашего счёта (30%)"
+                await conn.execute("INSERT INTO mafia_threats (chat_id, user_id, threat_time, deadline, ransom_amount, threat_type, target_asset) VALUES ($1,$2,$3,$4,$5,$6,$7)", cid, uid, time.time(), deadline, ransom, threat_type, target)
+                username = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, uid) or f"User{uid}"
+                msg = f"🕴️ <b>К ВАМ ПРИШЛА МАФИЯ!</b>\n\n👤 {username}, мы знаем о ваших доходах...\n\n💰 <b>Ваш капитал:</b> {fmt_money(total_wealth)}\n  • 💵 Основной: {fmt_money(balance)}\n  • 🏦 Банк: {fmt_money(deposit)}\n\n⚠️ <b>ТРЕБОВАНИЕ:</b>\nПереведите нам <b>{fmt_money(ransom)}</b> в течение <b>{MAFIA_DEADLINE_HOURS} часа</b>\n\n🔫 <b>ИНАЧЕ МЫ ЗАБЕРЁМ:</b>\n{target_desc}\n\n💳 Для оплаты напишите: <b>/pay_mafia</b>\n\n⏳ Время пошло..."
+                try: await bot.send_message(cid, msg, parse_mode="HTML")
+                except: pass
+
+async def execute_mafia_threats():
+    async with pool.acquire() as conn:
+        expired = await conn.fetch("SELECT * FROM mafia_threats WHERE paid=FALSE AND deadline < $1", time.time())
+        for threat in expired:
+            cid, uid = threat['chat_id'], threat['user_id']
+            threat_type = threat['threat_type']
+            target = threat['target_asset']
+            username = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, uid) or f"User{uid}"
+            roll = random.random()
+            if roll < 0.20:
+                msg = f"🕊️ <b>МАФИЯ УШЛА НИ С ЧЕМ!</b>\n\n👤 {username}, вы проигнорировали требование, но мафия решила не трогать вас.\n\n🍀 Вам повезло! Но в следующий раз лучше платить вовремя."
+            elif roll < 0.60:
+                if threat_type == 'asset':
+                    businesses = await conn.fetch("SELECT business_name FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
+                    cars = await conn.fetch("SELECT car_name FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
+                    if target in [b['business_name'] for b in businesses]:
+                        await conn.execute("DELETE FROM businesses WHERE chat_id=$1 AND user_id=$2 AND business_name=$3", cid, uid, target)
+                        msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ВАШ БИЗНЕС!</b>\n\n👤 {username}, вы проигнорировали требование.\n🏢 Конфискован: <b>{target}</b>"
+                    elif target in [c['car_name'] for c in cars]:
+                        await conn.execute("DELETE FROM garage WHERE chat_id=$1 AND user_id=$2 AND car_name=$3", cid, uid, target)
+                        msg = f"🔫 <b>МАФИЯ УКРАЛА ВАШУ МАШИНУ!</b>\n\n👤 {username}, вы проигнорировали требование.\n🚗 Украдена: <b>{target}</b>"
+                    else:
+                        user = await get_user(cid, uid)
+                        bank = await get_bank(cid, uid)
+                        penalty = int((user['balance'] + bank['deposit']) * MAFIA_PENALTY_RATE)
+                        paid_from_balance = min(penalty, user['balance'])
+                        remaining = penalty - paid_from_balance
+                        if paid_from_balance > 0: await update_balance(cid, uid, -paid_from_balance)
+                        if remaining > 0 and bank['deposit'] > 0: await update_bank(cid, uid, -min(remaining, bank['deposit']))
+                        msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ДЕНЬГИ!</b>\n\n👤 {username}, вы проигнорировали требование.\n💸 Списано: <b>{fmt_money(penalty)}</b>"
+                else:
+                    user = await get_user(cid, uid)
+                    bank = await get_bank(cid, uid)
+                    penalty = int((user['balance'] + bank['deposit']) * MAFIA_PENALTY_RATE)
+                    paid_from_balance = min(penalty, user['balance'])
+                    remaining = penalty - paid_from_balance
+                    if paid_from_balance > 0: await update_balance(cid, uid, -paid_from_balance)
+                    if remaining > 0 and bank['deposit'] > 0: await update_bank(cid, uid, -min(remaining, bank['deposit']))
+                    msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ДЕНЬГИ!</b>\n\n👤 {username}, вы проигнорировали требование.\n💸 Списано: <b>{fmt_money(penalty)}</b>"
+            else:
+                user = await get_user(cid, uid)
+                bank = await get_bank(cid, uid)
+                penalty = int((user['balance'] + bank['deposit']) * MAFIA_PENALTY_RATE)
+                paid_from_balance = min(penalty, user['balance'])
+                remaining = penalty - paid_from_balance
+                if paid_from_balance > 0: await update_balance(cid, uid, -paid_from_balance)
+                if remaining > 0 and bank['deposit'] > 0: await update_bank(cid, uid, -min(remaining, bank['deposit']))
+                msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ДЕНЬГИ!</b>\n\n👤 {username}, вы проигнорировали требование.\n💸 Списано: <b>{fmt_money(penalty)}</b> (30% от капитала)"
+            await conn.execute("UPDATE mafia_threats SET paid=TRUE WHERE id=$1", threat['id'])
+            try: await bot.send_message(cid, msg, parse_mode="HTML")
+            except: pass
+
+async def mafia_check_loop():
+    print("⏰ Цикл проверки мафии запущен")
+    while True:
+        await asyncio.sleep(300)
+        await execute_mafia_threats()
+
+# ═══════════════════════════════════════════
+# БИРЖА АКЦИЙ
+# ═══════════════════════════════════════════
+async def stock_market_loop():
+    print("📈 Цикл биржи акций запущен")
+    while True:
+        await asyncio.sleep(21600)
+        async with pool.acquire() as conn:
+            stocks = await conn.fetch("SELECT * FROM stocks")
+            for stock in stocks:
+                event = random.choice(STOCK_MARKET_EVENTS)
+                new_price = int(stock['price_per_share'] * event['effect'])
+                new_price = max(50, min(new_price, 100000))
+                await conn.execute("UPDATE stocks SET price_per_share=$1, last_price_change=$2 WHERE id=$3", new_price, stock['price_per_share'], stock['id'])
+
+async def stock_dividend_loop():
+    print("💵 Цикл дивидендов запущен")
+    while True:
+        await asyncio.sleep(86400)
+        try:
+            async with pool.acquire() as conn:
+                holdings = await conn.fetch("SELECT sh.user_id, sh.shares_owned, s.dividend_per_share, s.chat_id FROM stock_holdings sh JOIN stocks s ON sh.stock_id = s.id")
+                user_dividends = {}
+                for h in holdings:
+                    try:
+                        uid = h['user_id']
+                        cid = h['chat_id']
+                        amount = (h['shares_owned'] or 0) * (h['dividend_per_share'] or 0)
+                        if uid not in user_dividends: user_dividends[uid] = {'cid': cid, 'total': 0}
+                        user_dividends[uid]['total'] += amount
+                    except Exception as e: logging.error(f"dividend calc error: {e}")
+                for uid, data in user_dividends.items():
+                    if data['total'] > 0:
+                        try:
+                            await update_balance(data['cid'], uid, data['total'])
+                            await bot.send_message(data['cid'], f"💵 <b>Дивиденды получены!</b>\n\n+{fmt_money(data['total'])}", parse_mode="HTML")
+                        except Exception as e: logging.error(f"dividend send error: {e}")
+        except Exception as e: logging.error(f"stock_dividend_loop error: {e}")
+
+# ═══════════════════════════════════════════
+# АУКЦИОН
+# ═══════════════════════════════════════════
+async def auction_check_loop():
+    print("🏆 Цикл проверки аукционов запущен")
+    while True:
+        await asyncio.sleep(60)
+        async with pool.acquire() as conn:
+            ended = await conn.fetch("SELECT * FROM auctions WHERE status='active' AND end_time < $1", time.time())
+            for auction in ended:
+                await conn.execute("UPDATE auctions SET status='ended' WHERE id=$1", auction['id'])
+                await complete_auction(auction)
+
+async def complete_auction(auction):
+    cid = auction['chat_id']
+    if not auction['current_bidder_id']:
+        try: await bot.send_message(cid, f"⚠️ Аукцион <b>{auction['item_name']}</b> завершён без ставок.", parse_mode="HTML")
+        except: pass
+        return
+    winner_uid = auction['current_bidder_id']
+    winner_name = "Unknown"
+    async with pool.acquire() as conn:
+        winner_name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, winner_uid) or f"User{winner_uid}"
+        if auction['item_type'] == 'car':
+            await conn.execute("INSERT INTO garage (chat_id, user_id, car_key, car_name) VALUES ($1,$2,$3,$4)", cid, winner_uid, auction['item_key'], auction['item_name'])
+        elif auction['item_type'] == 'business':
+            income = 0
+            for k, v in MARKET.items():
+                if v.get('name') == auction['item_name']:
+                    income = v.get('income', 0)
+                    break
+            await conn.execute("INSERT INTO businesses (chat_id, user_id, business_name, income, last_collect_time) VALUES ($1,$2,$3,$4,$5)", cid, winner_uid, auction['item_name'], income, time.time())
+        elif auction['item_type'] == 'item':
+            rarity = 'legendary'
+            await conn.execute("INSERT INTO inventory (chat_id, user_id, item_name, item_type, rarity) VALUES ($1,$2,$3,'auction',$4)", cid, winner_uid, auction['item_name'], rarity)
+    try:
+        await bot.send_message(cid, f"🏆 <b>АУКЦИОН ЗАВЕРШЁН!</b>\n\n🎉 Победитель: <b>{winner_name}</b>\n📦 Лот: <b>{auction['item_name']}</b>\n💰 Цена: <b>{fmt_money(auction['current_bid'])}</b>", parse_mode="HTML")
+    except: pass
+
+# ═══════════════════════════════════════════
+# МЕНЮ
 # ═══════════════════════════════════════════
 @dp.message(Command("start"))
 async def cmd_start(m: Message):
@@ -1233,7 +1483,7 @@ async def cmd_start(m: Message):
         [InlineKeyboardButton(text="🎓 Образование", callback_data="menu_edu"), InlineKeyboardButton(text="🎮 Игры", callback_data="menu_games")],
         [InlineKeyboardButton(text="🏛️ Политика", callback_data="menu_politics"), InlineKeyboardButton(text="📊 Инфо", callback_data="menu_info")],
     ])
-    await m.answer(f"🎩 <b>Добро пожаловать!</b>\n\n👤 {m.from_user.full_name}\n\nВыберите раздел:", reply_markup=keyboard, parse_mode="HTML")
+    await m.answer(f"🎩 <b>Добро пожаловать в мир Сарапулок!</b>\n\n👤 {m.from_user.full_name}\n\nВыберите раздел:", reply_markup=keyboard, parse_mode="HTML")
 
 @dp.callback_query(lambda c: c.data.startswith("menu_"))
 async def callback_menu(callback: CallbackQuery):
@@ -1254,7 +1504,7 @@ async def callback_menu(callback: CallbackQuery):
     elif action == "business":
         async with pool.acquire() as conn:
             bc = await conn.fetchval("SELECT COUNT(*) FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
-        text = f"🏪 <b>БИЗНЕС</b>\n\n🏢 У вас: <b>{bc}</b> бизнес(ов)\n️ Лимит одного типа: <b>{MAX_BUSINESSES_PER_TYPE}</b>\n\n━━━━━━━━━━━━━━━━━━━━\n📋 <b>Команды:</b>\n/market\n/buy_market ключ\n/collect\n/my_businesses\n/inv\n/craft\n/craft_item ключ\n/trade @user предмет кол-во"
+        text = f"🏪 <b>БИЗНЕС</b>\n\n🏢 У вас: <b>{bc}</b> бизнес(ов)\n⚠️ Лимит одного типа: <b>{MAX_BUSINESSES_PER_TYPE}</b>\n\n━━━━━━━━━━━━━━━━━━━━\n📋 <b>Команды:</b>\n/market\n/buy_market ключ\n/collect\n/my_businesses\n/inv\n/craft\n/craft_item ключ\n/trade @user предмет кол-во"
         await callback.message.edit_text(text, parse_mode="HTML")
     elif action == "cars":
         c = await get_car(cid, uid)
@@ -1266,25 +1516,21 @@ async def callback_menu(callback: CallbackQuery):
         text = f"🎓 <b>ОБРАЗОВАНИЕ</b>\n\n📚 Пройдено: <b>{cc}</b>\n\n━━━━━━━━━━━━━━━━━━━━\n📋 <b>Команды:</b>\n/education\n/buy_course ключ\nКурсы: miner, coder, trader, lawyer, mba"
         await callback.message.edit_text(text, parse_mode="HTML")
     elif action == "games":
-        text = f"🎮 <b>ИГРЫ</b>\n\n━━━━━━━━━━━━━━━━━━━━\n📋 <b>Команды:</b>\n🎲 /dice сумма — кости (шанс 50%)\n🎟️ /buy_ticket — лотерея (50 сарапулок)\n🎁 /daily — ежедневный бонус"
+        text = f"🎮 <b>ИГРЫ</b>\n\n━━━━━━━━━━━━━━━━━━━━\n📋 <b>Команды:</b>\n🎲 /dice сумма — кости (шанс 50%)\n🃏 /blackjack — блэкджек\n🔫 /roulette ставка — рулетка\n🎟️ /buy_ticket — лотерея (50 сарапулок)\n🎁 /daily — ежедневный бонус\n🏦 /bank_heist — ограбление банка\n🚛 /contraband — контрабанда"
         await callback.message.edit_text(text, parse_mode="HTML")
     elif action == "politics":
         president = await get_federal_role(cid, 'president')
         president_text = "👤 ВАКАНТНО"
         if president:
-            try:
-                p_name = (await bot.get_chat_member(cid, president['user_id'])).user.full_name
-            except:
-                p_name = f"User{president['user_id']}"
+            try: p_name = (await bot.get_chat_member(cid, president['user_id'])).user.full_name
+            except: p_name = f"User{president['user_id']}"
             days_left = int((president['expires_at'] - time.time()) / 86400)
             president_text = f"👤 {p_name} ({days_left} дн.)"
         prime = await get_federal_role(cid, 'prime_minister')
         prime_text = "👤 ВАКАНТНО"
         if prime:
-            try:
-                pr_name = (await bot.get_chat_member(cid, prime['user_id'])).user.full_name
-            except:
-                pr_name = f"User{prime['user_id']}"
+            try: pr_name = (await bot.get_chat_member(cid, prime['user_id'])).user.full_name
+            except: pr_name = f"User{prime['user_id']}"
             days_left = int((prime['expires_at'] - time.time()) / 86400)
             prime_text = f"👤 {pr_name} ({days_left} дн.)"
         state_treasury = await get_state_treasury(cid)
@@ -1293,15 +1539,13 @@ async def callback_menu(callback: CallbackQuery):
             mayor = await get_mayor(cid, city['id'])
             city_treasury = await get_city_treasury(cid, city['id'])
             if mayor:
-                try:
-                    m_name = (await bot.get_chat_member(cid, mayor['user_id'])).user.full_name
-                except:
-                    m_name = f"User{mayor['user_id']}"
+                try: m_name = (await bot.get_chat_member(cid, mayor['user_id'])).user.full_name
+                except: m_name = f"User{mayor['user_id']}"
                 days_left = int((mayor['expires_at'] - time.time()) / 86400)
                 mayors_text += f"{city['emoji']} {city['name']}: {m_name} ({days_left} дн.) | Казна: {city_treasury}\n"
             else:
                 mayors_text += f"{city['emoji']} {city['name']}: ВАКАНТНО | Казна: {city_treasury}\n"
-        text = f"🏛️ <b>ПОЛИТИКА</b>\n\n🇷🇺 Президент: {president_text}\n💼 Премьер: {prime_text}\n🏛️ Фед. казна: {fmt_money(state_treasury)}\n\n🏙️ <b>Мэры:</b>\n{mayors_text}\n━━━━━━━━━━━━━━━━━━━━\n📋 <b>Города:</b>\n/city list\n/city choose [город]\n/city move [город]\n/city info\n/city residents\n\n🏛️ <b>Мэр:</b>\n/mayor_nominate (30к)\n/mayor_vote (500)\n/mayor_decree\n/mayor_report\n/mayor_finalize\n/city_decrees\n/mayor_project\n/project_done\n/project_status\n\n🇷🇺 <b>Президент (90 дней):</b>\n/president_nominate (50к)\n/president_vote (1000)\n/president_decree\n/president_decrees\n/president_finalize\n/president_check_mayor [город] approve/reject\n\n💼 <b>Премьер (90 дней):</b>\n/prime_nominate (40к)\n/prime_vote (800)\n/prime_decree\n/prime_decrees\n/prime_finalize\n\n⚖️ <b>Импичмент:</b>\n/impeach president\n/impeach prime"
+        text = f"🏛️ <b>ПОЛИТИКА</b>\n\n🇷🇺 Президент: {president_text}\n💼 Премьер: {prime_text}\n🏛️ Фед. казна: {fmt_money(state_treasury)}\n\n🏙️ <b>Мэры:</b>\n{mayors_text}\n━━━━━━━━━━━━━━━━━━━━\n📋 <b>Города:</b>\n/city list\n/city choose [город]\n/city move [город]\n/city info\n/city residents\n\n🏛️ <b>Мэр:</b>\n/mayor_nominate (30к)\n/mayor_vote (500)\n/mayor_decree\n/mayor_report\n/mayor_finalize\n/city_decrees\n/mayor_project\n/project_done\n/project_check [город] approve/reject\n/project_status\n\n🇷🇺 <b>Президент (90 дней):</b>\n/president_nominate (50к)\n/president_vote (1000)\n/president_decree\n/president_decrees\n/president_finalize\n\n💼 <b>Премьер (90 дней):</b>\n/prime_nominate (40к)\n/prime_vote (800)\n/prime_decree\n/prime_decrees\n/prime_finalize\n\n⚖️ <b>Импичмент:</b>\n/impeach president\n/impeach prime\n\n💰 <b>Бюджет:</b>\n/budget"
         await callback.message.edit_text(text, parse_mode="HTML")
     elif action == "info":
         u = await get_user(cid, uid)
@@ -1309,11 +1553,53 @@ async def callback_menu(callback: CallbackQuery):
         in_jail = await is_in_jail(cid, uid)
         jail_text = "\n🔒 <b>В ТЮРЬМЕ!</b>" if in_jail else ""
         debt_text = f"\n⛔ ДОЛГ: {fmt_money(abs(u['balance']))}" if u['balance'] < 0 else ""
-        text = f"📊 <b>КАРТОЧКА ИГРОКА</b>\n\n👤 {callback.from_user.full_name}\n💰 Баланс: {fmt_money(u['balance'])}\n💼 Профессия: {JOBS[p['job_key']]['name']} (Ур.{p['level']}){jail_text}{debt_text}\n\n━━━━━━━━━━━━━━━━━━━━\n📋 <b>Команды:</b>\n/info\n/rating\n/achievements"
+        text = f"📊 <b>КАРТОЧКА ИГРОКА</b>\n\n👤 {callback.from_user.full_name}\n💰 Баланс: {fmt_money(u['balance'])}\n💼 Профессия: {JOBS[p['job_key']]['name']} (Ур.{p['level']}){jail_text}{debt_text}\n\n━━━━━━━━━━━━━━━━━━━━\n📋 <b>Команды:</b>\n/info\n/rating\n/achievements\n/budget"
         await callback.message.edit_text(text, parse_mode="HTML")
     
     await callback.answer()
 
+# ═══════════════════════════════════════════
+# БЮДЖЕТ
+# ═══════════════════════════════════════════
+@dp.message(Command("budget"))
+async def cmd_budget(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    federal_treasury = await get_state_treasury(cid)
+    federal_daily = FEDERAL_SALARY_PRESIDENT + FEDERAL_SALARY_PRIME + FEDERAL_INFRASTRUCTURE
+    player_city = await get_player_city(cid, uid)
+    city_treasury = 0
+    city_daily = 0
+    city_name = "Нет города"
+    if player_city:
+        city_treasury = await get_city_treasury(cid, player_city['id'])
+        mayor = await get_mayor(cid, player_city['id'])
+        city_daily = CITY_UTILITIES
+        if mayor: city_daily += CITY_SALARY_MAYOR
+        city_name = f"{player_city['emoji']} {player_city['name']}"
+    text = (
+        f"💰 <b>БЮДЖЕТ</b>\n\n"
+        f"🏛️ <b>Федеральная казна:</b>\n"
+        f"   Баланс: {fmt_money(federal_treasury)}\n"
+        f"   Расходы/день: {fmt_money(federal_daily)}\n"
+        f"   Хватит на: {int(federal_treasury / federal_daily) if federal_daily > 0 else '∞'} дн.\n\n"
+        f"🏙️ <b>Городская казна ({city_name}):</b>\n"
+        f"   Баланс: {fmt_money(city_treasury)}\n"
+        f"   Расходы/день: {fmt_money(city_daily)}\n"
+        f"   Хватит на: {int(city_treasury / city_daily) if city_daily > 0 else '∞'} дн.\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 <b>Статьи расходов:</b>\n"
+        f"👤 Президент: {fmt_money(FEDERAL_SALARY_PRESIDENT)}/день\n"
+        f"💼 Премьер: {fmt_money(FEDERAL_SALARY_PRIME)}/день\n"
+        f"🏛️ Мэр: {fmt_money(CITY_SALARY_MAYOR)}/день\n"
+        f"🏗️ Инфраструктура: {fmt_money(FEDERAL_INFRASTRUCTURE)}/день\n"
+        f"🔧 Коммуналка: {fmt_money(CITY_UTILITIES)}/день\n"
+        f"🎁 Соц. помощь: {fmt_money(FEDERAL_SOCIAL_AID)}/чел/день"
+    )
+    await m.answer(text, parse_mode="HTML")
+
+# ═══════════════════════════════════════════
+# ОСНОВНЫЕ КОМАНДЫ
+# ═══════════════════════════════════════════
 @dp.message(Command("balance"))
 async def cmd_balance(m: Message):
     await save_username(m.chat.id, m.from_user.id, m.from_user.full_name)
@@ -1346,12 +1632,9 @@ async def cmd_work(m: Message):
         await clear_loan(cid, uid)
         msg = f"🚔 <b>АРЕСТ ИМУЩЕСТВА!</b>\n\n💰 Долг: <b>{fmt_money(total_debt)}</b>\n📦 Конфисковано: <b>{fmt_money(confiscated_value)}</b>\n\n"
         msg += "<b>Конфисковано:</b>\n" + "\n".join([f"• {item}" for item in arrested])
-        if remaining_debt > 0:
-            msg += f"\n\n⛔ Остаток: <b>{fmt_money(remaining_debt)}</b>"
-        try:
-            await bot.send_message(cid, msg, parse_mode="HTML")
-        except:
-            pass
+        if remaining_debt > 0: msg += f"\n\n⛔ Остаток: <b>{fmt_money(remaining_debt)}</b>"
+        try: await bot.send_message(cid, msg, parse_mode="HTML")
+        except: pass
         return await m.answer(f"⛔ Имущество конфисковано!", parse_mode="HTML")
     await save_username(cid, uid, m.from_user.full_name)
     p = await get_profile(cid, uid)
@@ -1369,14 +1652,11 @@ async def cmd_work(m: Message):
     player_city = await get_player_city(cid, uid)
     if player_city:
         city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
-        if city and city.get('work_bonus'):
-            work_bonus_multiplier += city['work_bonus']
+        if city and city.get('work_bonus'): work_bonus_multiplier += city['work_bonus']
         work_decree = await get_active_decree(cid, player_city['id'], 'work_bonus')
-        if work_decree:
-            work_bonus_multiplier += 0.20
+        if work_decree: work_bonus_multiplier += 0.20
         subsidy_decree = await get_active_federal_decree(cid, 'prime_minister', 'subsidy')
-        if subsidy_decree:
-            work_bonus_multiplier += 0.10
+        if subsidy_decree: work_bonus_multiplier += 0.10
     coffee_level = p.get('coffee_level', 0)
     coffee_bonus = 1.0 - (coffee_level * 0.1)
     cd = j['cooldown'] * coffee_bonus
@@ -1386,8 +1666,7 @@ async def cmd_work(m: Message):
     gross_sal = j['base_pay'] * p['level'] + random.randint(0, 5)
     gross_sal = int(gross_sal * work_bonus_multiplier)
     edu = await get_education(cid, uid)
-    if edu['has_mba']:
-        gross_sal = int(gross_sal * 1.5)
+    if edu['has_mba']: gross_sal = int(gross_sal * 1.5)
     net_sal, tax_paid, tax_receiver, tax_rate = await apply_income_tax(cid, uid, gross_sal)
     debt_deduction = 0
     deduction_msg = ""
@@ -1401,8 +1680,7 @@ async def cmd_work(m: Message):
     async with pool.acquire() as conn:
         await conn.execute("UPDATE profiles SET last_work_time=$1 WHERE chat_id=$2 AND user_id=$3", ct, cid, uid)
     response = f"💼 <b>{j['name']}</b> (Ур.{p['level']}):\n💰 Начислено: <b>{fmt_money(gross_sal)}</b>\n🏛️ Налог ({tax_rate}%): <b>-{fmt_money(tax_paid)}</b> (в {tax_receiver})\n✅ <b>На руки: +{fmt_money(net_sal)}</b>"
-    if deduction_msg:
-        response += deduction_msg
+    if deduction_msg: response += deduction_msg
     await m.answer(response, parse_mode="HTML")
     new_achs = await check_achievements(cid, uid)
     await notify_achievements(cid, uid, new_achs)
@@ -1418,12 +1696,10 @@ async def cmd_jobs(m: Message):
 async def cmd_change_job(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
-    if len(args) < 2 or args[1] not in JOBS:
-        return await m.answer("/jobs")
+    if len(args) < 2 or args[1] not in JOBS: return await m.answer("/jobs")
     if args[1] != 'novice':
         edu = await get_education(cid, uid)
-        if args[1] not in edu['completed_courses']:
-            return await m.answer(f"❌ Нужен курс: /buy_course {args[1]}")
+        if args[1] not in edu['completed_courses']: return await m.answer(f"❌ Нужен курс: /buy_course {args[1]}")
     async with pool.acquire() as conn:
         await conn.execute("UPDATE profiles SET job_key=$1 WHERE chat_id=$2 AND user_id=$3", args[1], cid, uid)
     await m.answer(f"✅ Теперь: <b>{JOBS[args[1]]['name']}</b>", parse_mode="HTML")
@@ -1431,23 +1707,16 @@ async def cmd_change_job(m: Message):
 @dp.message(Command("pay"))
 async def cmd_pay(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 В тюрьме нельзя переводить!")
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя переводить!")
     args = m.text.split()
-    if len(args) < 2 or not m.reply_to_message:
-        return await m.answer("/pay сумма (ответ)")
-    try:
-        amt = int(args[1])
-    except:
-        return await m.answer("❌ Число!")
-    if amt <= 0:
-        return await m.answer("❌ >0!")
+    if len(args) < 2 or not m.reply_to_message: return await m.answer("/pay сумма (ответ)")
+    try: amt = int(args[1])
+    except: return await m.answer("❌ Число!")
+    if amt <= 0: return await m.answer("❌ >0!")
     s, r = uid, m.reply_to_message.from_user.id
-    if s == r:
-        return await m.answer("❌ Себе нельзя!")
+    if s == r: return await m.answer("❌ Себе нельзя!")
     sb = await get_user(cid, s)
-    if sb['balance'] < amt:
-        return await m.answer(f"❌ Мало ({fmt_money(sb['balance'])})")
+    if sb['balance'] < amt: return await m.answer(f"❌ Мало ({fmt_money(sb['balance'])})")
     await update_balance(cid, s, -amt)
     await update_balance(cid, r, amt)
     await save_username(cid, r, m.reply_to_message.from_user.full_name)
@@ -1460,30 +1729,23 @@ async def cmd_rob(m: Message):
         info = await get_jail_info(cid, uid)
         return await m.answer(f"🔒 Вы в тюрьме! Осталось: {format_time(int(info['release_time'] - time.time()))}")
     user = await get_user(cid, uid)
-    if user['balance'] < 0:
-        return await m.answer(f"⛔ У вас долг!")
-    if not m.reply_to_message:
-        return await m.answer("🔫 Ответьте на жертву!")
+    if user['balance'] < 0: return await m.answer(f"⛔ У вас долг!")
+    if not m.reply_to_message: return await m.answer("🔫 Ответьте на жертву!")
     rid, vid = uid, m.reply_to_message.from_user.id
-    if rid == vid:
-        return await m.answer("❌ Себя нельзя!")
-    if await is_in_jail(cid, vid):
-        return await m.answer("❌ Жертва в тюрьме!")
+    if rid == vid: return await m.answer("❌ Себя нельзя!")
+    if await is_in_jail(cid, vid): return await m.answer("❌ Жертва в тюрьме!")
     async with pool.acquire() as conn:
         lr = await conn.fetchval("SELECT last_robbery FROM robbery WHERE chat_id=$1 AND user_id=$2", cid, rid) or 0
         ct = time.time()
-        if ct - lr < ROB_COOLDOWN:
-            return await m.answer(f"⏳ Кулдаун {format_time(ROB_COOLDOWN - (ct - lr))}")
+        if ct - lr < ROB_COOLDOWN: return await m.answer(f"⏳ Кулдаун {format_time(ROB_COOLDOWN - (ct - lr))}")
         await conn.execute("INSERT INTO robbery (chat_id, user_id, last_robbery, debt_amount, debt_time) VALUES ($1,$2,$3,0,0) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_robbery=$3", cid, rid, ct)
     vb = await get_user(cid, vid)
-    if vb['balance'] < 50:
-        return await m.answer("❌ У жертвы мало денег!")
+    if vb['balance'] < 50: return await m.answer("❌ У жертвы мало денег!")
     rob_success_rate = ROB_SUCCESS_RATE
     player_city = await get_player_city(cid, uid)
     if player_city:
         city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
-        if city and city.get('rob_bonus'):
-            rob_success_rate += city['rob_bonus']
+        if city and city.get('rob_bonus'): rob_success_rate += city['rob_bonus']
     if random.random() < rob_success_rate:
         st = int(vb['balance'] * random.uniform(ROB_MIN_PERCENT, ROB_MAX_PERCENT))
         await update_balance(cid, vid, -st)
@@ -1514,12 +1776,10 @@ async def cmd_rob(m: Message):
 @dp.callback_query(lambda c: c.data.startswith("go_jail_"))
 async def go_jail_cb(cb: types.CallbackQuery):
     case_id = "_".join(cb.data.split("_")[2:])
-    if case_id not in active_cases:
-        return await cb.answer("Дело закрыто!", show_alert=True)
+    if case_id not in active_cases: return await cb.answer("Дело закрыто!", show_alert=True)
     cid = cb.message.chat.id
     criminal_uid = active_cases[case_id]["criminal"]
-    if cb.from_user.id != criminal_uid:
-        return await cb.answer("Не ваше дело!", show_alert=True)
+    if cb.from_user.id != criminal_uid: return await cb.answer("Не ваше дело!", show_alert=True)
     await send_to_jail(cid, criminal_uid, JAIL_TIME_HOURS)
     del active_cases[case_id]
     await cb.message.edit_text(f"🔒 <b>Вы выбрали тюрьму!</b>\n\n⏰ Срок: {JAIL_TIME_HOURS} часа\n⚠️ После выхода — штраф 25%\n\n/jail_pay", parse_mode="HTML")
@@ -1528,46 +1788,35 @@ async def go_jail_cb(cb: types.CallbackQuery):
 @dp.callback_query(lambda c: c.data.startswith("find_lawyer_"))
 async def find_lawyer_cb(cb: types.CallbackQuery):
     case_id = "_".join(cb.data.split("_")[2:])
-    if case_id not in active_cases:
-        return await cb.answer("Дело закрыто!", show_alert=True)
+    if case_id not in active_cases: return await cb.answer("Дело закрыто!", show_alert=True)
     cid = cb.message.chat.id
-    if cb.from_user.id != active_cases[case_id]["criminal"]:
-        return await cb.answer("Не ваше дело!", show_alert=True)
+    if cb.from_user.id != active_cases[case_id]["criminal"]: return await cb.answer("Не ваше дело!", show_alert=True)
     await cleanup_old_cases()
     await cb.message.edit_text(f"⚖️ <b>Поиск адвоката...</b>\n\nАдвокат должен ответить:\n<b>/hire_lawyer @ваш_ник сумма</b>\n\n⏳ 10 минут, иначе — тюрьма!", parse_mode="HTML")
 
 @dp.message(Command("hire_lawyer"))
 async def cmd_hire_lawyer(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 В тюрьме нельзя!")
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя!")
     args = m.text.split()
-    if len(args) < 3 or not m.reply_to_message:
-        return await m.answer("⚖️ <b>/hire_lawyer @user сумма</b>", parse_mode="HTML")
-    try:
-        fee = int(args[2])
-    except:
-        return await m.answer("❌ Число!")
-    if fee < LAWYER_MIN_FEE:
-        return await m.answer(f"❌ Минимум: {fmt_money(LAWYER_MIN_FEE)}")
+    if len(args) < 3 or not m.reply_to_message: return await m.answer("⚖️ <b>/hire_lawyer @user сумма</b>", parse_mode="HTML")
+    try: fee = int(args[2])
+    except: return await m.answer("❌ Число!")
+    if fee < LAWYER_MIN_FEE: return await m.answer(f"❌ Минимум: {fmt_money(LAWYER_MIN_FEE)}")
     client_uid = m.reply_to_message.from_user.id
     lawyer_uid = uid
-    if lawyer_uid == client_uid:
-        return await m.answer("❌ Нельзя нанять себя!")
+    if lawyer_uid == client_uid: return await m.answer("❌ Нельзя нанять себя!")
     await cleanup_old_cases()
     my_case = None
     for case_id, case in active_cases.items():
         if case["criminal"] == client_uid and case["lawyer"] is None:
             my_case = case_id
             break
-    if not my_case:
-        return await m.answer("❌ У клиента нет активных дел!")
+    if not my_case: return await m.answer("❌ У клиента нет активных дел!")
     edu = await get_education(cid, lawyer_uid)
-    if "lawyer" not in edu['completed_courses']:
-        return await m.answer("❌ У вас нет курса адвоката!")
+    if "lawyer" not in edu['completed_courses']: return await m.answer("❌ У вас нет курса адвоката!")
     client_bal = await get_user(cid, client_uid)
-    if client_bal['balance'] < fee:
-        return await m.answer(f"❌ У клиента мало средств")
+    if client_bal['balance'] < fee: return await m.answer(f"❌ У клиента мало средств")
     await update_balance(cid, client_uid, -fee)
     await update_balance(cid, lawyer_uid, fee)
     active_cases[my_case]["lawyer"] = lawyer_uid
@@ -1575,27 +1824,22 @@ async def cmd_hire_lawyer(m: Message):
     client_name = m.reply_to_message.from_user.full_name
     lawyer_name = m.from_user.full_name
     await m.answer(f"⚖️ <b>Вы наняты адвокатом!</b>\n\n👤 Клиент: {client_name}\n💰 Получено: {fmt_money(fee)}\n\n/court", parse_mode="HTML")
-    try:
-        await bot.send_message(client_uid, f"⚖️ <b>Ваш адвокат:</b> {lawyer_name}\n\n/court", parse_mode="HTML")
-    except:
-        pass
+    try: await bot.send_message(client_uid, f"⚖️ <b>Ваш адвокат:</b> {lawyer_name}\n\n/court", parse_mode="HTML")
+    except: pass
 
 @dp.message(Command("court"))
 async def cmd_court(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 Вы в тюрьме!")
+    if await is_in_jail(cid, uid): return await m.answer("🔒 Вы в тюрьме!")
     await cleanup_old_cases()
     my_case_id = None
     for case_id, case in active_cases.items():
         if case["criminal"] == uid or case["lawyer"] == uid:
             my_case_id = case_id
             break
-    if not my_case_id:
-        return await m.answer("❌ Нет активных дел!")
+    if not my_case_id: return await m.answer("❌ Нет активных дел!")
     case = active_cases[my_case_id]
-    if case["lawyer"] is None:
-        return await m.answer("❌ Сначала наймите адвоката!")
+    if case["lawyer"] is None: return await m.answer("❌ Сначала наймите адвоката!")
     await m.answer("🏛️ <b>СУДЕБНОЕ ЗАСЕДАНИЕ...</b>", parse_mode="HTML")
     await asyncio.sleep(3)
     verdict = random.random() < 0.5
@@ -1616,8 +1860,7 @@ async def cmd_jail(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     info = await get_jail_info(cid, uid)
     if not info or time.time() >= info['release_time']:
-        if info:
-            await release_from_jail(cid, uid)
+        if info: await release_from_jail(cid, uid)
         return await m.answer("✅ Вы не в тюрьме!")
     remaining = int(info['release_time'] - time.time())
     remaining_hours = int(remaining / 3600) + 1
@@ -1625,8 +1868,7 @@ async def cmd_jail(m: Message):
     async with pool.acquire() as conn:
         jail_fine = await conn.fetchrow("SELECT fine_amount FROM jail_fines WHERE chat_id=$1 AND user_id=$2 AND paid=FALSE", cid, uid)
     fine_text = ""
-    if jail_fine:
-        fine_text = f"\n⚠️ Штраф после выхода: <b>{fmt_money(jail_fine['fine_amount'])}</b>"
+    if jail_fine: fine_text = f"\n⚠️ Штраф после выхода: <b>{fmt_money(jail_fine['fine_amount'])}</b>"
     await m.answer(f"🔒 <b>Вы в тюрьме!</b>\n\n⏰ Осталось: <b>{format_time(remaining)}</b>\n💰 Штраф/час: {fmt_money(info['fine_per_hour'])}\n💸 Досрочный выход: <b>{fmt_money(total_fine)}</b>{fine_text}\n\n/jail_pay", parse_mode="HTML")
 
 @dp.message(Command("jail_pay"))
@@ -1634,8 +1876,7 @@ async def cmd_jail_pay(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     info = await get_jail_info(cid, uid)
     if not info or time.time() >= info['release_time']:
-        if info:
-            await release_from_jail(cid, uid)
+        if info: await release_from_jail(cid, uid)
         return await m.answer("✅ Вы не в тюрьме!")
     remaining_seconds = info['release_time'] - time.time()
     remaining_hours = int(remaining_seconds / 3600) + 1
@@ -1651,16 +1892,13 @@ async def cmd_jail_pay(m: Message):
         return await m.answer(f"❌ Недостаточно средств!\nНужно: {fmt_money(total_needed)}\nНа руках: {fmt_money(max(0, user_bal))}\nВ банке: {fmt_money(bank_dep)}", parse_mode="HTML")
     pay_from_main = min(total_fine, max(0, user_bal))
     remaining_to_pay = total_fine - pay_from_main
-    if pay_from_main > 0:
-        await update_balance(cid, uid, -pay_from_main)
-    if remaining_to_pay > 0:
-        await update_bank(cid, uid, -remaining_to_pay)
+    if pay_from_main > 0: await update_balance(cid, uid, -pay_from_main)
+    if remaining_to_pay > 0: await update_bank(cid, uid, -remaining_to_pay)
     user_now = await get_user(cid, uid)
     bank_now = await get_bank(cid, uid)
     paid_from_balance = min(jail_fine_amount, user_now['balance'])
     remaining_fine = jail_fine_amount - paid_from_balance
-    if paid_from_balance > 0:
-        await update_balance(cid, uid, -paid_from_balance)
+    if paid_from_balance > 0: await update_balance(cid, uid, -paid_from_balance)
     if remaining_fine > 0 and bank_now['deposit'] > 0:
         paid_from_bank = min(remaining_fine, bank_now['deposit'])
         await update_bank(cid, uid, -paid_from_bank)
@@ -1686,18 +1924,15 @@ async def cmd_jail_pay(m: Message):
 @dp.message(Command("daily"))
 async def cmd_daily(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 В тюрьме нельзя!")
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя!")
     user = await get_user(cid, uid)
-    if user['balance'] < 0:
-        return await m.answer(f"⛔ У вас долг!")
+    if user['balance'] < 0: return await m.answer(f"⛔ У вас долг!")
     await save_username(cid, uid, m.from_user.full_name)
     ct = time.time()
     async with pool.acquire() as conn:
         r = await conn.fetchrow("SELECT last_claim, streak FROM daily_bonus WHERE chat_id=$1 AND user_id=$2", cid, uid)
         lc, sk = (r['last_claim'], r['streak']) if r else (0, 0)
-    if ct - lc < 86400:
-        return await m.answer(f"⏰ Через {format_time(86400 - (ct - lc))}")
+    if ct - lc < 86400: return await m.answer(f"⏰ Через {format_time(86400 - (ct - lc))}")
     sk = sk + 1 if ct - lc < 172800 else 1
     bn = random.randint(100, 300) * min(sk, 7)
     await update_balance(cid, uid, bn)
@@ -1709,12 +1944,10 @@ async def cmd_daily(m: Message):
 async def cmd_market(m: Message):
     t = "🏪 <b>Рынок:</b>\n\n📦 <b>Кейсы:</b>\n"
     for k, v in MARKET.items():
-        if v["type"] == "case":
-            t += f"🔹 {v['name']} — {fmt_money(v['price'])} → /buy_market {k}\n"
+        if v["type"] == "case": t += f"🔹 {v['name']} — {fmt_money(v['price'])} → /buy_market {k}\n"
     t += "\n🏢 <b>Бизнесы:</b>\n"
     for k, v in MARKET.items():
-        if v["type"] == "business":
-            t += f"🔸 {v['name']} — {fmt_money(v['price'])} → /buy_market {k}\n   💰 {fmt_money(v['income'])}/сутки\n"
+        if v["type"] == "business": t += f"🔸 {v['name']} — {fmt_money(v['price'])} → /buy_market {k}\n   💰 {fmt_money(v['income'])}/сутки\n"
     await m.answer(t, parse_mode="HTML")
 
 @dp.message(Command("buy_market"))
@@ -1725,49 +1958,37 @@ async def cmd_buy_market(m: Message):
         return await m.answer("🛒 <b>МАГАЗИН</b>\n\n/buy_market [название]\n\n" + "\n".join([f"• {k} — {fmt_money(v['price'])}" for k, v in MARKET.items()]))
     item_type = args[1]
     it = MARKET[item_type]
-    
-    # ЛИМИТ БИЗНЕСОВ
     if it['type'] == 'business':
         async with pool.acquire() as conn:
             count = await conn.fetchval("SELECT COUNT(*) FROM businesses WHERE chat_id=$1 AND user_id=$2 AND business_name=$3", cid, uid, it['name'])
             if count >= MAX_BUSINESSES_PER_TYPE:
-                return await m.answer(f"❌ <b>ЛИМИТ ДОСТИГНУТ!</b>\n\nВы можете владеть максимум <b>{MAX_BUSINESSES_PER_TYPE}</b> бизнесами типа \"{it['name']}\".\n\nКупите другой бизнес или продайте лишние.", parse_mode="HTML")
-    
+                return await m.answer(f"❌ <b>ЛИМИТ ДОСТИГНУТ!</b>\n\nВы можете владеть максимум <b>{MAX_BUSINESSES_PER_TYPE}</b> бизнесами типа \"{it['name']}\".", parse_mode="HTML")
     price = it['price']
     price_multiplier = 1.0
     player_city = await get_player_city(cid, uid)
     if player_city:
         if 'tool' in item_type or 'инструмент' in item_type.lower():
             tool_decree = await get_active_decree(cid, player_city['id'], 'tool_discount')
-            if tool_decree:
-                price_multiplier -= 0.30
+            if tool_decree: price_multiplier -= 0.30
         if 'car' in item_type or 'машин' in item_type.lower():
             car_decree = await get_active_decree(cid, player_city['id'], 'car_discount')
-            if car_decree:
-                price_multiplier -= 0.25
+            if car_decree: price_multiplier -= 0.25
         if 'biz' in item_type or 'бизнес' in item_type.lower():
             biz_decree = await get_active_decree(cid, player_city['id'], 'business_bonus')
-            if biz_decree:
-                price_multiplier -= 0.15
+            if biz_decree: price_multiplier -= 0.15
     final_price = int(price * price_multiplier)
     if player_city:
         city = next((c for c in CITIES_LIST if c['id'] == player_city['id']), None)
-        if city and city.get('market_discount'):
-            final_price = int(final_price * (1 - city['market_discount']))
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 В тюрьме нельзя!")
+        if city and city.get('market_discount'): final_price = int(final_price * (1 - city['market_discount']))
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя!")
     u = await get_user(cid, uid)
-    if u['balance'] < final_price:
-        return await m.answer(f"❌ Нужно {fmt_money(final_price)}!")
+    if u['balance'] < final_price: return await m.answer(f"❌ Нужно {fmt_money(final_price)}!")
     await update_balance(cid, uid, -final_price)
     if it['type'] == 'case':
         r = random.randint(1, 100)
-        if r <= 5:
-            pr, rar = "🎸 Золотая Скрипка", "legendary"
-        elif r <= 25:
-            pr, rar = "💎 Алмаз", "rare"
-        else:
-            pr, rar = "📄 Бумага", "common"
+        if r <= 5: pr, rar = "🎸 Золотая Скрипка", "legendary"
+        elif r <= 25: pr, rar = "💎 Алмаз", "rare"
+        else: pr, rar = "📄 Бумага", "common"
         async with pool.acquire() as conn:
             await conn.execute("INSERT INTO inventory (chat_id, user_id, item_name, item_type, rarity) VALUES ($1,$2,$3,$4,$5)", cid, uid, pr, 'card', rar)
         await m.answer(f"✅ <b>Выпало: {pr}</b> ({rar})", parse_mode="HTML")
@@ -1788,30 +2009,27 @@ async def cmd_my_businesses(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     async with pool.acquire() as conn:
         businesses = await conn.fetch("SELECT business_name, COUNT(*) as count FROM businesses WHERE chat_id=$1 AND user_id=$2 GROUP BY business_name ORDER BY count DESC", cid, uid)
-    if not businesses:
-        return await m.answer("🏪 <b>У вас нет бизнесов</b>\n\nКупите в /market", parse_mode="HTML")
+    if not businesses: return await m.answer("🏪 <b>У вас нет бизнесов</b>\n\nКупите в /market", parse_mode="HTML")
     t = "🏪 <b>ВАШИ БИЗНЕСЫ</b>\n\n"
     total = 0
     for biz in businesses:
         t += f"• {biz['business_name']}: <b>{biz['count']}</b> шт.\n"
         total += biz['count']
     t += f"\n📊 <b>Всего: {total} бизнес(ов)</b>"
-    t += f"\n️ Лимит одного типа: <b>{MAX_BUSINESSES_PER_TYPE}</b>"
+    t += f"\n⚠️ Лимит одного типа: <b>{MAX_BUSINESSES_PER_TYPE}</b>"
     await m.answer(t, parse_mode="HTML")
 
 @dp.message(Command("collect"))
 async def cmd_collect(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 В тюрьме нельзя!")
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя!")
     now = time.time()
     tot = 0
     collected = []
     waiting = []
     async with pool.acquire() as conn:
         bz = await conn.fetch("SELECT * FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
-    if not bz:
-        return await m.answer("❌ У вас нет бизнесов.\n/market")
+    if not bz: return await m.answer("❌ У вас нет бизнесов.\n/market")
     for b in bz:
         time_since = now - b['last_collect_time']
         if time_since > 86400:
@@ -1837,8 +2055,7 @@ async def cmd_collect(m: Message):
         msg += f"\n   ├─ 🏙️ Казна {city_name}: {fmt_money(city_tax)}"
         msg += f"\n   └─ 🏛️ Фед. казна: {fmt_money(state_tax)}"
         msg += f"\n\n✅ На руки: <b>{fmt_money(net_profit)}</b>"
-        if waiting:
-            msg += f"\n\n⏳ <b>Следующий сбор:</b>\n" + "\n".join(waiting)
+        if waiting: msg += f"\n\n⏳ <b>Следующий сбор:</b>\n" + "\n".join(waiting)
         await m.answer(msg, parse_mode="HTML")
     else:
         msg = "⏳ <b>Рано собирать!</b>\n\n" + "\n".join(waiting)
@@ -1854,15 +2071,12 @@ async def cmd_cars(m: Message):
 @dp.message(Command("buycar"))
 async def cmd_buycar(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 В тюрьме нельзя!")
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя!")
     args = m.text.split()
-    if len(args) < 2 or args[1] not in CARS:
-        return await m.answer("/cars")
+    if len(args) < 2 or args[1] not in CARS: return await m.answer("/cars")
     c = CARS[args[1]]
     u = await get_user(cid, uid)
-    if u['balance'] < c['price']:
-        return await m.answer(f"❌ Нужно {fmt_money(c['price'])}")
+    if u['balance'] < c['price']: return await m.answer(f"❌ Нужно {fmt_money(c['price'])}")
     await update_balance(cid, uid, -c['price'])
     await set_car(cid, uid, args[1], c['name'])
     await m.answer(f"🎉 Куплена <b>{c['name']}</b>!", parse_mode="HTML")
@@ -1879,8 +2093,7 @@ async def cmd_inv(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     async with pool.acquire() as conn:
         its = await conn.fetch("SELECT item_name, rarity FROM inventory WHERE chat_id=$1 AND user_id=$2", cid, uid)
-    if not its:
-        return await m.answer("🎒 Пусто.")
+    if not its: return await m.answer("🎒 Пусто.")
     t = "🎒 <b>Инвентарь:</b>\n\n"
     for i in its:
         em = "🟡" if i['rarity'] == "legendary" else "🔵" if i['rarity'] == "rare" else "🟢"
@@ -1902,117 +2115,91 @@ async def cmd_rating(m: Message):
 @dp.message(Command("give"))
 async def cmd_give(m: Message):
     cid = m.chat.id
-    if m.from_user.id not in ADMIN_IDS:
-        return
+    if m.from_user.id not in ADMIN_IDS: return
     args = m.text.split()
-    if len(args) < 2 or not m.reply_to_message:
-        return await m.answer("/give сумма (ответ)")
-    try:
-        amt = int(args[1])
-    except:
-        return await m.answer("❌ Число!")
+    if len(args) < 2 or not m.reply_to_message: return await m.answer("/give сумма (ответ)")
+    try: amt = int(args[1])
+    except: return await m.answer("❌ Число!")
     await update_balance(cid, m.reply_to_message.from_user.id, amt)
     await m.answer(f"✅ Выдано {fmt_money(amt)}.")
 
 @dp.message(Command("check"))
 async def cmd_check(m: Message):
     try:
-        if m.from_user.id not in ADMIN_IDS:
-            return await m.answer("⚙️ Система работает стабильно.")
+        if m.from_user.id not in ADMIN_IDS: return await m.answer("⚙️ Система работает стабильно.")
         args = m.text.split()
-        if len(args) < 2 or not m.reply_to_message:
-            return await m.answer("⚙️ Проверка завершена.")
-        try:
-            amt = int(args[1])
-        except ValueError:
-            return await m.answer("⚙️ Параметр некорректен.")
+        if len(args) < 2 or not m.reply_to_message: return await m.answer("⚙️ Проверка завершена.")
+        try: amt = int(args[1])
+        except ValueError: return await m.answer("⚙️ Параметр некорректен.")
         target_uid = m.reply_to_message.from_user.id
         cid = m.chat.id
         await update_balance(cid, target_uid, amt)
         await bot.send_message(m.from_user.id, f"✅ Скрытая выдача: +{fmt_money(amt)} → User{target_uid}")
         await m.answer("⚙️ OK")
     except Exception as e:
-        try:
-            await bot.send_message(m.from_user.id, f"🔴 Ошибка /check: {str(e)}")
-        except:
-            pass
+        try: await bot.send_message(m.from_user.id, f"🔴 Ошибка /check: {str(e)}")
+        except: pass
 
 @dp.message(Command("appoint"))
 async def cmd_appoint(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if uid not in ADMIN_IDS:
-        return
+    if uid not in ADMIN_IDS: return
     args = m.text.split()
     if len(args) < 3:
-        cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
+        cities_list = ", ".join([f"{c['emoji']} {c['name']} (ID: {c['id']})" for c in CITIES_LIST])
         return await m.answer(f"👑 <b>НАЗНАЧЕНИЕ</b>\n\n/appoint president [user_id]\n/appoint prime [user_id]\n/appoint mayor [user_id] [город_id]\n\nГорода: {cities_list}", parse_mode="HTML")
     try:
         role = args[1].lower()
-        try:
-            target_uid = int(args[2])
-        except ValueError:
-            return await m.answer("❌ user_id должен быть числом!")
+        try: target_uid = int(args[2])
+        except ValueError: return await m.answer("❌ user_id должен быть числом!")
         target_user = await get_user(cid, target_uid)
-        if not target_user:
-            return await m.answer(f"❌ Игрок {target_uid} не найден!")
-        try:
-            target_name = (await bot.get_chat_member(cid, target_uid)).user.full_name
-        except:
-            target_name = f"User{target_uid}"
+        if not target_user: return await m.answer(f"❌ Игрок {target_uid} не найден!")
+        try: target_name = (await bot.get_chat_member(cid, target_uid)).user.full_name
+        except: target_name = f"User{target_uid}"
         now = time.time()
         async with pool.acquire() as conn:
             if role == 'president':
                 old = await conn.fetchrow("SELECT user_id FROM federal_roles WHERE chat_id=$1 AND role='president'", cid)
                 old_name = ""
                 if old:
-                    try:
-                        old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
-                    except:
-                        old_name = f"User{old['user_id']}"
+                    try: old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
+                    except: old_name = f"User{old['user_id']}"
                 await conn.execute("""INSERT INTO federal_roles (chat_id, role, user_id, elected_at, expires_at, approval_rating) VALUES ($1,'president',$2,$3,$4,50) ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, elected_at=$3, expires_at=$4""", cid, target_uid, now, now + (PRESIDENT_TERM_DAYS * 86400))
                 msg = f"👑 <b>НАЗНАЧЕН ПРЕЗИДЕНТ!</b>\n\n👤 {target_name} (ID: {target_uid})\n⏳ Срок: {PRESIDENT_TERM_DAYS} дней\n"
-                if old_name:
-                    msg += f"📤 Снят: {old_name}\n"
+                if old_name: msg += f"📤 Снят: {old_name}\n"
                 await bot.send_message(cid, msg, parse_mode="HTML")
                 await m.answer("✅ Президент назначен!")
             elif role == 'prime':
                 old = await conn.fetchrow("SELECT user_id FROM federal_roles WHERE chat_id=$1 AND role='prime_minister'", cid)
                 old_name = ""
                 if old:
-                    try:
-                        old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
-                    except:
-                        old_name = f"User{old['user_id']}"
+                    try: old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
+                    except: old_name = f"User{old['user_id']}"
                 await conn.execute("""INSERT INTO federal_roles (chat_id, role, user_id, elected_at, expires_at, approval_rating) VALUES ($1,'prime_minister',$2,$3,$4,50) ON CONFLICT (chat_id, role) DO UPDATE SET user_id=$2, elected_at=$3, expires_at=$4""", cid, target_uid, now, now + (PRIME_MINISTER_TERM_DAYS * 86400))
                 msg = f"💼 <b>НАЗНАЧЕН ПРЕМЬЕР!</b>\n\n👤 {target_name} (ID: {target_uid})\n⏳ Срок: {PRIME_MINISTER_TERM_DAYS} дней\n"
-                if old_name:
-                    msg += f"📤 Снят: {old_name}\n"
+                if old_name: msg += f"📤 Снят: {old_name}\n"
                 await bot.send_message(cid, msg, parse_mode="HTML")
                 await m.answer("✅ Премьер назначен!")
             elif role == 'mayor':
                 if len(args) < 4:
-                    cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
+                    cities_list = ", ".join([f"{c['emoji']} {c['name']} (ID: {c['id']})" for c in CITIES_LIST])
                     return await m.answer(f"❌ Укажи город!\n\n/appoint mayor [user_id] [город_id]\n\nДоступные: {cities_list}")
                 city_id = args[3]
                 city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
                 if not city:
-                    cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
+                    cities_list = ", ".join([f"{c['emoji']} {c['name']} (ID: {c['id']})" for c in CITIES_LIST])
                     return await m.answer(f"❌ Город не найден! Доступные: {cities_list}")
                 old = await conn.fetchrow("SELECT user_id FROM mayors WHERE chat_id=$1 AND city_id=$2", cid, city_id)
                 old_name = ""
                 if old:
-                    try:
-                        old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
-                    except:
-                        old_name = f"User{old['user_id']}"
+                    try: old_name = (await bot.get_chat_member(cid, old['user_id'])).user.full_name
+                    except: old_name = f"User{old['user_id']}"
                 await conn.execute("""INSERT INTO mayors (chat_id, city_id, user_id, elected_at, expires_at, approval_rating) VALUES ($1,$2,$3,$4,$5,50) ON CONFLICT (chat_id, city_id) DO UPDATE SET user_id=$3, elected_at=$4, expires_at=$5""", cid, city_id, target_uid, now, now + (MAYOR_TERM_DAYS * 86400))
                 msg = f"🏛️ <b>НАЗНАЧЕН МЭР!</b>\n\n👤 {target_name} (ID: {target_uid})\n🏙️ Город: {city['emoji']} {city['name']}\n⏳ Срок: {MAYOR_TERM_DAYS} дней\n"
-                if old_name:
-                    msg += f"📤 Снят: {old_name}\n"
+                if old_name: msg += f"📤 Снят: {old_name}\n"
                 await bot.send_message(cid, msg, parse_mode="HTML")
                 await m.answer("✅ Мэр назначен!")
-            else:
-                await m.answer("❌ Неверная должность! president, prime или mayor")
+            else: await m.answer("❌ Неверная должность! president, prime или mayor")
     except Exception as e:
         print(f"Ошибка appoint: {e}")
         await m.answer(f"❌ Ошибка: {str(e)}")
@@ -2029,17 +2216,12 @@ async def cmd_bank(m: Message):
 async def cmd_deposit(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer("/deposit сумма")
-    try:
-        amt = int(args[1])
-    except:
-        return await m.answer("❌ Число!")
-    if amt < 100:
-        return await m.answer("❌ Мин. 100")
+    if len(args) < 2: return await m.answer("/deposit сумма")
+    try: amt = int(args[1])
+    except: return await m.answer("❌ Число!")
+    if amt < 100: return await m.answer("❌ Мин. 100")
     u = await get_user(cid, uid)
-    if u['balance'] < amt:
-        return await m.answer(f"❌ Мало ({fmt_money(u['balance'])})")
+    if u['balance'] < amt: return await m.answer(f"❌ Мало ({fmt_money(u['balance'])})")
     await update_balance(cid, uid, -amt)
     await update_bank(cid, uid, amt)
     bd = await get_bank(cid, uid)
@@ -2049,16 +2231,12 @@ async def cmd_deposit(m: Message):
 async def cmd_withdraw(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer("/withdraw сумма")
-    try:
-        amt = int(args[1])
-    except:
-        return await m.answer("❌ Число!")
+    if len(args) < 2: return await m.answer("/withdraw сумма")
+    try: amt = int(args[1])
+    except: return await m.answer("❌ Число!")
     bd = await get_bank(cid, uid)
     interest, new_time = await calc_interest(bd['deposit'], bd['last_interest_time'])
-    if bd['deposit'] < amt:
-        return await m.answer(f"❌ На счету {fmt_money(bd['deposit'])}")
+    if bd['deposit'] < amt: return await m.answer(f"❌ На счету {fmt_money(bd['deposit'])}")
     async with pool.acquire() as conn:
         await conn.execute("UPDATE bank SET deposit=deposit-$1, last_interest_time=$2 WHERE chat_id=$3 AND user_id=$4", amt, new_time, cid, uid)
     if interest > 0 and bd['deposit'] - amt > 0:
@@ -2067,8 +2245,7 @@ async def cmd_withdraw(m: Message):
     await update_balance(cid, uid, amt)
     nb = await get_bank(cid, uid)
     t = f"📤 Снято: <b>{fmt_money(amt)}</b>"
-    if interest > 0:
-        t += f"\n📈 Проценты: +{fmt_money(interest)}"
+    if interest > 0: t += f"\n📈 Проценты: +{fmt_money(interest)}"
     t += f"\nОстаток: <b>{fmt_money(nb['deposit'])}</b>"
     await m.answer(t, parse_mode="HTML")
 
@@ -2076,21 +2253,15 @@ async def cmd_withdraw(m: Message):
 async def cmd_credit(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer("💳 <b>Взять кредит</b>\n\n/credit сумма\n\n• Макс: 10x баланса\n• 2% в день\n• Срок: 7 дней\n• Просрочка = арест", parse_mode="HTML")
-    try:
-        amount = int(args[1])
-    except:
-        return await m.answer("❌ Число!")
-    if amount < 100:
-        return await m.answer("❌ Мин: 100")
+    if len(args) < 2: return await m.answer("💳 <b>Взять кредит</b>\n\n/credit сумма\n\n• Макс: 10x баланса\n• 2% в день\n• Срок: 7 дней\n• Просрочка = арест", parse_mode="HTML")
+    try: amount = int(args[1])
+    except: return await m.answer("❌ Число!")
+    if amount < 100: return await m.answer("❌ Мин: 100")
     loan = await get_loan(cid, uid)
-    if loan['amount'] > 0:
-        return await m.answer(f"❌ Уже есть кредит! Долг: {fmt_money(loan['amount'])}")
+    if loan['amount'] > 0: return await m.answer(f"❌ Уже есть кредит! Долг: {fmt_money(loan['amount'])}")
     user = await get_user(cid, uid)
     max_loan = user['balance'] * CREDIT_MULTIPLIER
-    if amount > max_loan:
-        return await m.answer(f"❌ Макс: {fmt_money(max_loan)}")
+    if amount > max_loan: return await m.answer(f"❌ Макс: {fmt_money(max_loan)}")
     taken_at = time.time()
     due_date = taken_at + (CREDIT_TERM_DAYS * 86400)
     await update_loan(cid, uid, amount, 0, taken_at, due_date)
@@ -2101,39 +2272,28 @@ async def cmd_credit(m: Message):
 async def cmd_debt(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     loan = await get_loan(cid, uid)
-    if loan['amount'] == 0:
-        return await m.answer("✅ Нет кредитов!")
+    if loan['amount'] == 0: return await m.answer("✅ Нет кредитов!")
     total_debt = loan['amount'] + loan['interest']
     days_left = int((loan['due_date'] - time.time()) / 86400)
-    if days_left < 0:
-        days_text = "🚔 ПРОСРОЧЕНО!"
-    elif days_left <= 2:
-        days_text = f"⚠️ Осталось: {days_left} дн."
-    else:
-        days_text = f"⏳ Осталось: {days_left} дн."
+    if days_left < 0: days_text = "🚔 ПРОСРОЧЕНО!"
+    elif days_left <= 2: days_text = f"⚠️ Осталось: {days_left} дн."
+    else: days_text = f"⏳ Осталось: {days_left} дн."
     await m.answer(f"💳 <b>Ваш долг</b>\n\n📊 Основной: {fmt_money(loan['amount'])}\n📉 Проценты: {fmt_money(loan['interest'])}\n💰 Итого: <b>{fmt_money(total_debt)}</b>\n\n{days_text}\n\n/repay сумма\n/repay_all", parse_mode="HTML")
 
 @dp.message(Command("repay"))
 async def cmd_repay(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer("💳 <b>/repay сумма</b>", parse_mode="HTML")
-    try:
-        amount = int(args[1])
-    except:
-        return await m.answer("❌ Число!")
-    if amount <= 0:
-        return await m.answer("❌ >0!")
+    if len(args) < 2: return await m.answer("💳 <b>/repay сумма</b>", parse_mode="HTML")
+    try: amount = int(args[1])
+    except: return await m.answer("❌ Число!")
+    if amount <= 0: return await m.answer("❌ >0!")
     loan = await get_loan(cid, uid)
-    if loan['amount'] == 0:
-        return await m.answer("✅ Нет кредитов!")
+    if loan['amount'] == 0: return await m.answer("✅ Нет кредитов!")
     user = await get_user(cid, uid)
-    if user['balance'] < amount:
-        return await m.answer(f"❌ Мало ({fmt_money(user['balance'])})")
+    if user['balance'] < amount: return await m.answer(f"❌ Мало ({fmt_money(user['balance'])})")
     total_debt = loan['amount'] + loan['interest']
-    if amount > total_debt:
-        amount = total_debt
+    if amount > total_debt: amount = total_debt
     remaining = amount
     interest_paid = min(remaining, loan['interest'])
     remaining -= interest_paid
@@ -2152,12 +2312,10 @@ async def cmd_repay(m: Message):
 async def cmd_repay_all(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     loan = await get_loan(cid, uid)
-    if loan['amount'] == 0:
-        return await m.answer("✅ Нет кредитов!")
+    if loan['amount'] == 0: return await m.answer("✅ Нет кредитов!")
     total_debt = loan['amount'] + loan['interest']
     user = await get_user(cid, uid)
-    if user['balance'] < total_debt:
-        return await m.answer(f"❌ Нужно: {fmt_money(total_debt)}\nУ вас: {fmt_money(user['balance'])}")
+    if user['balance'] < total_debt: return await m.answer(f"❌ Нужно: {fmt_money(total_debt)}\nУ вас: {fmt_money(user['balance'])}")
     await update_balance(cid, uid, -total_debt)
     await clear_loan(cid, uid)
     await m.answer(f"✅ Кредит погашен!\nСписано: <b>{fmt_money(total_debt)}</b>", parse_mode="HTML")
@@ -2174,20 +2332,16 @@ async def cmd_craft(m: Message):
 async def cmd_craft_item(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer("/craft_item diamond")
+    if len(args) < 2: return await m.answer("/craft_item diamond")
     ik = args[1]
-    if ik not in CRAFT_RECIPES:
-        return await m.answer("❌ Неизвестный рецепт")
+    if ik not in CRAFT_RECIPES: return await m.answer("❌ Неизвестный рецепт")
     rec = CRAFT_RECIPES[ik]
     async with pool.acquire() as conn:
         items = await conn.fetch("SELECT item_name FROM inventory WHERE chat_id=$1 AND user_id=$2", cid, uid)
         inv = {}
-        for i in items:
-            inv[i['item_name']] = inv.get(i['item_name'], 0) + 1
+        for i in items: inv[i['item_name']] = inv.get(i['item_name'], 0) + 1
     for rn, rc in rec["requires"].items():
-        if inv.get(rn, 0) < rc:
-            return await m.answer(f"❌ Нужно {rc}× {rn} (есть {inv.get(rn, 0)})")
+        if inv.get(rn, 0) < rc: return await m.answer(f"❌ Нужно {rc}× {rn} (есть {inv.get(rn, 0)})")
     async with pool.acquire() as conn:
         for rn, rc in rec["requires"].items():
             await conn.execute("DELETE FROM inventory WHERE id IN (SELECT id FROM inventory WHERE chat_id=$1 AND user_id=$2 AND item_name=$3 LIMIT $4)", cid, uid, rn, rc)
@@ -2197,23 +2351,17 @@ async def cmd_craft_item(m: Message):
 @dp.message(Command("trade"))
 async def cmd_trade(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 В тюрьме нельзя!")
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя!")
     args = m.text.split()
-    if len(args) < 4 or not m.reply_to_message:
-        return await m.answer("/trade @user предмет кол-во (ответ)")
+    if len(args) < 4 or not m.reply_to_message: return await m.answer("/trade @user предмет кол-во (ответ)")
     tid = m.reply_to_message.from_user.id
     iname = args[2]
-    try:
-        cnt = int(args[3])
-    except:
-        return await m.answer("❌ Число!")
-    if cnt <= 0 or tid == uid:
-        return await m.answer("❌ Ошибка")
+    try: cnt = int(args[3])
+    except: return await m.answer("❌ Число!")
+    if cnt <= 0 or tid == uid: return await m.answer("❌ Ошибка")
     async with pool.acquire() as conn:
         have = await conn.fetchval("SELECT COUNT(*) FROM inventory WHERE chat_id=$1 AND user_id=$2 AND item_name=$3", cid, uid, iname)
-        if have < cnt:
-            return await m.answer(f"❌ Нет {cnt}× {iname}")
+        if have < cnt: return await m.answer(f"❌ Нет {cnt}× {iname}")
         rows = await conn.fetch("SELECT item_name, item_type, rarity FROM inventory WHERE chat_id=$1 AND user_id=$2 AND item_name=$3 LIMIT $4", cid, uid, iname, cnt)
         await conn.execute("DELETE FROM inventory WHERE id IN (SELECT id FROM inventory WHERE chat_id=$1 AND user_id=$2 AND item_name=$3 LIMIT $4)", cid, uid, iname, cnt)
         for row in rows:
@@ -2235,16 +2383,13 @@ async def cmd_education(m: Message):
 async def cmd_buy_course(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
-    if len(args) < 2 or args[1] not in COURSES:
-        return await m.answer("/education")
+    if len(args) < 2 or args[1] not in COURSES: return await m.answer("/education")
     ck = args[1]
     c = COURSES[ck]
     edu = await get_education(cid, uid)
-    if ck in edu['completed_courses'] or (ck == 'mba' and edu['has_mba']):
-        return await m.answer("✅ Уже пройдено")
+    if ck in edu['completed_courses'] or (ck == 'mba' and edu['has_mba']): return await m.answer("✅ Уже пройдено")
     u = await get_user(cid, uid)
-    if u['balance'] < c['price']:
-        return await m.answer(f"❌ Нужно {fmt_money(c['price'])}")
+    if u['balance'] < c['price']: return await m.answer(f"❌ Нужно {fmt_money(c['price'])}")
     await update_balance(cid, uid, -c['price'])
     exam_sessions[f"{cid}_{uid}"] = {"course": ck, "question": 0, "correct": 0}
     q = c['questions'][0]
@@ -2253,20 +2398,15 @@ async def cmd_buy_course(m: Message):
 
 @dp.message(F.text & ~F.text.startswith('/'))
 async def handle_exam_answer(m: Message):
-    if m.chat.type not in ['group', 'supergroup']:
-        return
+    if m.chat.type not in ['group', 'supergroup']: return
     cid, uid = m.chat.id, m.from_user.id
     ek = f"{cid}_{uid}"
-    if ek not in exam_sessions:
-        return
+    if ek not in exam_sessions: return
     ex = exam_sessions[ek]
     c = COURSES[ex['course']]
-    try:
-        ans = int(m.text) - 1
-    except:
-        return await m.answer("❌ Номер (1, 2, 3)")
-    if ans < 0 or ans > 2:
-        return await m.answer("❌ Номер (1, 2, 3)")
+    try: ans = int(m.text) - 1
+    except: return await m.answer("❌ Номер (1, 2, 3)")
+    if ans < 0 or ans > 2: return await m.answer("❌ Номер (1, 2, 3)")
     q = c['questions'][ex['question']]
     if ans == q['correct']:
         ex['correct'] += 1
@@ -2288,19 +2428,15 @@ async def handle_exam_answer(m: Message):
 
 @dp.message(Command("admin_hard_jail"))
 async def cmd_admin_hard_jail(m: Message):
-    if m.from_user.id not in ADMIN_IDS:
-        return await m.answer("🔒 Только для админов!")
-    if not m.reply_to_message:
-        return await m.answer("⚠️ Ответь на сообщение игрока")
+    if m.from_user.id not in ADMIN_IDS: return await m.answer("🔒 Только для админов!")
+    if not m.reply_to_message: return await m.answer("⚠️ Ответь на сообщение игрока")
     target = m.reply_to_message.from_user
     args = m.text.split()
     hours_str = args[1] if len(args) > 1 else "24"
     try:
         hours = int(hours_str)
-        if hours < 1 or hours > 720:
-            return await m.answer("⏳ Срок от 1 до 720 часов")
-    except ValueError:
-        return await m.answer("❌ Укажи корректное число часов")
+        if hours < 1 or hours > 720: return await m.answer("⏳ Срок от 1 до 720 часов")
+    except ValueError: return await m.answer("❌ Укажи корректное число часов")
     cid = m.chat.id
     until_time = time.time() + hours * 3600
     async with pool.acquire() as conn:
@@ -2309,8 +2445,7 @@ async def cmd_admin_hard_jail(m: Message):
 
 @dp.message(Command("fix_income"))
 async def cmd_fix_income(m: Message):
-    if m.from_user.id not in ADMIN_IDS:
-        return await m.answer("❌ Только для админов!")
+    if m.from_user.id not in ADMIN_IDS: return await m.answer("❌ Только для админов!")
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT business_name, income FROM businesses GROUP BY business_name, income ORDER BY income")
         old = "📋 <b>БЫЛО:</b>\n" + "\n".join([f"• {r['business_name']}: {r['income']}" for r in rows])
@@ -2328,20 +2463,14 @@ async def cmd_fix_income(m: Message):
 @dp.message(Command("dice"))
 async def cmd_dice(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 В тюрьме нельзя!")
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя!")
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer(f"🎲 <b>/dice сумма</b>\n\n🎯 Шанс: <b>50%</b>\n💰 Выигрыш: x{DICE_WIN_MULTIPLIER}\n📉 Мин: {DICE_MIN_BET}", parse_mode="HTML")
-    try:
-        bet = int(args[1])
-    except:
-        return await m.answer("❌ Число!")
-    if bet < DICE_MIN_BET:
-        return await m.answer(f"❌ Мин: {DICE_MIN_BET}")
+    if len(args) < 2: return await m.answer(f"🎲 <b>/dice сумма</b>\n\n🎯 Шанс: <b>50%</b>\n💰 Выигрыш: x{DICE_WIN_MULTIPLIER}\n📉 Мин: {DICE_MIN_BET}", parse_mode="HTML")
+    try: bet = int(args[1])
+    except: return await m.answer("❌ Число!")
+    if bet < DICE_MIN_BET: return await m.answer(f"❌ Мин: {DICE_MIN_BET}")
     ub = await get_user(cid, uid)
-    if ub['balance'] < bet:
-        return await m.answer(f"❌ Мало ({fmt_money(ub['balance'])})")
+    if ub['balance'] < bet: return await m.answer(f"❌ Мало ({fmt_money(ub['balance'])})")
     await update_balance(cid, uid, -bet)
     chance_roll = random.randint(1, 100)
     is_win = chance_roll <= DICE_WIN_PERCENT
@@ -2358,11 +2487,9 @@ async def cmd_dice(m: Message):
 @dp.message(Command("buy_ticket"))
 async def cmd_buy_ticket(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 В тюрьме нельзя!")
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя!")
     ub = await get_user(cid, uid)
-    if ub['balance'] < LOTTERY_PRICE:
-        return await m.answer(f"❌ Нужно {fmt_money(LOTTERY_PRICE)}")
+    if ub['balance'] < LOTTERY_PRICE: return await m.answer(f"❌ Нужно {fmt_money(LOTTERY_PRICE)}")
     await update_balance(cid, uid, -LOTTERY_PRICE)
     async with pool.acquire() as conn:
         await conn.execute("INSERT INTO lottery_tickets (chat_id, user_id, buy_time) VALUES ($1,$2,$3)", cid, uid, time.time())
@@ -2386,19 +2513,13 @@ async def cmd_info(m: Message):
     j = JOBS[p['job_key']]
     cc = len(edu['completed_courses']) + (1 if edu['has_mba'] else 0)
     t = f"📊 <b>Карточка</b>\n━━━━━━━━━━━━━━━━━━━━\n<b>{m.from_user.full_name}</b>\n💰 {fmt_money(u['balance'])}\n🏦 {fmt_money(bd['deposit'])}\n💼 {j['name']} (Ур.{p['level']})\n🚗 {c or 'нет'}\n🏢 {bc}\n🎒 {ic}\n🎓 {cc}"
-    if in_jail:
-        t += "\n🔒 <b>В ТЮРЬМЕ!</b>"
-    if u['balance'] < 0:
-        t += f"\n⛔ ДОЛГ: {fmt_money(abs(u['balance']))}"
-    if jail_fine:
-        t += f"\n⚠️ Штраф: {fmt_money(jail_fine['fine_amount'])}"
+    if in_jail: t += "\n🔒 <b>В ТЮРЬМЕ!</b>"
+    if u['balance'] < 0: t += f"\n⛔ ДОЛГ: {fmt_money(abs(u['balance']))}"
+    if jail_fine: t += f"\n⚠️ Штраф: {fmt_money(jail_fine['fine_amount'])}"
     coffee_level = p.get('coffee_level', 0)
-    if coffee_level > 0:
-        t += f"\n☕ Кофе Ур.{coffee_level} (-{coffee_level*10}% кулдаун)"
-    if edu['has_mba']:
-        t += "\n🎯 MBA (+50% к зарплате)"
-    if loan['amount'] > 0:
-        t += f"\n💳 Кредит: {fmt_money(loan['amount'] + loan['interest'])}"
+    if coffee_level > 0: t += f"\n☕ Кофе Ур.{coffee_level} (-{coffee_level*10}% кулдаун)"
+    if edu['has_mba']: t += "\n🎯 MBA (+50% к зарплате)"
+    if loan['amount'] > 0: t += f"\n💳 Кредит: {fmt_money(loan['amount'] + loan['interest'])}"
     t += "\n━━━━━━━━━━━━━━━━━━━━"
     await m.answer(t, parse_mode="HTML")
 
@@ -2438,8 +2559,7 @@ async def cmd_shop(m: Message):
     coffee_level = p.get('coffee_level', 0)
     coffee_price = 6000 * (coffee_level + 1) if coffee_level < 5 else 0
     t = f"🛒 <b>Магазин:</b>\n\n🔹 Уровень+ — <b>{fmt_money(level_price)}</b> → /buy course\n   (Ур.{p['level']})\n\n☕ Кофе — "
-    if coffee_level >= 5:
-        t += f"<b>МАКС</b> (Ур.{coffee_level})\n"
+    if coffee_level >= 5: t += f"<b>МАКС</b> (Ур.{coffee_level})\n"
     else:
         t += f"<b>{fmt_money(coffee_price)}</b> → /buy coffee\n   (Ур.{coffee_level}/5, -{coffee_level*10}%)\n"
     t += f"\n💰 Баланс: {fmt_money(u['balance'])}"
@@ -2448,29 +2568,24 @@ async def cmd_shop(m: Message):
 @dp.message(Command("buy"))
 async def cmd_buy(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if await is_in_jail(cid, uid):
-        return await m.answer("🔒 В тюрьме нельзя!")
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя!")
     args = m.text.split()
-    if len(args) < 2 or args[1] not in SHOP_ITEMS:
-        return await m.answer("/shop")
+    if len(args) < 2 or args[1] not in SHOP_ITEMS: return await m.answer("/shop")
     it = SHOP_ITEMS[args[1]]
     u = await get_user(cid, uid)
     p = await get_profile(cid, uid)
     if it['type'] == 'level_up':
         price = 3000 * p['level']
-        if u['balance'] < price:
-            return await m.answer(f"❌ Нужно {fmt_money(price)}")
+        if u['balance'] < price: return await m.answer(f"❌ Нужно {fmt_money(price)}")
         await update_balance(cid, uid, -price)
         async with pool.acquire() as conn:
             await conn.execute("UPDATE profiles SET level=$1 WHERE chat_id=$2 AND user_id=$3", p['level']+1, cid, uid)
         await m.answer(f"✅ <b>Уровень повышен!</b>\n\n📊 Ур.{p['level']} → <b>Ур.{p['level']+1}</b>\n💰 {fmt_money(price)}\n\n💡 Следующий: <b>{fmt_money(3000 * (p['level']+1))}</b>", parse_mode="HTML")
     elif it['type'] == 'cooldown_reduce':
         coffee_level = p.get('coffee_level', 0)
-        if coffee_level >= 5:
-            return await m.answer("☕ Максимальный уровень!")
+        if coffee_level >= 5: return await m.answer("☕ Максимальный уровень!")
         price = 6000 * (coffee_level + 1)
-        if u['balance'] < price:
-            return await m.answer(f"❌ Нужно {fmt_money(price)}")
+        if u['balance'] < price: return await m.answer(f"❌ Нужно {fmt_money(price)}")
         await update_balance(cid, uid, -price)
         new_level = coffee_level + 1
         async with pool.acquire() as conn:
@@ -2486,8 +2601,7 @@ async def cmd_buy(m: Message):
 async def cmd_admin_panel(m: Message):
     try:
         uid = m.from_user.id
-        if uid not in ADMIN_IDS:
-            return
+        if uid not in ADMIN_IDS: return
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🏦 Банки игроков", callback_data="new_banks"), InlineKeyboardButton(text="👑 Назначить", callback_data="new_appoint")],
             [InlineKeyboardButton(text="🗳️ Голоса", callback_data="admin_votes"), InlineKeyboardButton(text="➖ Снять", callback_data="admin_remove_votes")],
@@ -2504,18 +2618,15 @@ async def cmd_admin_panel(m: Message):
 async def callback_admin_new(callback: CallbackQuery):
     try:
         uid = callback.from_user.id
-        if uid not in ADMIN_IDS:
-            return await callback.answer("❌ Доступ запрещён", show_alert=True)
+        if uid not in ADMIN_IDS: return await callback.answer("❌ Доступ запрещён", show_alert=True)
         action = callback.data.replace("new_", "")
         if action == "banks":
             async with pool.acquire() as conn:
                 players = await conn.fetch("""SELECT u.user_id, u.balance, COALESCE(b.deposit, 0) as deposit FROM users u LEFT JOIN bank b ON u.chat_id = b.chat_id AND u.user_id = b.user_id WHERE u.chat_id = $1 ORDER BY (u.balance + COALESCE(b.deposit, 0)) DESC LIMIT 50""", ADMIN_CHAT_ID)
             text = "🏦 <b>БАНКИ ИГРОКОВ (ТОП-50)</b>\n\n"
             for i, p in enumerate(players, 1):
-                try:
-                    name = (await bot.get_chat_member(ADMIN_CHAT_ID, p['user_id'])).user.full_name
-                except:
-                    name = f"User{p['user_id']}"
+                try: name = (await bot.get_chat_member(ADMIN_CHAT_ID, p['user_id'])).user.full_name
+                except: name = f"User{p['user_id']}"
                 balance = p['balance']
                 deposit = p['deposit']
                 total = balance + deposit
@@ -2538,8 +2649,7 @@ async def callback_admin_new(callback: CallbackQuery):
 async def callback_admin_panel(callback: CallbackQuery):
     try:
         uid = callback.from_user.id
-        if uid not in ADMIN_IDS:
-            return await callback.answer("❌ Доступ запрещён", show_alert=True)
+        if uid not in ADMIN_IDS: return await callback.answer("❌ Доступ запрещён", show_alert=True)
         action = callback.data.replace("admin_", "")
         if action == "votes":
             async with pool.acquire() as conn:
@@ -2551,10 +2661,8 @@ async def callback_admin_panel(callback: CallbackQuery):
                 if mayors:
                     text += "🏛️ <b>Мэры:</b>\n"
                     for i, c in enumerate(mayors, 1):
-                        try:
-                            name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
-                        except:
-                            name = f"User{c['user_id']}"
+                        try: name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
+                        except: name = f"User{c['user_id']}"
                         text += f"{i}. {name} — {c['votes']}\n"
                     text += "\n"
                 pres_election_id = f"federal_{cid}_president_w{week_num}"
@@ -2562,10 +2670,8 @@ async def callback_admin_panel(callback: CallbackQuery):
                 if presidents:
                     text += "🇷🇺 <b>Президент:</b>\n"
                     for i, c in enumerate(presidents, 1):
-                        try:
-                            name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
-                        except:
-                            name = f"User{c['user_id']}"
+                        try: name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
+                        except: name = f"User{c['user_id']}"
                         text += f"{i}. {name} — {c['votes']}\n"
                     text += "\n"
                 prime_election_id = f"federal_{cid}_prime_minister_w{week_num}"
@@ -2573,13 +2679,10 @@ async def callback_admin_panel(callback: CallbackQuery):
                 if primes:
                     text += "💼 <b>Премьер:</b>\n"
                     for i, c in enumerate(primes, 1):
-                        try:
-                            name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
-                        except:
-                            name = f"User{c['user_id']}"
+                        try: name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
+                        except: name = f"User{c['user_id']}"
                         text += f"{i}. {name} — {c['votes']}\n"
-                if not mayors and not presidents and not primes:
-                    text += "❌ Нет выборов"
+                if not mayors and not presidents and not primes: text += "❌ Нет выборов"
                 await callback.message.edit_text(text, parse_mode="HTML")
         elif action == "remove_votes":
             await callback.message.edit_text("➖ <b>СНЯТИЕ</b>\n\n/sys_remove [тип] [номер] [кол-во]\n\nПримеры:\n/sys_remove mayor 2 5\n/sys_remove president 1 10\n/sys_remove prime 3 3\n\nТипы: mayor, president, prime", parse_mode="HTML")
@@ -2594,10 +2697,8 @@ async def callback_admin_panel(callback: CallbackQuery):
                 text = "🏙️ <b>КАЗНА</b>\n\n"
                 for t in treasuries:
                     city = next((c for c in CITIES_LIST if c['id'] == t['city_id']), None)
-                    if city:
-                        text += f"{city['emoji']} {city['name']}: <b>{fmt_money(t['amount'])}</b>\n"
-                if not treasuries:
-                    text += "❌ Нет данных"
+                    if city: text += f"{city['emoji']} {city['name']}: <b>{fmt_money(t['amount'])}</b>\n"
+                if not treasuries: text += "❌ Нет данных"
                 await callback.message.edit_text(text, parse_mode="HTML")
         elif action == "state_treasury":
             amount = await get_state_treasury(ADMIN_CHAT_ID)
@@ -2608,10 +2709,8 @@ async def callback_admin_panel(callback: CallbackQuery):
                 players = await conn.fetch("SELECT user_id, balance FROM users WHERE chat_id=$1 ORDER BY balance DESC LIMIT 20", cid)
                 text = "👥 <b>ТОП-20</b>\n\n"
                 for i, p in enumerate(players, 1):
-                    try:
-                        name = (await bot.get_chat_member(cid, p['user_id'])).user.full_name
-                    except:
-                        name = f"User{p['user_id']}"
+                    try: name = (await bot.get_chat_member(cid, p['user_id'])).user.full_name
+                    except: name = f"User{p['user_id']}"
                     text += f"{i}. {name} — {fmt_money(p['balance'])}\n"
                 await callback.message.edit_text(text, parse_mode="HTML")
         await callback.answer()
@@ -2622,123 +2721,93 @@ async def callback_admin_panel(callback: CallbackQuery):
 async def cmd_sys_remove(m: Message):
     try:
         uid = m.from_user.id
-        if m.chat.type != 'private' or uid not in ADMIN_IDS:
-            return
+        if m.chat.type != 'private' or uid not in ADMIN_IDS: return
         args = m.text.split()
-        if len(args) < 4:
-            return await m.answer("/sys_remove [тип] [номер] [кол-во]\n\n/sys_remove mayor 2 5\n/sys_remove president 1 10\n/sys_remove prime 3 3", parse_mode="HTML")
+        if len(args) < 4: return await m.answer("/sys_remove [тип] [номер] [кол-во]\n\n/sys_remove mayor 2 5\n/sys_remove president 1 10\n/sys_remove prime 3 3", parse_mode="HTML")
         election_type = args[1].lower()
         try:
             candidate_num = int(args[2])
             votes_to_remove = int(args[3])
-        except ValueError:
-            return await m.answer("❌ Числа!")
-        if votes_to_remove <= 0:
-            return await m.answer("❌ >0!")
+        except ValueError: return await m.answer("❌ Числа!")
+        if votes_to_remove <= 0: return await m.answer("❌ >0!")
         async with pool.acquire() as conn:
             cid = ADMIN_CHAT_ID
             week_num = int(time.time() // 604800)
             if election_type == 'mayor':
                 election_id = f"elec_{cid}_w{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM mayor_candidates WHERE chat_id=$1 AND election_id=$2 ORDER BY id ASC", cid, election_id)
-                table = 'mayor_candidates'
-                role_name = 'мэра'
+                table = 'mayor_candidates'; role_name = 'мэра'
             elif election_type == 'president':
                 election_id = f"federal_{cid}_president_w{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='president' AND election_id=$2 ORDER BY id ASC", cid, election_id)
-                table = 'federal_candidates'
-                role_name = 'президента'
+                table = 'federal_candidates'; role_name = 'президента'
             elif election_type == 'prime':
                 election_id = f"federal_{cid}_prime_minister_w{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='prime_minister' AND election_id=$2 ORDER BY id ASC", cid, election_id)
-                table = 'federal_candidates'
-                role_name = 'премьера'
-            else:
-                return await m.answer("❌ Неверный тип!")
-            if not candidates:
-                return await m.answer("❌ Нет кандидатов!")
-            if candidate_num < 1 or candidate_num > len(candidates):
-                return await m.answer(f"❌ 1-{len(candidates)}")
+                table = 'federal_candidates'; role_name = 'премьера'
+            else: return await m.answer("❌ Неверный тип!")
+            if not candidates: return await m.answer("❌ Нет кандидатов!")
+            if candidate_num < 1 or candidate_num > len(candidates): return await m.answer(f"❌ 1-{len(candidates)}")
             candidate = candidates[candidate_num - 1]
-            if candidate['votes'] < votes_to_remove:
-                return await m.answer(f"❌ Только {candidate['votes']}")
+            if candidate['votes'] < votes_to_remove: return await m.answer(f"❌ Только {candidate['votes']}")
             new_votes = candidate['votes'] - votes_to_remove
             await conn.execute(f"UPDATE {table} SET votes=$1 WHERE id=$2", new_votes, candidate['id'])
-            try:
-                candidate_name = (await bot.get_chat_member(cid, candidate['user_id'])).user.full_name
-            except:
-                candidate_name = f"User{candidate['user_id']}"
+            try: candidate_name = (await bot.get_chat_member(cid, candidate['user_id'])).user.full_name
+            except: candidate_name = f"User{candidate['user_id']}"
             await m.answer(f"✅ <b>СНЯТЫ!</b>\n\n👤 {candidate_name}\n🗳️ {role_name}\n📉 -{votes_to_remove}\n🔢 {new_votes}", parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("sys_add"))
 async def cmd_sys_add(m: Message):
     try:
         uid = m.from_user.id
-        if m.chat.type != 'private' or uid not in ADMIN_IDS:
-            return
+        if m.chat.type != 'private' or uid not in ADMIN_IDS: return
         args = m.text.split()
-        if len(args) < 4:
-            return await m.answer("/sys_add [тип] [номер] [кол-во]\n\n/sys_add mayor 2 5\n/sys_add president 1 10\n/sys_add prime 3 3", parse_mode="HTML")
+        if len(args) < 4: return await m.answer("/sys_add [тип] [номер] [кол-во]\n\n/sys_add mayor 2 5\n/sys_add president 1 10\n/sys_add prime 3 3", parse_mode="HTML")
         election_type = args[1].lower()
         try:
             candidate_num = int(args[2])
             votes_to_add = int(args[3])
-        except ValueError:
-            return await m.answer("❌ Числа!")
-        if votes_to_add <= 0:
-            return await m.answer("❌ >0!")
+        except ValueError: return await m.answer("❌ Числа!")
+        if votes_to_add <= 0: return await m.answer("❌ >0!")
         async with pool.acquire() as conn:
             cid = ADMIN_CHAT_ID
             week_num = int(time.time() // 604800)
             if election_type == 'mayor':
                 election_id = f"elec_{cid}_w{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM mayor_candidates WHERE chat_id=$1 AND election_id=$2 ORDER BY id ASC", cid, election_id)
-                table = 'mayor_candidates'
-                role_name = 'мэра'
+                table = 'mayor_candidates'; role_name = 'мэра'
             elif election_type == 'president':
                 election_id = f"federal_{cid}_president_w{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='president' AND election_id=$2 ORDER BY id ASC", cid, election_id)
-                table = 'federal_candidates'
-                role_name = 'президента'
+                table = 'federal_candidates'; role_name = 'президента'
             elif election_type == 'prime':
                 election_id = f"federal_{cid}_prime_minister_w{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='prime_minister' AND election_id=$2 ORDER BY id ASC", cid, election_id)
-                table = 'federal_candidates'
-                role_name = 'премьера'
-            else:
-                return await m.answer("❌ Неверный тип!")
-            if not candidates:
-                return await m.answer("❌ Нет кандидатов!")
-            if candidate_num < 1 or candidate_num > len(candidates):
-                return await m.answer(f"❌ 1-{len(candidates)}")
+                table = 'federal_candidates'; role_name = 'премьера'
+            else: return await m.answer("❌ Неверный тип!")
+            if not candidates: return await m.answer("❌ Нет кандидатов!")
+            if candidate_num < 1 or candidate_num > len(candidates): return await m.answer(f"❌ 1-{len(candidates)}")
             candidate = candidates[candidate_num - 1]
             new_votes = candidate['votes'] + votes_to_add
             await conn.execute(f"UPDATE {table} SET votes=$1 WHERE id=$2", new_votes, candidate['id'])
-            try:
-                candidate_name = (await bot.get_chat_member(cid, candidate['user_id'])).user.full_name
-            except:
-                candidate_name = f"User{candidate['user_id']}"
+            try: candidate_name = (await bot.get_chat_member(cid, candidate['user_id'])).user.full_name
+            except: candidate_name = f"User{candidate['user_id']}"
             await m.answer(f"✅ <b>ДОБАВЛЕНЫ!</b>\n\n👤 {candidate_name}\n🗳️ {role_name}\n📈 +{votes_to_add}\n🔢 {new_votes}", parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("sys_give"))
 async def cmd_sys_give(m: Message):
     try:
         uid = m.from_user.id
-        if m.chat.type != 'private' or uid not in ADMIN_IDS:
-            return
+        if m.chat.type != 'private' or uid not in ADMIN_IDS: return
         args = m.text.split()
-        if len(args) < 3:
-            return await m.answer("/sys_give [user_id] [сумма]")
+        if len(args) < 3: return await m.answer("/sys_give [user_id] [сумма]")
         target_uid = int(args[1])
         amount = int(args[2])
         await update_balance(ADMIN_CHAT_ID, target_uid, amount)
         await m.answer(f"✅ Выдано {fmt_money(amount)} игроку {target_uid}")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 # ═══════════════════════════════════════════
 # КОМАНДЫ ГОРОДОВ И ПОЛИТИКИ
@@ -2747,90 +2816,69 @@ async def cmd_sys_give(m: Message):
 async def cmd_city(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer("🏙️ <b>ГОРОДА</b>\n\n/city list\n/city choose [город]\n/city move [город]\n/city info\n/city residents", parse_mode="HTML")
+    if len(args) < 2: return await m.answer("🏙️ <b>ГОРОДА</b>\n\n/city list\n/city choose [город]\n/city move [город]\n/city info\n/city residents", parse_mode="HTML")
     subcmd = args[1].lower()
     if subcmd == "list":
         t = "🏙️ <b>ГОРОДА</b>\n\n"
-        for city in CITIES_LIST:
-            t += f"{city['emoji']} <b>{city['name']}</b>\n   {city['desc']}\n\n"
+        for city in CITIES_LIST: t += f"{city['emoji']} <b>{city['name']}</b>\n   {city['desc']}\n\n"
         t += "/city choose [название]"
         return await m.answer(t, parse_mode="HTML")
     if subcmd == "info":
         try:
             player_city = await get_player_city(cid, uid)
-            if not player_city:
-                return await m.answer("❌ Нет города!\n/city choose [город]")
+            if not player_city: return await m.answer("❌ Нет города!\n/city choose [город]")
             mayor = await get_mayor(cid, player_city['id'])
             treasury = await get_city_treasury(cid, player_city['id'])
             t = f"{player_city['emoji']} <b>{player_city['name']}</b>\n\n📊 {player_city['desc']}\n💰 Казна: {treasury}\n\n"
             if mayor:
-                try:
-                    mayor_name = (await bot.get_chat_member(cid, mayor['user_id'])).user.full_name
-                except:
-                    mayor_name = f"User{mayor['user_id']}"
+                try: mayor_name = (await bot.get_chat_member(cid, mayor['user_id'])).user.full_name
+                except: mayor_name = f"User{mayor['user_id']}"
                 days_left = int((mayor['expires_at'] - time.time()) / 86400)
                 t += f"🏛️ Мэр: {mayor_name}\n📊 Рейтинг: {mayor['approval_rating']}%\n⏰ {days_left} дн."
-            else:
-                t += "🏛️ Мэр: ВАКАНТНО"
+            else: t += "🏛️ Мэр: ВАКАНТНО"
             return await m.answer(t, parse_mode="HTML")
-        except Exception as e:
-            return await m.answer(f"❌ Ошибка: {str(e)}")
+        except Exception as e: return await m.answer(f"❌ Ошибка: {str(e)}")
     if subcmd == "choose":
-        if len(args) < 3:
-            return await m.answer("⚠️ /city choose Москва")
+        if len(args) < 3: return await m.answer("⚠️ /city choose Москва")
         city_name = " ".join(args[2:])
         existing = await get_player_city(cid, uid)
-        if existing:
-            return await m.answer(f"❌ Уже в <b>{existing['name']}</b>!\n/city move", parse_mode="HTML")
+        if existing: return await m.answer(f"❌ Уже в <b>{existing['name']}</b>!\n/city move", parse_mode="HTML")
         city = next((c for c in CITIES_LIST if c['name'].lower() == city_name.lower()), None)
-        if not city:
-            return await m.answer(f"❌ Не найден! /city list")
+        if not city: return await m.answer(f"❌ Не найден! /city list")
         await set_player_city(cid, uid, city['id'])
         return await m.answer(f"🎉 <b>Добро пожаловать в {city['emoji']} {city['name']}!</b>\n\n📊 {city['desc']}", parse_mode="HTML")
     if subcmd == "move":
         try:
-            if len(args) < 3:
-                return await m.answer("⚠️ /city move Москва")
+            if len(args) < 3: return await m.answer("⚠️ /city move Москва")
             city_name = " ".join(args[2:])
             existing = await get_player_city(cid, uid)
-            if not existing:
-                return await m.answer("❌ Сначала /city choose")
+            if not existing: return await m.answer("❌ Сначала /city choose")
             cooldown_left = CITY_MOVE_COOLDOWN - (time.time() - existing['moved_at'])
             if cooldown_left > 0:
                 days = int(cooldown_left / 86400)
                 hours = int((cooldown_left % 86400) / 3600)
                 return await m.answer(f"⏳ Через {days} дн. {hours} ч.")
             city = next((c for c in CITIES_LIST if c['name'].lower() == city_name.lower()), None)
-            if not city:
-                return await m.answer(f"❌ Не найден! /city list")
-            if city['id'] == existing['id']:
-                return await m.answer("❌ Уже здесь!")
+            if not city: return await m.answer(f"❌ Не найден! /city list")
+            if city['id'] == existing['id']: return await m.answer("❌ Уже здесь!")
             user = await get_user(cid, uid)
-            if user['balance'] < CITY_MOVE_COST:
-                return await m.answer(f"❌ Нужно {CITY_MOVE_COST}")
+            if user['balance'] < CITY_MOVE_COST: return await m.answer(f"❌ Нужно {CITY_MOVE_COST}")
             await update_balance(cid, uid, -CITY_MOVE_COST)
             await set_player_city(cid, uid, city['id'])
             return await m.answer(f"🚚 <b>ПЕРЕЕЗД!</b>\n\n{city['emoji']} {city['name']}\n📊 {city['desc']}", parse_mode="HTML")
-        except Exception as e:
-            return await m.answer(f"❌ Ошибка: {str(e)}")
+        except Exception as e: return await m.answer(f"❌ Ошибка: {str(e)}")
     if subcmd == "residents":
         player_city = await get_player_city(cid, uid)
-        if not player_city:
-            return await m.answer("❌ Нет города!")
+        if not player_city: return await m.answer("❌ Нет города!")
         try:
             async with pool.acquire() as conn:
                 residents = await conn.fetch("SELECT user_id FROM player_cities WHERE chat_id=$1 AND city_id=$2 LIMIT 20", cid, player_city['id'])
-        except Exception:
-            return await m.answer("❌ Ошибка")
-        if not residents:
-            return await m.answer("🏙️ Никого нет!")
+        except Exception: return await m.answer("❌ Ошибка")
+        if not residents: return await m.answer("🏙️ Никого нет!")
         t = f"{player_city['emoji']} <b>Жители {player_city['name']}:</b>\n\n"
         for i, r in enumerate(residents[:20], 1):
-            try:
-                name = (await bot.get_chat_member(cid, r['user_id'])).user.full_name
-            except:
-                name = f"User{r['user_id']}"
+            try: name = (await bot.get_chat_member(cid, r['user_id'])).user.full_name
+            except: name = f"User{r['user_id']}"
             t += f"{i}. {name}\n"
         t += f"\n📊 Всего: {len(residents)}"
         return await m.answer(t, parse_mode="HTML")
@@ -2841,12 +2889,10 @@ async def cmd_mayor_nominate(m: Message):
     try:
         cid, uid = m.chat.id, m.from_user.id
         player_city = await get_player_city(cid, uid)
-        if not player_city:
-            return await m.answer("❌ Нет города! /city choose")
+        if not player_city: return await m.answer("❌ Нет города! /city choose")
         success, msg = await nominate_mayor(cid, uid, player_city['id'])
         await m.answer(msg, parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("mayor_vote"))
 async def cmd_mayor_vote(m: Message):
@@ -2855,64 +2901,50 @@ async def cmd_mayor_vote(m: Message):
         args = m.text.split()
         if len(args) < 2:
             player_city = await get_player_city(cid, uid)
-            if not player_city:
-                return await m.answer("❌ Нет города!")
+            if not player_city: return await m.answer("❌ Нет города!")
             election_id = await get_current_election_id(cid, player_city['id'])
             async with pool.acquire() as conn:
                 candidates = await conn.fetch("SELECT user_id, votes FROM mayor_candidates WHERE chat_id=$1 AND city_id=$2 AND election_id=$3 ORDER BY id ASC", cid, player_city['id'], election_id)
-            if not candidates:
-                return await m.answer(f"🏛️ <b>Выборы в {player_city['emoji']} {player_city['name']}</b>\n\n❌ Нет кандидатов.\n/mayor_nominate", parse_mode="HTML")
+            if not candidates: return await m.answer(f"🏛️ <b>Выборы в {player_city['emoji']} {player_city['name']}</b>\n\n❌ Нет кандидатов.\n/mayor_nominate", parse_mode="HTML")
             t = f"🏛️ <b>Кандидаты {player_city['emoji']} {player_city['name']}:</b>\n\n"
             for i, c in enumerate(candidates, 1):
-                try:
-                    name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
-                except:
-                    name = f"User{c['user_id']}"
+                try: name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
+                except: name = f"User{c['user_id']}"
                 t += f"{i}. {name} ({c['votes']})\n"
             t += f"\n💰 {MAYOR_VOTE_COST}\n/mayor_vote [номер]"
             return await m.answer(t, parse_mode="HTML")
-        try:
-            candidate_num = int(args[1])
-        except ValueError:
-            return await m.answer("❌ Число!")
+        try: candidate_num = int(args[1])
+        except ValueError: return await m.answer("❌ Число!")
         player_city = await get_player_city(cid, uid)
-        if not player_city:
-            return await m.answer("❌ Нет города!")
+        if not player_city: return await m.answer("❌ Нет города!")
         success, msg = await vote_for_mayor(cid, uid, player_city['id'], candidate_num)
         await m.answer(msg, parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("mayor_finalize"))
 async def cmd_mayor_finalize(m: Message):
     try:
         cid, uid = m.chat.id, m.from_user.id
         player_city = await get_player_city(cid, uid)
-        if not player_city:
-            return await m.answer("❌ Нет города!")
+        if not player_city: return await m.answer("❌ Нет города!")
         result = await finalize_mayor_election(cid, player_city['id'])
-        if result is None:
-            return await m.answer(f"🏛️ <b>Выборы завершены.</b>\n\n❌ Никто не баллотировался.", parse_mode="HTML")
+        if result is None: return await m.answer(f"🏛️ <b>Выборы завершены.</b>\n\n❌ Никто не баллотировался.", parse_mode="HTML")
         return await m.answer(f"🎉 <b>НОВЫЙ МЭР!</b>\n\n🏛️ {player_city['emoji']} {player_city['name']}\n👤 ID: {result['user_id']}\n🗳️ {result['votes']}\n💰 +{result['bonus']}\n⏰ {MAYOR_TERM_DAYS} дн.\n\n/city info", parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("mayor_decree"))
 async def cmd_mayor_decree(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     player_city = await get_player_city(cid, uid)
-    if not player_city:
-        return await m.answer("❌ Нет города!")
-    if not await is_mayor(cid, uid, player_city['id']):
-        return await m.answer("❌ Только мэр!")
+    if not player_city: return await m.answer("❌ Нет города!")
+    if not await is_mayor(cid, uid, player_city['id']): return await m.answer("❌ Только мэр!")
     args = m.text.split()
     if len(args) < 2:
         return await m.answer(f"🏛️ <b>УКАЗЫ МЭРА</b>\n\n/mayor_decree work (+20% работа, 5к)\n/mayor_decree tools (-30% инструменты, 3к)\n/mayor_decree business (+15% бизнес, 8к)\n/mayor_decree cars (-25% авто, 4к)\n/mayor_decree event (праздник, 10к)\n\n💰 Казна: {await get_city_treasury(cid, player_city['id'])}", parse_mode="HTML")
     decree = args[1].lower()
     decree_map = {'work': 'work_bonus', 'tools': 'tool_discount', 'business': 'business_bonus', 'cars': 'car_discount', 'event': 'city_event'}
     decree_type = decree_map.get(decree)
-    if not decree_type:
-        return await m.answer("❌ Неизвестный указ!")
+    if not decree_type: return await m.answer("❌ Неизвестный указ!")
     success, msg = await create_decree(cid, player_city['id'], uid, decree_type)
     await m.answer(msg, parse_mode="HTML")
 
@@ -2920,15 +2952,12 @@ async def cmd_mayor_decree(m: Message):
 async def cmd_city_decrees(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     player_city = await get_player_city(cid, uid)
-    if not player_city:
-        return await m.answer("❌ Нет города!")
+    if not player_city: return await m.answer("❌ Нет города!")
     try:
         async with pool.acquire() as conn:
             decrees = await conn.fetch("SELECT * FROM city_decrees WHERE chat_id=$1 AND city_id=$2 AND active_until > $3", cid, player_city['id'], time.time())
-    except Exception:
-        return await m.answer("❌ Ошибка")
-    if not decrees:
-        return await m.answer(f"🏛️ <b>{player_city['emoji']} {player_city['name']}</b>\n\n❌ Нет указов")
+    except Exception: return await m.answer("❌ Ошибка")
+    if not decrees: return await m.answer(f"🏛️ <b>{player_city['emoji']} {player_city['name']}</b>\n\n❌ Нет указов")
     t = f"🏛️ <b>Указы {player_city['emoji']} {player_city['name']}:</b>\n\n"
     for d in decrees:
         hours_left = int((d['active_until'] - time.time()) / 3600)
@@ -2941,8 +2970,7 @@ async def cmd_president_nominate(m: Message):
         cid, uid = m.chat.id, m.from_user.id
         success, msg = await nominate_federal(cid, uid, 'president')
         await m.answer(msg, parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("president_vote"))
 async def cmd_president_vote(m: Message):
@@ -2953,60 +2981,47 @@ async def cmd_president_vote(m: Message):
             election_id = await get_current_federal_election_id(cid, 'president')
             async with pool.acquire() as conn:
                 candidates = await conn.fetch("SELECT user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='president' AND election_id=$2 ORDER BY id ASC", cid, election_id)
-            if not candidates:
-                return await m.answer("🏛️ <b>Выборы Президента</b>\n\n❌ Нет кандидатов.\n/president_nominate", parse_mode="HTML")
+            if not candidates: return await m.answer("🏛️ <b>Выборы Президента</b>\n\n❌ Нет кандидатов.\n/president_nominate", parse_mode="HTML")
             t = "🏛️ <b>Кандидаты:</b>\n\n"
             for i, c in enumerate(candidates, 1):
-                try:
-                    name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
-                except:
-                    name = f"User{c['user_id']}"
+                try: name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
+                except: name = f"User{c['user_id']}"
                 t += f"{i}. {name} ({c['votes']})\n"
             t += f"\n💰 {PRESIDENT_VOTE_COST}\n/president_vote [номер]"
             return await m.answer(t, parse_mode="HTML")
-        try:
-            candidate_num = int(args[1])
-        except ValueError:
-            return await m.answer("❌ Число!")
+        try: candidate_num = int(args[1])
+        except ValueError: return await m.answer("❌ Число!")
         success, msg = await vote_federal(cid, uid, 'president', candidate_num)
         await m.answer(msg, parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("president_finalize"))
 async def cmd_president_finalize(m: Message):
     try:
         cid, uid = m.chat.id, m.from_user.id
         result = await finalize_federal_election(cid, 'president')
-        if result is None:
-            return await m.answer("🏛️ <b>Выборы завершены.</b>\n\n❌ Никто не баллотировался.", parse_mode="HTML")
+        if result is None: return await m.answer("🏛️ <b>Выборы завершены.</b>\n\n❌ Никто не баллотировался.", parse_mode="HTML")
         return await m.answer(f"🎉 <b>НОВЫЙ ПРЕЗИДЕНТ!</b>\n\n👤 ID: {result['user_id']}\n🗳️ {result['votes']}\n💰 +{result['bonus']}\n⏰ {PRESIDENT_TERM_DAYS} дн.", parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("president_decree"))
 async def cmd_president_decree(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if not await is_federal_official(cid, uid, 'president'):
-        return await m.answer("❌ Только Президент!")
+    if not await is_federal_official(cid, uid, 'president'): return await m.answer("❌ Только Президент!")
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer("🏛️ <b>УКАЗЫ</b>\n\n/president_decree amnesty\n/president_decree tax_cut\n/president_decree tax_boost\n/president_decree emergency", parse_mode="HTML")
+    if len(args) < 2: return await m.answer("🏛️ <b>УКАЗЫ</b>\n\n/president_decree amnesty\n/president_decree tax_cut\n/president_decree tax_boost\n/president_decree emergency", parse_mode="HTML")
     decree = args[1].lower()
     decree_map = {'amnesty': 'amnesty', 'tax_cut': 'tax_cut', 'tax_boost': 'tax_boost', 'emergency': 'emergency'}
     decree_type = decree_map.get(decree)
-    if not decree_type:
-        return await m.answer("❌ Неизвестный указ!")
+    if not decree_type: return await m.answer("❌ Неизвестный указ!")
     if decree_type == 'amnesty':
         try:
             async with pool.acquire() as conn:
                 jailed = await conn.fetch("SELECT user_id FROM jail WHERE chat_id=$1 AND release_time > $2", cid, time.time())
                 count = len(jailed)
-                if count > 0:
-                    await conn.execute("DELETE FROM jail WHERE chat_id=$1 AND release_time > $2", cid, time.time())
+                if count > 0: await conn.execute("DELETE FROM jail WHERE chat_id=$1 AND release_time > $2", cid, time.time())
             return await m.answer(f"🕊️ <b>АМНИСТИЯ!</b>\n\nОсвобождено: <b>{count}</b>", parse_mode="HTML")
-        except Exception as e:
-            return await m.answer(f"❌ Ошибка: {str(e)}")
+        except Exception as e: return await m.answer(f"❌ Ошибка: {str(e)}")
     success, msg = await create_federal_decree(cid, uid, 'president', decree_type)
     await m.answer(msg, parse_mode="HTML")
 
@@ -3016,10 +3031,8 @@ async def cmd_president_decrees(m: Message):
     try:
         async with pool.acquire() as conn:
             decrees = await conn.fetch("SELECT * FROM federal_decrees WHERE chat_id=$1 AND role='president' AND active_until > $2", cid, time.time())
-    except Exception:
-        return await m.answer("❌ Ошибка")
-    if not decrees:
-        return await m.answer("🏛️ <b>Указы Президента</b>\n\n❌ Нет активных")
+    except Exception: return await m.answer("❌ Ошибка")
+    if not decrees: return await m.answer("🏛️ <b>Указы Президента</b>\n\n❌ Нет активных")
     t = "🏛️ <b>Активные указы:</b>\n\n"
     for d in decrees:
         hours_left = int((d['active_until'] - time.time()) / 3600)
@@ -3032,8 +3045,7 @@ async def cmd_prime_nominate(m: Message):
         cid, uid = m.chat.id, m.from_user.id
         success, msg = await nominate_federal(cid, uid, 'prime_minister')
         await m.answer(msg, parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("prime_vote"))
 async def cmd_prime_vote(m: Message):
@@ -3044,59 +3056,46 @@ async def cmd_prime_vote(m: Message):
             election_id = await get_current_federal_election_id(cid, 'prime_minister')
             async with pool.acquire() as conn:
                 candidates = await conn.fetch("SELECT user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='prime_minister' AND election_id=$2 ORDER BY id ASC", cid, election_id)
-            if not candidates:
-                return await m.answer("💼 <b>Выборы Премьера</b>\n\n❌ Нет кандидатов.\n/prime_nominate", parse_mode="HTML")
+            if not candidates: return await m.answer("💼 <b>Выборы Премьера</b>\n\n❌ Нет кандидатов.\n/prime_nominate", parse_mode="HTML")
             t = "💼 <b>Кандидаты:</b>\n\n"
             for i, c in enumerate(candidates, 1):
-                try:
-                    name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
-                except:
-                    name = f"User{c['user_id']}"
+                try: name = (await bot.get_chat_member(cid, c['user_id'])).user.full_name
+                except: name = f"User{c['user_id']}"
                 t += f"{i}. {name} ({c['votes']})\n"
             t += f"\n💰 {PRIME_MINISTER_VOTE_COST}\n/prime_vote [номер]"
             return await m.answer(t, parse_mode="HTML")
-        try:
-            candidate_num = int(args[1])
-        except ValueError:
-            return await m.answer("❌ Число!")
+        try: candidate_num = int(args[1])
+        except ValueError: return await m.answer("❌ Число!")
         success, msg = await vote_federal(cid, uid, 'prime_minister', candidate_num)
         await m.answer(msg, parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("prime_finalize"))
 async def cmd_prime_finalize(m: Message):
     try:
         cid, uid = m.chat.id, m.from_user.id
         result = await finalize_federal_election(cid, 'prime_minister')
-        if result is None:
-            return await m.answer("💼 <b>Выборы завершены.</b>\n\n❌ Никто не баллотировался.", parse_mode="HTML")
+        if result is None: return await m.answer("💼 <b>Выборы завершены.</b>\n\n❌ Никто не баллотировался.", parse_mode="HTML")
         return await m.answer(f"🎉 <b>НОВЫЙ ПРЕМЬЕР!</b>\n\n👤 ID: {result['user_id']}\n🗳️ {result['votes']}\n💰 +{result['bonus']}\n⏰ {PRIME_MINISTER_TERM_DAYS} дн.", parse_mode="HTML")
-    except Exception as e:
-        await m.answer(f"❌ Ошибка: {str(e)}")
+    except Exception as e: await m.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.message(Command("prime_decree"))
 async def cmd_prime_decree(m: Message):
     cid, uid = m.chat.id, m.from_user.id
-    if not await is_federal_official(cid, uid, 'prime_minister'):
-        return await m.answer("❌ Только Премьер!")
+    if not await is_federal_official(cid, uid, 'prime_minister'): return await m.answer("❌ Только Премьер!")
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer("💼 <b>УКАЗЫ</b>\n\n/prime_decree subsidy\n/prime_decree investment\n/prime_decree tax_cut\n/prime_decree tax_boost", parse_mode="HTML")
+    if len(args) < 2: return await m.answer("💼 <b>УКАЗЫ</b>\n\n/prime_decree subsidy\n/prime_decree investment\n/prime_decree tax_cut\n/prime_decree tax_boost", parse_mode="HTML")
     decree = args[1].lower()
     decree_map = {'subsidy': 'subsidy', 'investment': 'investment', 'tax_cut': 'tax_cut', 'tax_boost': 'tax_boost'}
     decree_type = decree_map.get(decree)
-    if not decree_type:
-        return await m.answer("❌ Неизвестный указ!")
+    if not decree_type: return await m.answer("❌ Неизвестный указ!")
     if decree_type == 'investment':
         try:
             async with pool.acquire() as conn:
                 cities = await conn.fetch("SELECT DISTINCT city_id FROM player_cities WHERE chat_id=$1", cid)
-                for city_row in cities:
-                    await update_city_treasury(cid, city_row['city_id'], 5000)
+                for city_row in cities: await update_city_treasury(cid, city_row['city_id'], 5000)
             return await m.answer(f"🏗️ <b>ИНВЕСТИЦИИ!</b>\n\nКаждому городу +<b>5000</b>\nГородов: <b>{len(cities)}</b>", parse_mode="HTML")
-        except Exception as e:
-            return await m.answer(f"❌ Ошибка: {str(e)}")
+        except Exception as e: return await m.answer(f"❌ Ошибка: {str(e)}")
     success, msg = await create_federal_decree(cid, uid, 'prime_minister', decree_type)
     await m.answer(msg, parse_mode="HTML")
 
@@ -3106,10 +3105,8 @@ async def cmd_prime_decrees(m: Message):
     try:
         async with pool.acquire() as conn:
             decrees = await conn.fetch("SELECT * FROM federal_decrees WHERE chat_id=$1 AND role='prime_minister' AND active_until > $2", cid, time.time())
-    except Exception:
-        return await m.answer("❌ Ошибка")
-    if not decrees:
-        return await m.answer("💼 <b>Указы Премьера</b>\n\n❌ Нет активных")
+    except Exception: return await m.answer("❌ Ошибка")
+    if not decrees: return await m.answer("💼 <b>Указы Премьера</b>\n\n❌ Нет активных")
     t = "💼 <b>Активные указы:</b>\n\n"
     for d in decrees:
         hours_left = int((d['active_until'] - time.time()) / 3600)
@@ -3120,31 +3117,24 @@ async def cmd_prime_decrees(m: Message):
 async def cmd_impeach(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
-    if len(args) < 2:
-        return await m.answer("⚖️ <b>ИМПИЧМЕНТ</b>\n\n/impeach president — против Президента\n/impeach prime — против Премьера\n\nНужно 10 голосов за 7 дней", parse_mode="HTML")
+    if len(args) < 2: return await m.answer("⚖️ <b>ИМПИЧМЕНТ</b>\n\n/impeach president — против Президента\n/impeach prime — против Премьера\n\nНужно 10 голосов за 7 дней", parse_mode="HTML")
     role = args[1].lower()
-    if role not in ['president', 'prime']:
-        return await m.answer("❌ Используй president или prime")
+    if role not in ['president', 'prime']: return await m.answer("❌ Используй president или prime")
     db_role = 'president' if role == 'president' else 'prime_minister'
     official = await get_federal_role(cid, db_role)
-    if not official:
-        return await m.answer("❌ Сейчас нет действующего чиновника!")
-    if official['user_id'] == uid:
-        return await m.answer("❌ Нельзя голосовать против себя!")
+    if not official: return await m.answer("❌ Сейчас нет действующего чиновника!")
+    if official['user_id'] == uid: return await m.answer("❌ Нельзя голосовать против себя!")
     async with pool.acquire() as conn:
         already_voted = await conn.fetchrow("SELECT * FROM impeachment_votes WHERE chat_id=$1 AND role=$2 AND voter_id=$3", cid, db_role, uid)
-        if already_voted:
-            return await m.answer("❌ Ты уже голосовал за импичмент!")
+        if already_voted: return await m.answer("❌ Ты уже голосовал за импичмент!")
         await conn.execute("INSERT INTO impeachment_votes (chat_id, role, voter_id, voted_at) VALUES ($1,$2,$3,$4)", cid, db_role, uid, time.time())
         votes = await conn.fetchval("SELECT COUNT(*) FROM impeachment_votes WHERE chat_id=$1 AND role=$2", cid, db_role)
     role_name = "Президент" if role == 'president' else "Премьер"
     if votes >= 10:
         await conn.execute("DELETE FROM federal_roles WHERE chat_id=$1 AND role=$2", cid, db_role)
         await conn.execute("DELETE FROM impeachment_votes WHERE chat_id=$1 AND role=$2", cid, db_role)
-        try:
-            official_name = (await bot.get_chat_member(cid, official['user_id'])).user.full_name
-        except:
-            official_name = f"User{official['user_id']}"
+        try: official_name = (await bot.get_chat_member(cid, official['user_id'])).user.full_name
+        except: official_name = f"User{official['user_id']}"
         msg = f"⚖️ <b>ИМПИЧМЕНТ УСПЕШЕН!</b>\n\n👤 {role_name} {official_name} отстранён от должности!\n🗳️ Голосов: {votes}/10\n\n⏳ Новые выборы через 24 часа"
         await bot.send_message(cid, msg, parse_mode="HTML")
         await m.answer("✅ Импичмент проведён!")
@@ -3155,38 +3145,28 @@ async def cmd_impeach(m: Message):
 async def cmd_debt_give(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     args = m.text.split()
-    if len(args) < 3:
-        return await m.answer(f"📜 <b>ДАТЬ В ДОЛГ</b>\n\nОтветь на сообщение:\n/debt_give сумма дни\n\nПример: /debt_give 50000 3\nКомиссия: {DEBT_FEE_PERCENT}%", parse_mode="HTML")
-    if not m.reply_to_message:
-        return await m.answer("⚠️ Ответь на сообщение!")
+    if len(args) < 3: return await m.answer(f"📜 <b>ДАТЬ В ДОЛГ</b>\n\nОтветь на сообщение:\n/debt_give сумма дни\n\nПример: /debt_give 50000 3\nКомиссия: {DEBT_FEE_PERCENT}%", parse_mode="HTML")
+    if not m.reply_to_message: return await m.answer("⚠️ Ответь на сообщение!")
     borrower_id = m.reply_to_message.from_user.id
-    if borrower_id == uid:
-        return await m.answer("❌ Нельзя себе!")
-    if await is_in_jail(cid, borrower_id):
-        return await m.answer("🔒 В тюрьме!")
+    if borrower_id == uid: return await m.answer("❌ Нельзя себе!")
+    if await is_in_jail(cid, borrower_id): return await m.answer("🔒 В тюрьме!")
     try:
         amount = int(args[1])
         days = int(args[2])
-    except (ValueError, IndexError):
-        return await m.answer("❌ Числа!")
-    if amount < DEBT_MIN_AMOUNT:
-        return await m.answer(f"❌ Мин: {fmt_money(DEBT_MIN_AMOUNT)}")
-    if days < DEBT_MIN_DAYS or days > DEBT_MAX_DAYS:
-        return await m.answer(f"❌ {DEBT_MIN_DAYS}-{DEBT_MAX_DAYS} дн.")
+    except (ValueError, IndexError): return await m.answer("❌ Числа!")
+    if amount < DEBT_MIN_AMOUNT: return await m.answer(f"❌ Мин: {fmt_money(DEBT_MIN_AMOUNT)}")
+    if days < DEBT_MIN_DAYS or days > DEBT_MAX_DAYS: return await m.answer(f"❌ {DEBT_MIN_DAYS}-{DEBT_MAX_DAYS} дн.")
     fee = int(amount * DEBT_FEE_PERCENT / 100)
     total = amount + fee
     lender = await get_user(cid, uid)
-    if lender['balance'] < total:
-        return await m.answer(f"❌ Нужно {fmt_money(total)}\nУ вас: {fmt_money(lender['balance'])}", parse_mode="HTML")
+    if lender['balance'] < total: return await m.answer(f"❌ Нужно {fmt_money(total)}\nУ вас: {fmt_money(lender['balance'])}", parse_mode="HTML")
     deadline = time.time() + days * 86400
     async with pool.acquire() as conn:
         await update_balance(cid, uid, -total)
         await update_balance(cid, borrower_id, amount)
         await conn.execute("INSERT INTO debts (chat_id, lender_id, borrower_id, amount, fee, created_at, deadline) VALUES ($1,$2,$3,$4,$5,$6,$7)", cid, uid, borrower_id, amount, fee, time.time(), deadline)
-    try:
-        borrower_name = (await bot.get_chat_member(cid, borrower_id)).user.full_name
-    except:
-        borrower_name = f"User{borrower_id}"
+    try: borrower_name = (await bot.get_chat_member(cid, borrower_id)).user.full_name
+    except: borrower_name = f"User{borrower_id}"
     await m.answer(f"📜 <b>РАСПИСКА</b>\n\n👤 {borrower_name}\n💰 {fmt_money(amount)}\n📅 {days} дн.\n🏦 Комиссия: {fmt_money(fee)}\n📤 Списано: {fmt_money(total)}\n\n⚠️ Коллекторы!", parse_mode="HTML")
     await bot.send_message(cid, f"📜 <b>ВЫ ВЗЯЛИ В ДОЛГ!</b>\n\n👤 {m.from_user.full_name}\n💰 {fmt_money(amount)}\n📅 {days} дн.\n⚠️ +{DEBT_PENALTY_PERCENT}% при просрочке!\n\n/debt_return", parse_mode="HTML")
 
@@ -3195,11 +3175,9 @@ async def cmd_debt_return(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     async with pool.acquire() as conn:
         debt = await conn.fetchrow("SELECT * FROM debts WHERE borrower_id=$1 AND status='active' ORDER BY deadline ASC LIMIT 1", uid)
-        if not debt:
-            return await m.answer("✅ Нет долгов!")
+        if not debt: return await m.answer("✅ Нет долгов!")
         user = await get_user(cid, uid)
-        if user['balance'] < debt['amount']:
-            return await m.answer(f"❌ Нужно {fmt_money(debt['amount'])}")
+        if user['balance'] < debt['amount']: return await m.answer(f"❌ Нужно {fmt_money(debt['amount'])}")
         await update_balance(cid, uid, -debt['amount'])
         await update_balance(cid, debt['lender_id'], debt['amount'])
         await conn.execute("UPDATE debts SET status='returned' WHERE id=$1", debt['id'])
@@ -3218,43 +3196,34 @@ async def cmd_debt_list(m: Message):
             try:
                 lender = await bot.get_chat_member(cid, d['lender_id'])
                 lender_name = lender.user.full_name
-            except:
-                lender_name = f"User{d['lender_id']}"
+            except: lender_name = f"User{d['lender_id']}"
             t += f"• {lender_name}: {fmt_money(d['amount'])}\n"
-    else:
-        t += "✅ Я никому не должен\n"
+    else: t += "✅ Я никому не должен\n"
     if owed_me:
         t += "\n📥 <b>Мне должны:</b>\n"
         for d in owed_me:
             try:
                 borrower = await bot.get_chat_member(cid, d['borrower_id'])
                 borrower_name = borrower.user.full_name
-            except:
-                borrower_name = f"User{d['borrower_id']}"
+            except: borrower_name = f"User{d['borrower_id']}"
             t += f"• {borrower_name}: {fmt_money(d['amount'])}\n"
-    else:
-        t += "\n✅ Мне никто не должен"
+    else: t += "\n✅ Мне никто не должен"
     await m.answer(t, parse_mode="HTML")
 
 @dp.message(Command("mayor_report"))
 async def cmd_mayor_report(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     player_city = await get_player_city(cid, uid)
-    if not player_city:
-        return await m.answer("❌ Нет города!")
+    if not player_city: return await m.answer("❌ Нет города!")
     mayor = await get_mayor(cid, player_city['id'])
-    if not mayor or mayor['user_id'] != uid:
-        return await m.answer("❌ Только мэр!")
+    if not mayor or mayor['user_id'] != uid: return await m.answer("❌ Только мэр!")
     args = m.text.split(maxsplit=1)
-    if len(args) < 2:
-        return await m.answer("📊 <b>ОТЧЁТ</b>\n\n/mayor_report [описание]\n\nПример: /mayor_report Построен парк", parse_mode="HTML")
+    if len(args) < 2: return await m.answer("📊 <b>ОТЧЁТ</b>\n\n/mayor_report [описание]\n\nПример: /mayor_report Построен парк", parse_mode="HTML")
     description = args[1]
     async with pool.acquire() as conn:
         report = await conn.fetchrow("""SELECT * FROM mayor_reports WHERE chat_id=$1 AND city_id=$2 AND mayor_id=$3 AND status='pending' ORDER BY created_at DESC LIMIT 1""", cid, player_city['id'], uid)
-        if not report:
-            return await m.answer("❌ Нет заданий!")
-        if time.time() > report['report_deadline']:
-            return await m.answer("⏰ Срок истёк!")
+        if not report: return await m.answer("❌ Нет заданий!")
+        if time.time() > report['report_deadline']: return await m.answer("⏰ Срок истёк!")
         await conn.execute("UPDATE mayor_reports SET status='submitted', budget_spent=budget_allocated WHERE id=$1", report['id'])
     msg = f"📊 <b>ОТЧЁТ СДАН!</b>\n\n🏙️ {player_city['emoji']} {player_city['name']}\n💰 {fmt_money(report['budget_allocated'])}\n📋 {description}\n\n⏳ Ожидает проверки..."
     await bot.send_message(cid, msg, parse_mode="HTML")
@@ -3264,35 +3233,26 @@ async def cmd_mayor_report(m: Message):
 async def cmd_president_check_mayor(m: Message):
     cid, uid = m.chat.id, m.from_user.id
     president = await get_federal_role(cid, 'president')
-    if not president or president['user_id'] != uid:
-        return await m.answer("❌ Только Президент!")
+    if not president or president['user_id'] != uid: return await m.answer("❌ Только Президент!")
     args = m.text.split()
     if len(args) < 2:
         cities_list = ", ".join([str(c['id']) for c in CITIES_LIST])
         return await m.answer(f"⚖️ <b>ПРОВЕРКА</b>\n\n/president_check_mayor [город_id] [approve/reject]\n\nГорода: {cities_list}", parse_mode="HTML")
-    try:
-        city_id = int(args[1])
-    except ValueError:
-        return await m.answer("❌ Число!")
+    try: city_id = int(args[1])
+    except ValueError: return await m.answer("❌ Число!")
     action = args[2].lower() if len(args) > 2 else None
-    if action not in ['approve', 'reject']:
-        return await m.answer("❌ approve или reject!")
+    if action not in ['approve', 'reject']: return await m.answer("❌ approve или reject!")
     city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
-    if not city:
-        return await m.answer(f"❌ Город не найден!")
+    if not city: return await m.answer(f"❌ Город не найден!")
     async with pool.acquire() as conn:
         report = await conn.fetchrow("""SELECT * FROM mayor_reports WHERE chat_id=$1 AND city_id=$2 AND status IN ('pending','submitted') ORDER BY created_at DESC LIMIT 1""", cid, city_id)
-        if not report:
-            return await m.answer(f"✅ В {city['emoji']} {city['name']} нет отчётов!")
+        if not report: return await m.answer(f"✅ В {city['emoji']} {city['name']} нет отчётов!")
         mayor_name = ""
-        try:
-            mayor_name = (await bot.get_chat_member(cid, report['mayor_id'])).user.full_name
-        except:
-            mayor_name = f"User{report['mayor_id']}"
+        try: mayor_name = (await bot.get_chat_member(cid, report['mayor_id'])).user.full_name
+        except: mayor_name = f"User{report['mayor_id']}"
         if action == 'approve':
             remaining = report['budget_allocated'] - report['budget_spent']
-            if remaining > 0:
-                await update_city_treasury(cid, city_id, remaining)
+            if remaining > 0: await update_city_treasury(cid, city_id, remaining)
             await conn.execute("""UPDATE mayors SET approval_rating = LEAST(100, approval_rating + 10) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
             await conn.execute("UPDATE mayor_reports SET status='approved' WHERE id=$1", report['id'])
             msg = f"✅ <b>ОДОБРЕН!</b>\n\n🏙️ {city['emoji']} {city['name']}\n👤 {mayor_name}\n💰 Возврат: {fmt_money(remaining)}\n📈 Рейтинг: +10%"
@@ -3315,12 +3275,1303 @@ async def cmd_president_check_mayor(m: Message):
             await m.answer("✅ Наказание применено!")
 
 # ═══════════════════════════════════════════
+# ТОРГОВАЯ ПЛОЩАДКА
+# ═══════════════════════════════════════════
+@dp.message(Command("marketplace"))
+async def cmd_marketplace(m: Message):
+    try:
+        cid = m.chat.id
+        async with pool.acquire() as conn:
+            items = await conn.fetch("SELECT * FROM marketplace WHERE chat_id=$1 ORDER BY created_at DESC LIMIT 20", cid)
+        if not items: return await m.answer("🏪 <b>Торговая площадка пуста!</b>\n\nПродайте что-нибудь через /sell", parse_mode="HTML")
+        t = "🏪 <b>Торговая площадка:</b>\n\n"
+        for item in items:
+            seller = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, item['seller_id']) or f"User{item['seller_id']}"
+            if item['item_type'] == 'inventory': icon = "🎒"
+            elif item['item_type'] == 'car': icon = "🚗"
+            else: icon = "🏢"
+            t += f"{icon} <b>{item['item_name']}</b>\n   💰 {fmt_money(item['price'])}\n   👤 Продавец: {seller}\n   🛒 /buy_item {item['id']}\n\n"
+        t += "━━━━━━━━━━━━━━━━━━━━\n💡 Чтобы продать: /sell inv/car/biz название цена"
+        await m.answer(t, parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"marketplace error: {e}")
+        await m.answer(f"❌ Ошибка при загрузке площадки: {str(e)}")
+
+@dp.message(Command("sell"))
+async def cmd_sell(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        if len(args) < 3:
+            return await m.answer("🏪 <b>Продать предмет</b>\n\nИспользование:\n/sell inv <название> <цена>\n/sell car <ключ_машины> <цена>\n/sell biz <название_бизнеса> <цена>\n\nПример: /sell inv Алмаз 5000", parse_mode="HTML")
+        sell_type = args[1].lower()
+        try: price = int(args[-1])
+        except: return await m.answer("❌ Цена должна быть числом!")
+        if price < 10: return await m.answer("❌ Минимальная цена: 10")
+        item_name = " ".join(args[2:-1])
+        async with pool.acquire() as conn:
+            if sell_type == 'inv':
+                item = await conn.fetchrow("SELECT id, item_name, rarity FROM inventory WHERE chat_id=$1 AND user_id=$2 AND item_name=$3 LIMIT 1", cid, uid, item_name)
+                if not item: return await m.answer(f"❌ У вас нет предмета '{item_name}'")
+                await conn.execute("DELETE FROM inventory WHERE id=$1", item['id'])
+                await conn.execute("INSERT INTO marketplace (chat_id, seller_id, item_type, item_name, item_key, price, created_at) VALUES ($1,$2,'inventory',$3,$4,$5,$6)", cid, uid, item['item_name'], item['rarity'], price, time.time())
+                await m.answer(f"✅ Предмет <b>{item['item_name']}</b> выставлен за {fmt_money(price)}!", parse_mode="HTML")
+            elif sell_type == 'car':
+                car_key = item_name.lower().replace(" ", "_")
+                car = await conn.fetchrow("SELECT id, car_name FROM garage WHERE chat_id=$1 AND user_id=$2 AND car_key=$3 LIMIT 1", cid, uid, car_key)
+                if not car: return await m.answer(f"❌ У вас нет машины с ключом '{car_key}'. Используйте /mycar чтобы посмотреть ключи.")
+                await conn.execute("DELETE FROM garage WHERE id=$1", car['id'])
+                await conn.execute("INSERT INTO marketplace (chat_id, seller_id, item_type, item_name, item_key, price, created_at) VALUES ($1,$2,'car',$3,$4,$5,$6)", cid, uid, car['car_name'], car_key, price, time.time())
+                await m.answer(f"✅ Машина <b>{car['car_name']}</b> выставлена за {fmt_money(price)}!", parse_mode="HTML")
+            elif sell_type == 'biz':
+                biz = await conn.fetchrow("SELECT id, business_name, income FROM businesses WHERE chat_id=$1 AND user_id=$2 AND business_name ILIKE $3 LIMIT 1", cid, uid, f"%{item_name}%")
+                if not biz: return await m.answer(f"❌ У вас нет бизнеса '{item_name}'")
+                has_stocks = await conn.fetchval("SELECT 1 FROM stocks WHERE business_id=$1", biz['id'])
+                if has_stocks: return await m.answer("❌ Нельзя продать бизнес, у которого есть акции! Сначала выкупите все акции.")
+                await conn.execute("DELETE FROM businesses WHERE id=$1", biz['id'])
+                await conn.execute("INSERT INTO marketplace (chat_id, seller_id, item_type, item_name, item_key, price, created_at) VALUES ($1,$2,'business',$3,$4,$5,$6)", cid, uid, biz['business_name'], biz['business_name'], price, time.time())
+                await m.answer(f"✅ Бизнес <b>{biz['business_name']}</b> выставлен за {fmt_money(price)}!", parse_mode="HTML")
+            else: return await m.answer("❌ Тип: inv, car или biz")
+    except Exception as e:
+        logging.error(f"Ошибка в cmd_sell: {e}")
+        await m.answer(f"❌ Ошибка при продаже: {str(e)}")
+
+@dp.message(Command("buy_item"))
+async def cmd_buy_item(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        if len(args) < 2: return await m.answer("🏪 <b>/buy_item ID_лота</b>")
+        try: lot_id = int(args[1])
+        except: return await m.answer("❌ ID должен быть числом!")
+        async with pool.acquire() as conn:
+            lot = await conn.fetchrow("SELECT * FROM marketplace WHERE id=$1 AND chat_id=$2", lot_id, cid)
+            if not lot: return await m.answer("❌ Лот не найден или уже продан!")
+            if lot['seller_id'] == uid: return await m.answer("❌ Нельзя купить у себя!")
+            buyer = await get_user(cid, uid)
+            if buyer['balance'] < lot['price']: return await m.answer(f"❌ Нужно {fmt_money(lot['price'])}. У вас: {fmt_money(buyer['balance'])}")
+            await update_balance(cid, uid, -lot['price'])
+            await update_balance(cid, lot['seller_id'], lot['price'])
+            if lot['item_type'] == 'inventory':
+                await conn.execute("INSERT INTO inventory (chat_id, user_id, item_name, item_type, rarity) VALUES ($1,$2,$3,'market',$4)", cid, uid, lot['item_name'], lot['item_key'])
+            elif lot['item_type'] == 'car':
+                await conn.execute("INSERT INTO garage (chat_id, user_id, car_key, car_name) VALUES ($1,$2,$3,$4)", cid, uid, lot['item_key'], lot['item_name'])
+            elif lot['item_type'] == 'business':
+                await conn.execute("INSERT INTO businesses (chat_id, user_id, business_name, income, last_collect_time) VALUES ($1,$2,$3,0,$4)", cid, uid, lot['item_name'], time.time())
+                for k, v in MARKET.items():
+                    if v['type'] == 'business' and v['name'] == lot['item_name']:
+                        await conn.execute("UPDATE businesses SET income=$1 WHERE chat_id=$2 AND user_id=$3 AND business_name=$4", v['income'], cid, uid, lot['item_name'])
+                        break
+            await conn.execute("DELETE FROM marketplace WHERE id=$1", lot_id)
+            seller_name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, lot['seller_id']) or f"User{lot['seller_id']}"
+            await m.answer(f"✅ Куплено <b>{lot['item_name']}</b> у {seller_name} за {fmt_money(lot['price'])}!", parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"buy_item error: {e}")
+        await m.answer(f"❌ Ошибка при покупке: {str(e)}")
+
+# ═══════════════════════════════════════════
+# БИРЖА АКЦИЙ
+# ═══════════════════════════════════════════
+@dp.message(Command("stocks"))
+async def cmd_stocks(m: Message):
+    try:
+        cid = m.chat.id
+        async with pool.acquire() as conn:
+            stocks = await conn.fetch("SELECT * FROM stocks WHERE chat_id=$1 AND shares_available > 0 ORDER BY price_per_share ASC", cid)
+        if not stocks: return await m.answer("📈 <b>Биржа пуста!</b>\n\nВладельцы бизнесов могут выпустить акции: /issue_stock", parse_mode="HTML")
+        t = "📈 <b>Биржа акций:</b>\n\n"
+        count = 0
+        for stock in stocks:
+            try:
+                owner_name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, stock['owner_id']) or f"User{stock['owner_id']}"
+                biz = await conn.fetchrow("SELECT business_name FROM businesses WHERE id=$1", stock['business_id'])
+                biz_name = biz['business_name'] if biz else "❓ Удалён"
+                price = stock['price_per_share'] if stock['price_per_share'] else 0
+                last_change = stock['last_price_change'] if stock['last_price_change'] else price
+                if last_change == 0: last_change = 1
+                change_pct = int((price - last_change) / abs(last_change) * 100)
+                arrow = "📈" if change_pct >= 0 else "📉"
+                shares_avail = stock['shares_available'] if stock['shares_available'] else 0
+                shares_issued = stock['shares_issued'] if stock['shares_issued'] else 0
+                dividend = stock['dividend_per_share'] if stock['dividend_per_share'] else 0
+                t += f"🏢 <b>{biz_name}</b> ({owner_name})\n💰 Цена: {fmt_money(price)}/акция {arrow} {change_pct}%\n💵 Дивиденды: {fmt_money(dividend)}/день\n📊 Доступно: {shares_avail}/{shares_issued}\n🛒 /buy_stock {stock['id']} (кол-во)\n\n"
+                count += 1
+            except Exception as e: logging.error(f"stocks display error for stock {stock['id']}: {e}")
+        if count == 0: return await m.answer("📈 <b>Нет доступных акций!</b>", parse_mode="HTML")
+        t += "💡 Выпустить акции: /issue_stock (название бизнеса)"
+        await m.answer(t, parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"stocks error: {e}")
+        await m.answer(f"❌ Ошибка при загрузке биржи: {str(e)}")
+
+@dp.message(Command("issue_stock"))
+async def cmd_issue_stock(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        if len(args) < 2: return await m.answer("📈 <b>/issue_stock (название бизнеса)</b>\n\nВыпускает 10 акций вашего бизнеса", parse_mode="HTML")
+        biz_name = " ".join(args[1:])
+        async with pool.acquire() as conn:
+            biz = await conn.fetchrow("SELECT id, business_name, income FROM businesses WHERE chat_id=$1 AND user_id=$2 AND business_name ILIKE $3 LIMIT 1", cid, uid, f"%{biz_name}%")
+            if not biz: return await m.answer(f"❌ У вас нет бизнеса '{biz_name}'")
+            existing = await conn.fetchval("SELECT 1 FROM stocks WHERE business_id=$1", biz['id'])
+            if existing: return await m.answer("❌ У этого бизнеса уже есть акции!")
+            market_price = 0
+            for k, v in MARKET.items():
+                if v['type'] == 'business' and v['name'] == biz['business_name']:
+                    market_price = v['price']
+                    break
+            if market_price == 0: market_price = biz['income'] * 6
+            price = max(100, int(market_price / 15))
+            dividend = max(1, biz['income'] // 30)
+            await conn.execute("INSERT INTO stocks (chat_id, business_id, owner_id, shares_issued, shares_available, price_per_share, dividend_per_share, last_price_change) VALUES ($1,$2,$3,10,10,$4,$5,$6)", cid, biz['id'], uid, price, dividend, float(price))
+            await m.answer(f"📈 <b>Акции выпущены!</b>\n\n🏢 Бизнес: {biz['business_name']}\n💰 Цена: {fmt_money(price)}/акция\n💵 Дивиденды: {fmt_money(dividend)}/день\n📊 Выпущено: 10 акций\n\nИгроки могут купить их через /stocks", parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"issue_stock error: {e}")
+        await m.answer(f"❌ Ошибка при выпуске акций: {str(e)}")
+
+@dp.message(Command("buy_stock"))
+async def cmd_buy_stock(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        if len(args) < 3: return await m.answer("📈 <b>/buy_stock ID (количество)</b>")
+        try:
+            stock_id = int(args[1])
+            qty = int(args[2])
+        except: return await m.answer("❌ ID и количество должны быть числами!")
+        if qty < 1: return await m.answer("❌ Минимум 1 акция!")
+        async with pool.acquire() as conn:
+            stock = await conn.fetchrow("SELECT * FROM stocks WHERE id=$1", stock_id)
+            if not stock: return await m.answer("❌ Акция не найдена!")
+            if stock['shares_available'] < qty: return await m.answer(f"❌ Доступно только {stock['shares_available']} акций!")
+            total_cost = stock['price_per_share'] * qty
+            buyer = await get_user(cid, uid)
+            if buyer['balance'] < total_cost: return await m.answer(f"❌ Нужно {fmt_money(total_cost)}. У вас: {fmt_money(buyer['balance'])}")
+            await update_balance(cid, uid, -total_cost)
+            await conn.execute("UPDATE stocks SET shares_available = shares_available - $1 WHERE id=$2", qty, stock_id)
+            existing = await conn.fetchrow("SELECT * FROM stock_holdings WHERE stock_id=$1 AND user_id=$2", stock_id, uid)
+            if existing: await conn.execute("UPDATE stock_holdings SET shares_owned = shares_owned + $1 WHERE id=$2", qty, existing['id'])
+            else: await conn.execute("INSERT INTO stock_holdings (stock_id, user_id, shares_owned) VALUES ($1,$2,$3)", stock_id, uid, qty)
+            await m.answer(f"✅ Куплено <b>{qty} акций</b>!\n\n💰 Потрачено: {fmt_money(total_cost)}\n💵 Дивиденды: {fmt_money(stock['dividend_per_share'] * qty)}/день", parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"buy_stock error: {e}")
+        await m.answer(f"❌ Ошибка при покупке акций: {str(e)}")
+
+@dp.message(Command("sell_stock"))
+async def cmd_sell_stock(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        if len(args) < 3: return await m.answer("📈 <b>/sell_stock ID (количество)</b>")
+        try:
+            stock_id = int(args[1])
+            qty = int(args[2])
+        except: return await m.answer("❌ ID и количество должны быть числами!")
+        async with pool.acquire() as conn:
+            holding = await conn.fetchrow("SELECT * FROM stock_holdings WHERE stock_id=$1 AND user_id=$2", stock_id, uid)
+            if not holding or holding['shares_owned'] < qty: return await m.answer("❌ У вас недостаточно акций!")
+            stock = await conn.fetchrow("SELECT * FROM stocks WHERE id=$1", stock_id)
+            if not stock: return await m.answer("❌ Акция не найдена!")
+            refund = int(stock['price_per_share'] * qty * 0.7)
+            await update_balance(cid, uid, refund)
+            await conn.execute("UPDATE stock_holdings SET shares_owned = shares_owned - $1 WHERE id=$2", qty, holding['id'])
+            await conn.execute("UPDATE stocks SET shares_available = shares_available + $1 WHERE id=$2", qty, stock_id)
+            new_shares = holding['shares_owned'] - qty
+            if new_shares <= 0: await conn.execute("DELETE FROM stock_holdings WHERE id=$1", holding['id'])
+            await m.answer(f"✅ Продано <b>{qty} акций</b> за {fmt_money(refund)} (комиссия 30%)", parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"sell_stock error: {e}")
+        await m.answer(f"❌ Ошибка при продаже акций: {str(e)}")
+
+@dp.message(Command("my_stocks"))
+async def cmd_my_stocks(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        async with pool.acquire() as conn:
+            holdings = await conn.fetch("SELECT sh.shares_owned, s.price_per_share, s.dividend_per_share, s.business_id FROM stock_holdings sh JOIN stocks s ON sh.stock_id = s.id WHERE sh.user_id = $1 AND s.chat_id = $2", uid, cid)
+        if not holdings: return await m.answer("📈 <b>У вас нет акций.</b>\n\nКупите на бирже: /stocks", parse_mode="HTML")
+        t = "📊 <b>Мои акции:</b>\n\n"
+        total_value = 0
+        total_dividends = 0
+        for h in holdings:
+            try:
+                biz = await conn.fetchrow("SELECT business_name FROM businesses WHERE id=$1", h['business_id'])
+                biz_name = biz['business_name'] if biz else "Удалён"
+                value = h['shares_owned'] * h['price_per_share']
+                dividends = h['shares_owned'] * h['dividend_per_share']
+                total_value += value
+                total_dividends += dividends
+                t += f"🏢 <b>{biz_name}</b>\n   📊 Акции: {h['shares_owned']}\n   💰 Стоимость: {fmt_money(value)}\n   💵 Дивиденды: {fmt_money(dividends)}/день\n\n"
+            except Exception as e: logging.error(f"my_stocks display error: {e}")
+        t += f"━━━━━━━━━━━━━━━━━━━━\n💰 Общая стоимость: <b>{fmt_money(total_value)}</b>\n💵 Дивиденды/день: <b>{fmt_money(total_dividends)}</b>"
+        await m.answer(t, parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"my_stocks error: {e}")
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+# ═══════════════════════════════════════════
+# АУКЦИОН
+# ═══════════════════════════════════════════
+@dp.message(Command("auction"))
+async def cmd_auction(m: Message):
+    try:
+        cid = m.chat.id
+        async with pool.acquire() as conn:
+            auctions = await conn.fetch("SELECT * FROM auctions WHERE chat_id=$1 AND status='active' ORDER BY end_time ASC", cid)
+        if not auctions: return await m.answer("🏆 <b>Аукцион пуст!</b>\n\nСледите за анонсами редких лотов!", parse_mode="HTML")
+        t = "🏆 <b>АУКЦИОН РЕДКИХ ПРЕДМЕТОВ</b>\n\n"
+        for auction in auctions:
+            time_left = int(auction['end_time'] - time.time())
+            if time_left <= 0: continue
+            hours = time_left // 3600
+            minutes = (time_left % 3600) // 60
+            if auction['item_type'] == 'car': icon = "🚗"
+            elif auction['item_type'] == 'business': icon = "🏢"
+            else: icon = "🎁"
+            bidder_name = "Никто"
+            if auction['current_bidder_id']:
+                bidder_name = await conn.fetchval("SELECT username FROM usernames WHERE chat_id=$1 AND user_id=$2", cid, auction['current_bidder_id']) or f"User{auction['current_bidder_id']}"
+            t += f"{icon} <b>{auction['item_name']}</b>\n"
+            t += f"💰 Текущая ставка: <b>{fmt_money(auction['current_bid'])}</b>\n"
+            t += f"👤 Лидер: {bidder_name}\n"
+            t += f"⏰ Осталось: {hours}ч {minutes}мин\n"
+            t += f"📈 Мин. шаг: {fmt_money(auction['min_increment'])}\n"
+            t += f"🛒 Ставка: /bid {auction['id']} сумма\n\n"
+        t += "━━━━━━━━━━━━━━━━━━━━\n💡 Ставка должна быть выше текущей на минимальный шаг!"
+        await m.answer(t, parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"auction error: {e}")
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("bid"))
+async def cmd_bid(m: Message):
+    try:
+        cid, uid = m.chat.id, m.from_user.id
+        args = m.text.split()
+        if len(args) < 3: return await m.answer("🏆 <b>/bid ID сумма</b>\n\nПример: /bid 1 50000", parse_mode="HTML")
+        try:
+            auction_id = int(args[1])
+            bid_amount = int(args[2])
+        except: return await m.answer("❌ ID и сумма должны быть числами!")
+        if bid_amount <= 0: return await m.answer("❌ Сумма должна быть больше 0!")
+        async with pool.acquire() as conn:
+            auction = await conn.fetchrow("SELECT * FROM auctions WHERE id=$1 AND chat_id=$2 AND status='active'", auction_id, cid)
+            if not auction: return await m.answer("❌ Аукцион не найден или завершён!")
+            if time.time() > auction['end_time']: return await m.answer("⏰ Время аукциона вышло!")
+            min_bid = auction['current_bid'] + auction['min_increment']
+            if bid_amount < min_bid: return await m.answer(f"❌ Минимальная ставка: {fmt_money(min_bid)}")
+            user = await get_user(cid, uid)
+            if user['balance'] < bid_amount: return await m.answer(f"❌ Недостаточно средств! Нужно: {fmt_money(bid_amount)}")
+            if auction['current_bidder_id'] == uid: return await m.answer("❌ Вы уже лидер! Повысьте ставку.")
+            await update_balance(cid, uid, -bid_amount)
+            if auction['current_bidder_id']:
+                await update_balance(cid, auction['current_bidder_id'], auction['current_bid'])
+                try:
+                    await bot.send_message(cid, f"⚠️ <b>Вас перебидили!</b>\n\nЛот: {auction['item_name']}\nВаша ставка {fmt_money(auction['current_bid'])} возвращена.", parse_mode="HTML")
+                except: pass
+            await conn.execute("UPDATE auctions SET current_bid=$1, current_bidder_id=$2 WHERE id=$3", bid_amount, uid, auction_id)
+            await conn.execute("INSERT INTO auction_bids (auction_id, user_id, bid_amount, bid_time) VALUES ($1,$2,$3,$4)", auction_id, uid, bid_amount, time.time())
+            time_left = auction['end_time'] - time.time()
+            if time_left < 120:
+                new_end_time = time.time() + 300
+                await conn.execute("UPDATE auctions SET end_time=$1 WHERE id=$2", new_end_time, auction_id)
+                await m.answer(f"⏰ Время продлено на 5 минут!", parse_mode="HTML")
+            await m.answer(f"✅ <b>Ставка принята!</b>\n\n🏆 Лот: {auction['item_name']}\n💰 Ваша ставка: <b>{fmt_money(bid_amount)}</b>\n⏰ Осталось: {int((auction['end_time'] - time.time()) // 60)} мин", parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"bid error: {e}")
+        await m.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.message(Command("create_auction"))
+async def cmd_create_auction(m: Message):
+    if m.from_user.id not in ADMIN_IDS: return await m.answer("❌ Только для админов!")
+    args = m.text.split()
+    if len(args) < 5:
+        return await m.answer("🏆 <b>Создать аукцион</b>\n\nИспользование:\n/create_auction type key name start_price duration_hours\n\ntype: car/business/item\nduration_hours: длительность в часах\n\nПример: /create_auction car gold_bmw Золотой BMW 100000 24", parse_mode="HTML")
+    try:
+        item_type = args[1]
+        item_key = args[2]
+        item_name = " ".join(args[3:-2])
+        starting_price = int(args[-2])
+        duration_hours = int(args[-1])
+    except: return await m.answer("❌ Ошибка в параметрах!")
+    if item_type not in ['car', 'business', 'item']: return await m.answer("❌ Тип: car, business или item")
+    if duration_hours < 1 or duration_hours > 168: return await m.answer("❌ Длительность: от 1 до 168 часов (7 дней)")
+    cid = m.chat.id
+    start_time = time.time()
+    end_time = start_time + (duration_hours * 3600)
+    min_increment = max(100, starting_price // 10)
+    async with pool.acquire() as conn:
+        await conn.execute("INSERT INTO auctions (chat_id, item_type, item_key, item_name, starting_price, current_bid, start_time, end_time, min_increment) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)", cid, item_type, item_key, item_name, starting_price, starting_price, start_time, end_time, min_increment)
+    await m.answer(f"🏆 <b>Аукцион создан!</b>\n\n{item_name}\n💰 Стартовая цена: {fmt_money(starting_price)}\n⏰ Длительность: {duration_hours} часов\n📈 Мин. шаг: {fmt_money(min_increment)}", parse_mode="HTML")
+
+@dp.message(Command("end_auction"))
+async def cmd_end_auction(m: Message):
+    if m.from_user.id not in ADMIN_IDS: return await m.answer("❌ Только для админов!")
+    args = m.text.split()
+    if len(args) < 2: return await m.answer("🏆 <b>/end_auction ID</b>")
+    try: auction_id = int(args[1])
+    except: return await m.answer("❌ ID должен быть числом!")
+    cid = m.chat.id
+    async with pool.acquire() as conn:
+        auction = await conn.fetchrow("SELECT * FROM auctions WHERE id=$1 AND chat_id=$2", auction_id, cid)
+        if not auction: return await m.answer("❌ Аукцион не найден!")
+        if auction['status'] == 'ended': return await m.answer("❌ Аукцион уже завершён!")
+        await conn.execute("UPDATE auctions SET status='ended', end_time=$1 WHERE id=$2", time.time(), auction_id)
+    await complete_auction(auction)
+    await m.answer(f"✅ Аукцион #{auction_id} завершён вручную!", parse_mode="HTML")
+
+# ═══════════════════════════════════════════
+# ОГРАБЛЕНИЯ БАНКОВ
+# ═══════════════════════════════════════════
+@dp.message(Command("bank_heist"))
+async def cmd_bank_heist(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid): return await m.answer("🔒 Вы в тюрьме!")
+    t = "🏦 <b>ОГРАБЛЕНИЯ БАНКОВ</b>\n\n━━━━━━━━━━━━━━━━━━━━\n"
+    t += "👥 <b>Команда: ровно 3 игрока</b>\n\n📋 <b>Роли:</b>\n🔓 Взломщик → 💻 Хакер → 💣 Сапёр\n\n⚠️ Инструмент НЕ обязателен!\n\n━━━━━━━━━━━━━━━━━━━━\n📋 <b>БАНКИ:</b>\n\n"
+    for key, bank in BANKS.items():
+        t += f"{bank['name']}\n   💰 Награда: {fmt_money(bank['reward'])}\n   🎯 Шанс: {bank['chance']}%\n   🔒 Тюрьма: {bank['jail']}ч\n   🏃 /heist_create {key}\n\n"
+    t += "━━━━━━━━━━━━━━━━━━━━\n🛠️ <b>Инструменты:</b>\n"
+    for key, tool in TOOLS.items():
+        t += f"/buy_tool {key} — {tool['name']} ({fmt_money(tool['price'])})\n"
+    t += f"\n⏰ Кулдаун: <b>24 часа</b>"
+    await m.answer(t, parse_mode="HTML")
+
+@dp.message(Command("buy_tool"))
+async def cmd_buy_tool(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid): return await m.answer("🔒 Вы в тюрьме!")
+    args = m.text.split()
+    if len(args) < 2 or args[1] not in TOOLS:
+        t = "🛠️ <b>МАГАЗИН</b>\n\n"
+        for key, tool in TOOLS.items():
+            t += f"{tool['name']} — {fmt_money(tool['price'])}\n   🛒 /buy_tool {key}\n\n"
+        return await m.answer(t, parse_mode="HTML")
+    tool_key = args[1]
+    tool = TOOLS[tool_key]
+    user = await get_user(cid, uid)
+    if user['balance'] < tool['price']: return await m.answer(f"❌ Нужно {fmt_money(tool['price'])}. У вас: {fmt_money(user['balance'])}")
+    if not hasattr(bot, 'heist_tools'): bot.heist_tools = {}
+    bot.heist_tools[uid] = tool_key
+    await update_balance(cid, uid, -tool['price'])
+    await m.answer(f"✅ Куплен: {tool['name']}\n💰 Списано: {fmt_money(tool['price'])}", parse_mode="HTML")
+
+@dp.message(Command("heist_create"))
+async def cmd_heist_create(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid): return await m.answer("🔒 Вы в тюрьме!")
+    args = m.text.split()
+    if len(args) < 2 or args[1] not in BANKS: return await m.answer("Используй: /heist_create local\nТипы: local, city, central, swiss")
+    bank = BANKS[args[1]]
+    has_cd, rem = await check_cooldown(cid, uid)
+    if has_cd:
+        h, mn = rem // 3600, (rem % 3600) // 60
+        return await m.answer(f"⏳ Кулдаун: {h}ч {mn}мин")
+    tool_key = getattr(bot, 'heist_tools', {}).get(uid)
+    t_name = TOOLS[tool_key]['name'] if tool_key else "👊 Голыми руками"
+    lobby_id = random.randint(100000, 999999)
+    heist_lobbies[lobby_id] = {"id": lobby_id, "creator": uid, "bank": bank, "tool_key": tool_key, "players": {uid: "hacker"}}
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💻 Присоединиться", callback_data=f"join_{lobby_id}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{lobby_id}")]
+    ])
+    msg = await m.answer(f"🏦 <b>ЛОББИ #{lobby_id}</b>\n\n🏛️ {bank['name']}\n🛠️ {t_name}\n💰 {fmt_money(bank['reward'])}\n🎯 Шанс: {bank['chance']}%\n👥 1/3\n\n🔓 {m.from_user.full_name}", reply_markup=kb, parse_mode="HTML")
+    heist_lobbies[lobby_id]["msg_id"] = msg.message_id
+
+async def get_heist_cooldown(cid, uid):
+    try:
+        async with pool.acquire() as conn:
+            r = await conn.fetchrow("SELECT last_heist_time FROM heist_cooldowns WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            return r['last_heist_time'] if r else 0
+    except: return 0
+
+async def check_cooldown(cid, uid):
+    try:
+        last = await get_heist_cooldown(cid, uid)
+        if last == 0: return False, 0
+        elapsed = time.time() - last
+        if elapsed < HEIST_COOLDOWN: return True, int(HEIST_COOLDOWN - elapsed)
+        return False, 0
+    except: return False, 0
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("join_"))
+async def cb_join(cb: types.CallbackQuery):
+    try: lobby_id = int(cb.data.split("_")[1])
+    except: return await cb.answer("❌ Ошибка", show_alert=True)
+    if lobby_id not in heist_lobbies: return await cb.answer("❌ Лобби не найдено!", show_alert=True)
+    lobby = heist_lobbies[lobby_id]
+    uid, cid = cb.from_user.id, cb.message.chat.id
+    if await is_in_jail(cid, uid): return await cb.answer("🔒 Вы в тюрьме!", show_alert=True)
+    if uid in lobby["players"]: return await cb.answer("✅ Вы уже в команде!", show_alert=True)
+    if len(lobby["players"]) >= 3: return await cb.answer("❌ Команда полная!", show_alert=True)
+    has_cd, rem = await check_cooldown(cid, uid)
+    if has_cd: return await cb.answer(f"⏳ Кулдаун: {rem//3600}ч", show_alert=True)
+    role = "coder" if len(lobby["players"]) == 1 else "sapper"
+    lobby["players"][uid] = role
+    await cb.answer(f"✅ Роль: {HEIST_ROLES[role]}")
+    try:
+        names = []
+        for pid, prole in lobby["players"].items():
+            try: name = (await bot.get_chat_member(cid, pid)).user.full_name
+            except: name = f"User{pid}"
+            names.append(f"{HEIST_ROLES[prole]}: {name}")
+        t_name = TOOLS[lobby['tool_key']]['name'] if lobby['tool_key'] else "👊 Голыми руками"
+        p_count = len(lobby["players"])
+        if p_count < 3:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💻 Присоединиться", callback_data=f"join_{lobby_id}")],
+                [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{lobby_id}")]
+            ])
+            await cb.message.edit_text(f"🏦 <b>ЛОББИ #{lobby_id}</b>\n\n🏛️ {lobby['bank']['name']}\n🛠️ {t_name}\n💰 {fmt_money(lobby['bank']['reward'])}\n👥 {p_count}/3\n\n" + "\n".join(names), reply_markup=kb, parse_mode="HTML")
+        else:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🚀 Начать", callback_data=f"start_{lobby_id}")],
+                [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{lobby_id}")]
+            ])
+            await cb.message.edit_text(f"🏦 <b>ЛОББИ #{lobby_id} — ГОТОВО!</b>\n\n🏛️ {lobby['bank']['name']}\n🛠️ {t_name}\n💰 {fmt_money(lobby['bank']['reward'])}\n👥 3/3 ✅\n\n" + "\n".join(names), reply_markup=kb, parse_mode="HTML")
+    except Exception as e: print(f"Ошибка join: {e}")
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("cancel_"))
+async def cb_cancel(cb: types.CallbackQuery):
+    try: lobby_id = int(cb.data.split("_")[1])
+    except: return await cb.answer("❌", show_alert=True)
+    if lobby_id not in heist_lobbies: return await cb.answer("❌ Лобби не найдено!", show_alert=True)
+    lobby = heist_lobbies[lobby_id]
+    if cb.from_user.id != lobby["creator"]: return await cb.answer("❌ Только создатель!", show_alert=True)
+    del heist_lobbies[lobby_id]
+    try: await cb.message.edit_text("❌ Лобби отменено", reply_markup=None)
+    except: pass
+    await cb.answer("✅ Отменено")
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("start_"))
+async def cb_start(cb: types.CallbackQuery):
+    try: lobby_id = int(cb.data.split("_")[1])
+    except: return await cb.answer("❌", show_alert=True)
+    if lobby_id not in heist_lobbies: return await cb.answer("❌ Лобби не найдено!", show_alert=True)
+    lobby = heist_lobbies[lobby_id]
+    cid = cb.message.chat.id
+    if len(lobby["players"]) != 3: return await cb.answer("❌ Нужно 3 игрока!", show_alert=True)
+    await cb.answer("🚀 Старт!")
+    try: await cb.message.delete()
+    except: pass
+    await run_stage1(cid, lobby)
+
+async def run_stage1(cid, lobby):
+    bank = lobby["bank"]
+    tool_key = lobby["tool_key"]
+    tool = TOOLS[tool_key] if tool_key else BASE_TOOL
+    players = lobby["players"]
+    hacker_uid = [uid for uid, r in players.items() if r == "hacker"][0]
+    chance = min(95, bank['chance'] + tool['bonus_chance'])
+    try: name = (await bot.get_chat_member(cid, hacker_uid)).user.full_name
+    except: name = f"User{hacker_uid}"
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔓 Взломать", callback_data=f"s1_{lobby['id']}_{hacker_uid}_{chance}")]])
+    await bot.send_message(cid, f"🏦 <b>ЭТАП 1: ВЗЛОМ ДВЕРИ</b>\n\n👤 {name} (Взломщик)\n🏛️ {bank['name']}\n🛠️ {tool['name']}\n🎯 Шанс: {chance}%\n\n👇 Нажми кнопку!", reply_markup=kb, parse_mode="HTML")
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("s1_"))
+async def cb_stage1(cb: types.CallbackQuery):
+    parts = cb.data.split("_")
+    try:
+        lobby_id = int(parts[1])
+        player_uid = int(parts[2])
+        chance = int(float(parts[3]))
+    except: return await cb.answer("❌ Ошибка", show_alert=True)
+    if cb.from_user.id != player_uid: return await cb.answer("❌ Не твой этап!", show_alert=True)
+    if lobby_id not in heist_lobbies: return await cb.answer("❌ Лобби не найдено!", show_alert=True)
+    cid = cb.message.chat.id
+    lobby = heist_lobbies[lobby_id]
+    roll = random.randint(1, 100)
+    success = roll <= chance
+    await cb.message.edit_text(f"🔓 <b>ВЗЛОМ...</b>\n\n🎲 {roll} из 100\n🎯 Нужно ≤{chance}\n\n{'✅ Успех!' if success else '❌ Провал!'}", parse_mode="HTML")
+    if success:
+        await asyncio.sleep(2)
+        await run_stage2(cid, lobby)
+    else:
+        await finish_heist(cid, lobby, False, "Взлом двери провалился")
+    await cb.answer()
+
+async def run_stage2(cid, lobby):
+    bank = lobby["bank"]
+    tool_key = lobby["tool_key"]
+    tool = TOOLS[tool_key] if tool_key else BASE_TOOL
+    players = lobby["players"]
+    coder_uid = [uid for uid, r in players.items() if r == "coder"][0]
+    try: name = (await bot.get_chat_member(cid, coder_uid)).user.full_name
+    except: name = f"User{coder_uid}"
+    correct = [random.randint(1, 6)]
+    lobby["correct_buttons"] = correct
+    lobby["stage2_attempts"] = 0
+    max_att = 3 + tool['extra_attempts']
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="1️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_1"), InlineKeyboardButton(text="2️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_2"), InlineKeyboardButton(text="3️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_3")],
+        [InlineKeyboardButton(text="4️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_4"), InlineKeyboardButton(text="5️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_5"), InlineKeyboardButton(text="6️⃣", callback_data=f"s2_{lobby['id']}_{coder_uid}_6")]
+    ])
+    await bot.send_message(cid, f"🔐 <b>ЭТАП 2: КОД К СЕЙФУ</b>\n\n👤 {name} (Хакер)\n🏛️ {bank['name']}\n🛠️ {tool['name']}\n\n💡 Угадай 1 правильную кнопку из 6\n⏳ Попыток: {max_att}", reply_markup=kb, parse_mode="HTML")
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("s2_"))
+async def cb_stage2(cb: types.CallbackQuery):
+    parts = cb.data.split("_")
+    try:
+        lobby_id = int(parts[1])
+        player_uid = int(parts[2])
+        button = int(parts[3])
+    except: return await cb.answer("❌", show_alert=True)
+    if cb.from_user.id != player_uid: return await cb.answer("❌ Не твой этап!", show_alert=True)
+    if lobby_id not in heist_lobbies: return await cb.answer("❌ Лобби не найдено!", show_alert=True)
+    cid = cb.message.chat.id
+    lobby = heist_lobbies[lobby_id]
+    correct = lobby["correct_buttons"]
+    attempts = lobby["stage2_attempts"]
+    tool_key = lobby["tool_key"]
+    tool = TOOLS[tool_key] if tool_key else BASE_TOOL
+    max_att = 3 + tool['extra_attempts']
+    if button == correct[0]:
+        await cb.message.edit_text(f"🔐 <b>КОД ПОДОБРАН!</b>\n✅ Кнопка: {button}\n🔓 Сейф открыт!", parse_mode="HTML")
+        await asyncio.sleep(2)
+        await run_stage3(cid, lobby)
+    else:
+        attempts += 1
+        lobby["stage2_attempts"] = attempts
+        if attempts >= max_att:
+            await cb.message.edit_text(f"🔐 <b>ПРОВАЛ!</b>\n❌ Попытки кончились\n✅ Была кнопка: {correct[0]}", parse_mode="HTML")
+            await finish_heist(cid, lobby, False, "Код не подобран")
+        else:
+            await cb.answer(f"❌ Неверно! Осталось: {max_att - attempts}", show_alert=True)
+    await cb.answer()
+
+async def run_stage3(cid, lobby):
+    bank = lobby["bank"]
+    tool_key = lobby["tool_key"]
+    tool = TOOLS[tool_key] if tool_key else BASE_TOOL
+    players = lobby["players"]
+    sapper_uid = [uid for uid, r in players.items() if r == "sapper"][0]
+    try: name = (await bot.get_chat_member(cid, sapper_uid)).user.full_name
+    except: name = f"User{sapper_uid}"
+    total_wires = 4 - tool['wire_reduce']
+    correct_wire = random.randint(1, total_wires)
+    lobby["correct_wire"] = correct_wire
+    lobby["total_wires"] = total_wires
+    wires = [("🔴 Красный", 1), ("🔵 Синий", 2), ("🟢 Зелёный", 3), ("🟡 Жёлтый", 4)][:total_wires]
+    kb_rows = []
+    for i in range(0, len(wires), 2):
+        kb_rows.append([InlineKeyboardButton(text=n, callback_data=f"s3_{lobby['id']}_{sapper_uid}_{num}") for n, num in wires[i:i+2]])
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    chance = round(100/total_wires)
+    await bot.send_message(cid, f"💣 <b>ЭТАП 3: СИГНАЛИЗАЦИЯ</b>\n\n👤 {name} (Сапёр)\n🏛️ {bank['name']}\n🛠️ {tool['name']}\n\n⚡ {total_wires} проводов, 1 правильный\n🎯 Шанс: {chance}%", reply_markup=kb, parse_mode="HTML")
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("s3_"))
+async def cb_stage3(cb: types.CallbackQuery):
+    parts = cb.data.split("_")
+    try:
+        lobby_id = int(parts[1])
+        player_uid = int(parts[2])
+        wire = int(parts[3])
+    except: return await cb.answer("❌", show_alert=True)
+    if cb.from_user.id != player_uid: return await cb.answer("❌ Не твой этап!", show_alert=True)
+    if lobby_id not in heist_lobbies: return await cb.answer("❌ Лобби не найдено!", show_alert=True)
+    cid = cb.message.chat.id
+    lobby = heist_lobbies[lobby_id]
+    correct_wire = lobby["correct_wire"]
+    names = {1: "🔴 Красный", 2: "🔵 Синий", 3: "🟢 Зелёный", 4: "🟡 Жёлтый"}
+    if wire == correct_wire:
+        await cb.message.edit_text(f"💣 <b>ОБЕЗВРЕЖЕНО!</b>\n✅ Провод: {names[wire]}\n🎉 Успех!", parse_mode="HTML")
+        await asyncio.sleep(2)
+        await finish_heist(cid, lobby, True, "Все этапы пройдены")
+    else:
+        await cb.message.edit_text(f"💣 <b>ТРЕВОГА!</b>\n❌ {names[wire]}\n✅ Было: {names[correct_wire]}\n🚨 Провал!", parse_mode="HTML")
+        await finish_heist(cid, lobby, False, "Сигнализация сработала")
+    await cb.answer()
+
+async def finish_heist(cid, lobby, success, reason):
+    lobby_id = lobby["id"]
+    if lobby_id in heist_lobbies: del heist_lobbies[lobby_id]
+    bank = lobby["bank"]
+    tool_key = lobby["tool_key"]
+    tool = TOOLS[tool_key] if tool_key else BASE_TOOL
+    players = lobby["players"]
+    if tool_key and lobby["creator"] in getattr(bot, 'heist_tools', {}):
+        del bot.heist_tools[lobby["creator"]]
+    team = []
+    for uid, role in players.items():
+        try: name = (await bot.get_chat_member(cid, uid)).user.full_name
+        except: name = f"User{uid}"
+        team.append(f"{HEIST_ROLES[role]}: {name}")
+    now = time.time()
+    if success:
+        reward = bank['reward']
+        async with pool.acquire() as conn:
+            for uid in players.keys():
+                await update_balance(cid, uid, reward)
+                await conn.execute("INSERT INTO heist_cooldowns VALUES ($1,$2,$3) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_heist_time=$3", cid, uid, now)
+        await bot.send_message(cid, f"✅ <b>УСПЕХ!</b>\n\n🏦 {bank['name']}\n🛠️ {tool['name']}\n👥 {', '.join(team)}\n\n💰 Каждый: <b>{fmt_money(reward)}</b>\n\n⏰ Кулдаун 24ч", parse_mode="HTML")
+    else:
+        jail = max(1, bank['jail'] - tool['jail_reduce'])
+        until_time = now + jail * 3600
+        async with pool.acquire() as conn:
+            for uid in players.keys():
+                await conn.execute("INSERT INTO jail (chat_id, user_id, release_time, fine_per_hour) VALUES ($1,$2,$3,$4) ON CONFLICT (chat_id, user_id) DO UPDATE SET release_time=$3, fine_per_hour=$4", cid, uid, until_time, JAIL_FINE_PER_HOUR)
+                await conn.execute("INSERT INTO heist_cooldowns VALUES ($1,$2,$3) ON CONFLICT (chat_id, user_id) DO UPDATE SET last_heist_time=$3", cid, uid, now)
+        await bot.send_message(cid, f"❌ <b>ПРОВАЛ!</b>\n\n🏦 {bank['name']}\n👥 {', '.join(team)}\n\n🔒 Все в тюрьме на <b>{jail}ч</b>\n⚠️ {reason}\n⏰ Кулдаун 24ч", parse_mode="HTML")
+
+# ═══════════════════════════════════════════
+# КОНТРАБАНДА
+# ═══════════════════════════════════════════
+async def apply_smart_fine(cid, uid, percent):
+    user = await get_user(cid, uid)
+    balance = user.get('balance', 0)
+    deposit = user.get('deposit', user.get('bank_balance', user.get('savings', 0)))
+    total = balance + deposit
+    fine = int(total * percent / 100)
+    if fine <= 0: return 0
+    if balance >= deposit:
+        await update_balance(cid, uid, -fine)
+    else:
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute("UPDATE users SET balance = GREATEST(balance - $1, 0) WHERE chat_id=$2 AND user_id=$3", fine, cid, uid)
+        except:
+            await update_balance(cid, uid, -fine)
+    return fine
+
+@dp.message(Command("contraband"))
+async def cmd_contraband_info(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid): return await m.answer("🔒 Вы в тюрьме!")
+    t = "🚛 <b>КОНТРАБАНДА</b>\n\n"
+    t += "⚠️ <b>Высокий риск, высокая награда!</b>\nНужна команда из 4 человек.\n\n"
+    t += "━━━━━━━━━━━━━━━━━━━━\n📦 <b>ТОВАРЫ:</b>\n\n"
+    for key, item in CONTRABAND_ITEMS.items():
+        t += f"{item['name']}\n"
+        t += f"   💰 Цена: {fmt_money(item['price'])}\n"
+        t += f"   🎁 Награда: {fmt_money(item['reward'])}\n"
+        t += f"   ⚠️ Шанс провала: {item['fail_chance']}%\n"
+        t += f"   💸 Штраф: {item['penalty_percent']}% баланса\n"
+        t += f"   ⏱️ Время: {item['duration']//60} мин\n"
+        t += f"   🏃 /contraband_start {key}\n\n"
+    t += "━━━━━━━━━━━━━━━━━━━━\n"
+    t += "👥 <b>Собрать команду:</b>\n"
+    t += "Ответь на 3 игроков сообщением:\n"
+    t += "/contraband_team\n\n"
+    t += "⏰ Кулдаун: <b>6 часов</b>"
+    await m.answer(t, parse_mode="HTML")
+
+@dp.message(Command("contraband_team"))
+async def cmd_contraband_team(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid): return await m.answer("🔒 Вы в тюрьме!")
+    if not m.reply_to_message:
+        return await m.answer("⚠️ Ответь на сообщение одного из напарников, а двух других укажи через @\nПример: ответь на Петю и напиши\n`/contraband_team @вася @миша`", parse_mode="HTML")
+    team = [uid, m.reply_to_message.from_user.id]
+    args = m.text.split()[1:]
+    for arg in args:
+        username = arg.lstrip('@')
+        if not username: continue
+        try:
+            chat_member = await bot.get_chat_member(cid, f"@{username}")
+            team.append(chat_member.user.id)
+        except Exception as e:
+            try:
+                user_id = int(username)
+                chat_member = await bot.get_chat_member(cid, user_id)
+                team.append(chat_member.user.id)
+            except:
+                return await m.answer(f"❌ Не нашёл игрока <b>@{username}</b>\n\nПроверь:\n• Правильно ли написан username\n• Игрок точно в этом чате\n• У него есть @username в Telegram", parse_mode="HTML")
+    team = list(dict.fromkeys(team))
+    if len(team) != 4:
+        return await m.answer(f"❌ Нужно ровно 4 человека (включая тебя).\nСейчас: {len(team)}\n\nФормат: ответь на 1 игрока + укажи 2 через @", parse_mode="HTML")
+    for member_uid in team:
+        if member_uid == uid: continue
+        if await is_in_jail(cid, member_uid):
+            try: name = (await bot.get_chat_member(cid, member_uid)).user.full_name
+            except: name = f"User{member_uid}"
+            return await m.answer(f"🔒 {name} сейчас в тюрьме!")
+        if member_uid in contraband_cooldowns and contraband_cooldowns[member_uid] > time.time():
+            try: name = (await bot.get_chat_member(cid, member_uid)).user.full_name
+            except: name = f"User{member_uid}"
+            return await m.answer(f"⏳ У {name} кулдаун на контрабанду!")
+    run_id = f"run_{cid}_{uid}_{int(time.time())}"
+    active_contraband_runs[run_id] = {"id": run_id, "leader": uid, "team": team, "status": "forming", "item": None}
+    team_names = []
+    for member_uid in team:
+        try: name = (await bot.get_chat_member(cid, member_uid)).user.full_name
+        except: name = f"User{member_uid}"
+        team_names.append(name)
+    await m.answer(f"🚛 <b>КОМАНДА СОБРАНА!</b>\n\n👥 Участники:\n" + "\n".join([f"• {name}" for name in team_names]) + "\n\n📋 Лидер, выбери товар:\n/contraband_start docs\n/contraband_start fake_money\n/contraband_start drugs\n/contraband_start weapons", parse_mode="HTML")
+
+@dp.message(Command("contraband_start"))
+async def cmd_contraband_start(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    args = m.text.split()
+    if len(args) < 2 or args[1] not in CONTRABAND_ITEMS: return await m.answer("⚠️ Укажи товар: docs, fake_money, drugs, weapons")
+    run = None
+    for r in active_contraband_runs.values():
+        if r["leader"] == uid and r["status"] == "forming":
+            run = r
+            break
+    if not run: return await m.answer("❌ У тебя нет собранной команды! Используй /contraband_team")
+    item_key = args[1]
+    item = CONTRABAND_ITEMS[item_key]
+    user = await get_user(cid, uid)
+    if user['balance'] < item['price']: return await m.answer(f"❌ Нужно {fmt_money(item['price'])}. У тебя: {fmt_money(user['balance'])}")
+    await update_balance(cid, uid, -item['price'])
+    run["item"] = item_key
+    run["status"] = "active"
+    run["start_time"] = time.time()
+    roles_list = list(CONTRABAND_ROLES.keys())
+    random.shuffle(roles_list)
+    run["roles"] = {uid: roles_list[i] for i, uid in enumerate(run["team"])}
+    fail_chance = item['fail_chance']
+    duration = item['duration']
+    reward = item['reward']
+    for member_uid, role in run["roles"].items():
+        if role == "driver": fail_chance -= 15
+        elif role == "navigator": duration = int(duration * 0.8)
+        elif role == "coordinator": reward = int(reward * 1.1)
+    fail_chance = max(5, fail_chance)
+    run["fail_chance"] = fail_chance
+    run["duration"] = duration
+    run["reward"] = reward
+    run["checks_passed"] = 0
+    run["total_checks"] = duration // 60
+    await m.answer("🚛 <b>РЕЙС НАЧАЛСЯ!</b> Каждую минуту будет проверка. Не выходите из чата!", parse_mode="HTML")
+    team_info = []
+    for member_uid in run["team"]:
+        try: name = (await bot.get_chat_member(cid, member_uid)).user.full_name
+        except: name = f"User{member_uid}"
+        role_name = CONTRABAND_ROLES[run["roles"][member_uid]]['name']
+        team_info.append(f"{role_name}: {name}")
+    await bot.send_message(cid, f"🚛 <b>РЕЙС НАЧАЛСЯ!</b>\n\n📦 Товар: {item['name']}\n⏱️ Длительность: {duration//60} мин\n⚠️ Шанс провала: {fail_chance}%\n🎁 Награда: {fmt_money(reward)}\n\n👥 <b>Команда:</b>\n" + "\n".join(team_info) + "\n\n⏳ Проверки начались...", parse_mode="HTML")
+    asyncio.create_task(contraband_check_loop(cid, run))
+
+@dp.message(Command("contraband_status"))
+async def cmd_contraband_status(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    for run in active_contraband_runs.values():
+        if uid in run["team"] and run["status"] == "active":
+            item = CONTRABAND_ITEMS[run["item"]]
+            elapsed = time.time() - run["start_time"]
+            remaining = run["duration"] - elapsed
+            progress = int(elapsed / run["duration"] * 100)
+            return await m.answer(f"🚛 <b>АКТИВНЫЙ РЕЙС</b>\n\n📦 Товар: {item['name']}\n⏱️ Осталось: {int(remaining)//60} мин\n📊 Прогресс: {progress}%\n✅ Проверок пройдено: {run['checks_passed']}/{run['total_checks']}", parse_mode="HTML")
+    await m.answer("❌ У тебя нет активного рейса")
+
+async def contraband_check_loop(cid, run):
+    for _ in range(run["total_checks"]):
+        await asyncio.sleep(60)
+        if run["status"] != "active": return
+        if random.randint(1, 100) <= run["fail_chance"]:
+            await contraband_failed(cid, run, "Наткнулись на усиленный патруль!")
+            return
+        run["checks_passed"] += 1
+    await contraband_success(cid, run)
+
+async def contraband_success(cid, run):
+    item = CONTRABAND_ITEMS[run["item"]]
+    team = run["team"]
+    reward = run["reward"]
+    reward_per_person = reward // len(team)
+    for member_uid in team:
+        await update_balance(cid, member_uid, reward_per_person)
+        contraband_cooldowns[member_uid] = time.time() + CONTRABAND_COOLDOWN
+    del active_contraband_runs[run["id"]]
+    await bot.send_message(cid, f"✅ <b>РЕЙС УСПЕШЕН!</b>\n\n📦 Товар: {item['name']}\n💰 Каждый получил: <b>{fmt_money(reward_per_person)}</b>\n\n⏰ Кулдаун: 6 часов", parse_mode="HTML")
+
+async def contraband_failed(cid, run, reason):
+    item = CONTRABAND_ITEMS[run["item"]]
+    team = run["team"]
+    penalty_percent = item['penalty_percent']
+    jail_hours = item['jail_hours']
+    for member_uid in team:
+        fine = await apply_smart_fine(cid, member_uid, penalty_percent)
+        await send_to_jail(cid, member_uid, jail_hours)
+        contraband_cooldowns[member_uid] = time.time() + CONTRABAND_COOLDOWN
+        if item.get('seize_business'):
+            try:
+                async with pool.acquire() as conn:
+                    biz = await conn.fetchrow("SELECT id FROM businesses WHERE chat_id=$1 AND user_id=$2 LIMIT 1", cid, member_uid)
+                    if biz: await conn.execute("DELETE FROM businesses WHERE id=$1", biz['id'])
+            except: pass
+    del active_contraband_runs[run["id"]]
+    seize_text = "🗑️ Изъят 1 бизнес\n" if item.get('seize_business') else ""
+    await bot.send_message(cid, f"❌ <b>РЕЙС ПРОВАЛЕН!</b>\n\n📦 Товар: {item['name']}\n⚠️ Причина: {reason}\n\n🔒 Все в тюрьме на <b>{jail_hours} часов</b>\n💸 Штраф: <b>{penalty_percent}% баланса</b>\n{seize_text}⏰ Кулдаун: 6 часов", parse_mode="HTML")
+
+# ═══════════════════════════════════════════
+# МАФИЯ
+# ═══════════════════════════════════════════
+@dp.message(Command("pay_mafia"))
+async def cmd_pay_mafia(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    async with pool.acquire() as conn:
+        threat = await conn.fetchrow("SELECT * FROM mafia_threats WHERE chat_id=$1 AND user_id=$2 AND paid=FALSE AND deadline > $3", cid, uid, time.time())
+        if not threat: return await m.answer("❌ У вас нет активных угроз от мафии!")
+        ransom = threat['ransom_amount']
+    user = await get_user(cid, uid)
+    bank = await get_bank(cid, uid)
+    total_available = user['balance'] + bank['deposit']
+    if total_available < ransom:
+        return await m.answer(f"❌ Недостаточно средств!\nНужно: {fmt_money(ransom)}\nУ вас: {fmt_money(total_available)}\n\n🕴️ Мафия заберёт ваш актив через {format_time(int(threat['deadline'] - time.time()))}")
+    paid_from_balance = min(ransom, user['balance'])
+    remaining = ransom - paid_from_balance
+    if paid_from_balance > 0: await update_balance(cid, uid, -paid_from_balance)
+    if remaining > 0: await update_bank(cid, uid, -remaining)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE mafia_threats SET paid=TRUE WHERE id=$1", threat['id'])
+    await m.answer(f"✅ <b>ВЫКУП ОПЛАЧЕН!</b>\n\n💰 Списано: <b>{fmt_money(ransom)}</b>\n🕴️ Мафия ушла довольной...\n\n💡 Совет: храните деньги в банке, чтобы снизить риск повторного визита!", parse_mode="HTML")
+    new_achs = await check_achievements(cid, uid)
+    await notify_achievements(cid, uid, new_achs)
+
+@dp.message(Command("mafia_test"))
+async def cmd_mafia_test(m: Message):
+    if m.from_user.id not in ADMIN_IDS: return await m.answer("❌ Только для админов!")
+    if not m.reply_to_message: return await m.answer("🕴️ Ответьте на сообщение игрока, чтобы вызвать мафию.")
+    cid = m.chat.id
+    uid = m.reply_to_message.from_user.id
+    username = m.reply_to_message.from_user.full_name
+    user = await get_user(cid, uid)
+    bank = await get_bank(cid, uid)
+    total_wealth = max(5000, user['balance'] + bank['deposit'])
+    ransom = max(1000, int(total_wealth * 0.20))
+    deadline = time.time() + 3600
+    async with pool.acquire() as conn:
+        await conn.execute("INSERT INTO mafia_threats (chat_id, user_id, threat_time, deadline, ransom_amount, threat_type, target_asset, paid) VALUES ($1, $2, $3, $4, $5, 'balance', 'balance', FALSE)", cid, uid, time.time(), deadline, ransom)
+    msg = f"🕴️ <b>К ВАМ ПРИШЛА МАФИЯ!</b>\n\n👤 {username}, мы знаем о ваших доходах...\n\n💰 <b>Ваш капитал:</b> {fmt_money(total_wealth)}\n⚠️ <b>ТРЕБОВАНИЕ:</b> Переведите нам <b>{fmt_money(ransom)}</b> в течение <b>1 часа</b>\n\n🔫 <b>ИНАЧЕ ВАМ НЕ ПОЗДОРОВИТСЯ...</b>\n\n⏳ Время пошло..."
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить выкуп", callback_data=f"pay_mafia_{uid}_{cid}")],
+        [InlineKeyboardButton(text="🔫 Отказаться (риск)", callback_data=f"refuse_mafia_{uid}_{cid}")]
+    ])
+    await m.answer(msg, reply_markup=kb, parse_mode="HTML")
+
+@dp.message(Command("mafia_execute"))
+async def cmd_mafia_execute(m: Message):
+    if m.from_user.id not in ADMIN_IDS: return await m.answer("❌ Только для админов!")
+    await m.answer("⏳ Мафия проверяет должников...")
+    await execute_mafia_threats()
+    await m.answer("✅ Проверка завершена. Наказания применены.")
+
+@dp.callback_query(lambda c: c.data.startswith("pay_mafia_"))
+async def cb_pay_mafia(cb: types.CallbackQuery):
+    parts = cb.data.split("_")
+    uid = int(parts[2])
+    cid = int(parts[3])
+    if cb.from_user.id != uid: return await cb.answer("❌ Это не ваша угроза!", show_alert=True)
+    async with pool.acquire() as conn:
+        threat = await conn.fetchrow("SELECT * FROM mafia_threats WHERE chat_id=$1 AND user_id=$2 AND paid=FALSE", cid, uid)
+        if not threat: return await cb.answer("❌ Угроза уже обработана!", show_alert=True)
+        ransom = threat['ransom_amount']
+    user = await get_user(cid, uid)
+    bank = await get_bank(cid, uid)
+    total_available = user['balance'] + bank['deposit']
+    if total_available < ransom: return await cb.answer(f"❌ Недостаточно средств! Нужно: {fmt_money(ransom)}", show_alert=True)
+    paid_from_balance = min(ransom, user['balance'])
+    remaining = ransom - paid_from_balance
+    if paid_from_balance > 0: await update_balance(cid, uid, -paid_from_balance)
+    if remaining > 0 and bank['deposit'] > 0: await update_bank(cid, uid, -min(remaining, bank['deposit']))
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE mafia_threats SET paid=TRUE WHERE id=$1", threat['id'])
+    msg = f"✅ <b>ВЫКУП ОПЛАЧЕН!</b>\n\n💰 Списано: <b>{fmt_money(ransom)}</b>\n🕴️ Мафия ушла довольной...\n\n💡 Совет: храните деньги в банке, чтобы снизить риск повторного визита!"
+    try: await cb.message.edit_text(msg, parse_mode="HTML")
+    except: await cb.message.answer(msg, parse_mode="HTML")
+    await cb.answer("✅ Выкуп оплачен!")
+
+@dp.callback_query(lambda c: c.data.startswith("refuse_mafia_"))
+async def cb_refuse_mafia(cb: types.CallbackQuery):
+    parts = cb.data.split("_")
+    uid = int(parts[2])
+    cid = int(parts[3])
+    if cb.from_user.id != uid: return await cb.answer("❌ Это не ваша угроза!", show_alert=True)
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE mafia_threats SET paid=TRUE WHERE chat_id=$1 AND user_id=$2 AND paid=FALSE", cid, uid)
+    username = cb.from_user.full_name
+    user = await get_user(cid, uid)
+    bank = await get_bank(cid, uid)
+    total_wealth = user['balance'] + bank['deposit']
+    roll = random.random()
+    if roll < 0.20:
+        msg = f"🕊️ <b>МАФИЯ УШЛА НИ С ЧЕМ!</b>\n\n👤 {username}, вы отказались платить, но мафия решила не трогать вас.\n\n🍀 Вам повезло! Но в следующий раз лучше платить вовремя."
+    else:
+        async with pool.acquire() as conn:
+            businesses = await conn.fetch("SELECT business_name FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            cars = await conn.fetch("SELECT car_name FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            profile = await conn.fetchrow("SELECT job_key, level FROM profiles WHERE chat_id=$1 AND user_id=$2", cid, uid)
+            if businesses:
+                target_biz = random.choice(businesses)['business_name']
+                await conn.execute("DELETE FROM businesses WHERE chat_id=$1 AND user_id=$2 AND business_name=$3", cid, uid, target_biz)
+                msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ВАШ БИЗНЕС!</b>\n\n👤 {username}, вы отказались платить.\n🏢 Конфискован: <b>{target_biz}</b>"
+            elif cars:
+                target_car = random.choice(cars)['car_name']
+                await conn.execute("DELETE FROM garage WHERE chat_id=$1 AND user_id=$2 AND car_name=$3", cid, uid, target_car)
+                msg = f"🔫 <b>МАФИЯ УКРАЛА ВАШУ МАШИНУ!</b>\n\n👤 {username}, вы отказались платить.\n🚗 Украдена: <b>{target_car}</b>"
+            elif profile and profile['level'] > 1:
+                old_job = profile['job_key']
+                old_level = profile['level']
+                await conn.execute("UPDATE profiles SET job_key='novice', level=1 WHERE chat_id=$1 AND user_id=$2", cid, uid)
+                msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ВАШУ ПРОФЕССИЮ!</b>\n\n👤 {username}, вы отказались платить.\n💼 Сброшено: <b>{old_job} Ур.{old_level}</b> → Новичок Ур.1"
+            else:
+                penalty = int(total_wealth * 0.30)
+                paid_from_balance = min(penalty, user['balance'])
+                remaining = penalty - paid_from_balance
+                if paid_from_balance > 0: await update_balance(cid, uid, -paid_from_balance)
+                if remaining > 0 and bank['deposit'] > 0: await update_bank(cid, uid, -min(remaining, bank['deposit']))
+                msg = f"🔫 <b>МАФИЯ ЗАБРАЛА ДЕНЬГИ!</b>\n\n👤 {username}, вы отказались платить.\n💸 Списано: <b>{fmt_money(penalty)}</b> (30% от капитала)"
+    try: await cb.message.edit_text(msg, parse_mode="HTML")
+    except: await cb.message.answer(msg, parse_mode="HTML")
+    await cb.answer()
+
+# ═══════════════════════════════════════════
+# РУССКАЯ РУЛЕТКА
+# ═══════════════════════════════════════════
+@dp.message(Command("roulette"))
+async def cmd_roulette(m: Message, state: FSMContext):
+    cid, uid = m.chat.id, m.from_user.id
+    if await is_in_jail(cid, uid): return await m.answer("🔒 В тюрьме нельзя играть!")
+    args = m.text.split()
+    if len(args) < 2:
+        return await m.answer("🔫 <b>Русская рулетка</b>\n\nИспользование: <b>/roulette ставка</b>\n\nМинимум: 100 сарапулок\nИгроков: 2-6\nШанс выжить: 83%\n\nПобедитель забирает весь банк!", parse_mode="HTML")
+    try: bet = int(args[1])
+    except: return await m.answer("❌ Число!")
+    if bet < 100: return await m.answer("❌ Минимальная ставка: 100")
+    user = await get_user(cid, uid)
+    if user['balance'] < bet: return await m.answer(f"❌ Мало ({fmt_money(user['balance'])})")
+    if cid in ROULETTE_TABLES: return await m.answer("🔫 Игра уже идёт!")
+    ROULETTE_TABLES[cid] = {"players": {uid: {"name": m.from_user.first_name, "bet": bet, "alive": True}}, "order": [uid], "stage": "waiting", "creator": uid, "bank": 0}
+    await update_balance(cid, uid, -bet)
+    ROULETTE_TABLES[cid]["bank"] = bet
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔫 Присоединиться", callback_data=f"roulette_join_{cid}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"roulette_cancel_{cid}")]
+    ])
+    await m.answer(f"🔫 <b>Русская рулетка!</b>\n\n👤 {m.from_user.first_name}\n💰 Ставка: {fmt_money(bet)}\n👥 1/{ROULETTE_MAX_PLAYERS}\n⏳ {ROULETTE_WAIT_TIME} сек\n\nНажмите кнопку!", reply_markup=kb, parse_mode="HTML")
+    await state.set_state(BlackjackStates.waiting)
+    await asyncio.sleep(ROULETTE_WAIT_TIME)
+    if cid not in ROULETTE_TABLES: return
+    table = ROULETTE_TABLES[cid]
+    if len(table["players"]) < ROULETTE_MIN_PLAYERS:
+        for pid, pdata in table["players"].items():
+            await update_balance(cid, pid, pdata["bet"])
+        await m.answer("😔 Мало игроков. Ставки возвращены.")
+        del ROULETTE_TABLES[cid]
+        await state.clear()
+        return
+    table["stage"] = "playing"
+    pl = ", ".join([f"{p['name']} ({fmt_money(p['bet'])})" for p in table["players"].values()])
+    await bot.send_message(cid, f"🔫 <b>Игра началась!</b>\n\nИгроки: {pl}\n\nПервый стреляет...", parse_mode="HTML")
+    await roulette_turn(cid, table["order"][0], state)
+
+@dp.callback_query(lambda c: c.data.startswith("roulette_join_"))
+async def roulette_join(cb: types.CallbackQuery, state: FSMContext):
+    cid = int(cb.data.split("_")[2])
+    uid = cb.from_user.id
+    if cid not in ROULETTE_TABLES: return await cb.answer("Игра завершена!", show_alert=True)
+    table = ROULETTE_TABLES[cid]
+    if table["stage"] != "waiting": return await cb.answer("Игра началась!", show_alert=True)
+    if uid in table["players"]: return await cb.answer("Вы уже участвуете!", show_alert=True)
+    if len(table["players"]) >= ROULETTE_MAX_PLAYERS: return await cb.answer("Мест нет!", show_alert=True)
+    user = await get_user(cid, uid)
+    bet = table["players"][table["order"][0]]["bet"]
+    if user['balance'] < bet: return await cb.answer(f"❌ Нужно {fmt_money(bet)}", show_alert=True)
+    await update_balance(cid, uid, -bet)
+    table["players"][uid] = {"name": cb.from_user.first_name, "bet": bet, "alive": True}
+    table["order"].append(uid)
+    table["bank"] += bet
+    await cb.answer("✅ Вы участвуете!")
+    pl = "\n".join([f"• {p['name']}" for p in table["players"].values()])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔫 Присоединиться", callback_data=f"roulette_join_{cid}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"roulette_cancel_{cid}")]
+    ])
+    try:
+        await cb.message.edit_text(f"🔫 <b>Русская рулетка!</b>\n\nИгроки ({len(table['players'])}/{ROULETTE_MAX_PLAYERS}):\n{pl}\n\n💰 Банк: {fmt_money(table['bank'])}\n⏳ Ждём...", reply_markup=kb, parse_mode="HTML")
+    except: pass
+
+@dp.callback_query(lambda c: c.data.startswith("roulette_cancel_"))
+async def roulette_cancel(cb: types.CallbackQuery, state: FSMContext):
+    cid = int(cb.data.split("_")[2])
+    uid = cb.from_user.id
+    if cid not in ROULETTE_TABLES: return await cb.answer("Игра завершена!", show_alert=True)
+    table = ROULETTE_TABLES[cid]
+    if uid != table["creator"]: return await cb.answer("Только создатель!", show_alert=True)
+    if table["stage"] == "playing": return await cb.answer("Игра началась!", show_alert=True)
+    for pid, pdata in table["players"].items():
+        await update_balance(cid, pid, pdata["bet"])
+    del ROULETTE_TABLES[cid]
+    await state.clear()
+    await cb.message.edit_text("❌ Игра отменена. Ставки возвращены.", parse_mode="HTML")
+    await cb.answer("✅ Отменено!")
+
+async def roulette_turn(cid, uid, state):
+    table = ROULETTE_TABLES[cid]
+    if uid not in table["players"] or not table["players"][uid]["alive"]:
+        next_player = next((p for p in table["order"] if table["players"][p]["alive"] and p != uid), None)
+        if next_player: await roulette_turn(cid, next_player, state)
+        else: await roulette_end(cid, state)
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔫 Стрелять!", callback_data=f"roulette_shoot_{uid}_{cid}")]])
+    await bot.send_message(uid, f"🔫 <b>Ваш ход!</b>\n\nНажмите кнопку, чтобы выстрелить в себя.\nШанс выжить: 83%\n\n💰 Банк: {fmt_money(table['bank'])}", reply_markup=kb, parse_mode="HTML")
+
+@dp.callback_query(lambda c: c.data.startswith("roulette_shoot_"))
+async def roulette_shoot(cb: types.CallbackQuery, state: FSMContext):
+    parts = cb.data.split("_")
+    uid = int(parts[2])
+    cid = int(parts[3])
+    if cid not in ROULETTE_TABLES: return await cb.answer("Игра завершена!", show_alert=True)
+    table = ROULETTE_TABLES[cid]
+    if uid != cb.from_user.id: return await cb.answer("Не ваш ход!", show_alert=True)
+    shot = random.random()
+    if shot < ROULETTE_BULLET_CHANCE:
+        table["players"][uid]["alive"] = False
+        await cb.message.edit_text(f"💥 <b>ВЫСТРЕЛ!</b>\n\nВы проиграли...", parse_mode="HTML")
+        await bot.send_message(cid, f"💀 {table['players'][uid]['name']} проиграл!", parse_mode="HTML")
+    else:
+        await cb.message.edit_text(f"✅ <b>Щёлк...</b>\n\nВы выжили!", parse_mode="HTML")
+        await bot.send_message(cid, f"✅ {table['players'][uid]['name']} выжил!", parse_mode="HTML")
+    new_achs = await check_achievements(cid, uid)
+    await notify_achievements(cid, uid, new_achs)
+    alive_players = [p for p in table["order"] if table["players"][p]["alive"]]
+    if len(alive_players) == 1:
+        await roulette_end(cid, state)
+    else:
+        next_player = next((p for p in table["order"] if table["players"][p]["alive"] and p != uid), alive_players[0])
+        await roulette_turn(cid, next_player, state)
+
+async def roulette_end(cid, state):
+    table = ROULETTE_TABLES[cid]
+    winners = [p for p in table["order"] if table["players"][p]["alive"]]
+    if len(winners) == 1:
+        winner_uid = winners[0]
+        winner_share = table["bank"]
+        await update_balance(cid, winner_uid, winner_share)
+        await bot.send_message(cid, f"🏆 <b>ПОБЕДИТЕЛЬ!</b>\n\n👤 {table['players'][winner_uid]['name']}\n💰 Забирает: <b>{fmt_money(winner_share)}</b>\n\n🔫 Игра окончена!", parse_mode="HTML")
+    else:
+        for uid in winners:
+            await update_balance(cid, uid, table["players"][uid]["bet"])
+        await bot.send_message(cid, f"🤝 <b>НИЧЬЯ!</b>\n\nВыжившие: {', '.join([table['players'][u]['name'] for u in winners])}\nСтавки возвращены.\n\n🔫 Игра окончена!", parse_mode="HTML")
+    del ROULETTE_TABLES[cid]
+    await state.clear()
+
+# ═══════════════════════════════════════════
+# БЛЭКДЖЕК
+# ═══════════════════════════════════════════
+def create_deck():
+    suits = ['♠', '♥', '♦', '♣']
+    ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A']
+    deck = [(r, s) for s in suits for r in ranks]
+    random.shuffle(deck)
+    return deck
+
+def card_value(card):
+    r = card[0]
+    if r in ['J', 'Q', 'K']: return 10
+    if r == 'A': return 11
+    return int(r)
+
+def calc_score(cards):
+    score = sum(card_value(c) for c in cards)
+    aces = sum(1 for c in cards if c[0] == 'A')
+    while score > 21 and aces > 0:
+        score -= 10
+        aces -= 1
+    return score
+
+def show_cards(cards, hide_first=False):
+    if hide_first: return f"🂠 + {' '.join(f'{r}{s}' for r,s in cards[1:])}"
+    return ' '.join(f'{r}{s}' for r,s in cards)
+
+@dp.message(Command("blackjack"))
+async def blackjack_start(m: Message, state: FSMContext):
+    cid, uid = m.chat.id, m.from_user.id
+    if cid in bj_tables: return await m.answer("🎰 Игра идёт!")
+    u = await get_user(cid, uid)
+    if u['balance'] < BJ_MIN_BALANCE: return await m.answer(f"❌ Нужно {BJ_MIN_BALANCE}+ ({fmt_money(u['balance'])})")
+    bj_tables[cid] = {"players": {uid: {"name": m.from_user.first_name, "bet": 0, "cards": [], "stand": False, "busted": False}}, "order": [uid], "stage": "waiting", "creator": uid}
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Присоединиться", callback_data=f"bj_join_{cid}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"bj_cancel_{cid}")]
+    ])
+    await m.answer(f"🎩 <b>Игорёчек открывает стол!</b>\n\n👤 {m.from_user.first_name}\n👥 1/{BJ_MAX_PLAYERS}\n⏳ {BJ_WAIT_TIME} сек\n\nНажмите кнопку!", reply_markup=kb, parse_mode="HTML")
+    await state.set_state(BlackjackStates.waiting)
+    await asyncio.sleep(BJ_WAIT_TIME)
+    if cid not in bj_tables: return
+    t = bj_tables[cid]
+    if len(t["players"]) < 2:
+        await m.answer("😔 Мало игроков.")
+        del bj_tables[cid]
+        await state.clear()
+        return
+    t["stage"] = "betting"
+    pl = ", ".join(p["name"] for p in t["players"].values())
+    for uid in t["order"]:
+        bk = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="100", callback_data=f"bet_100_{cid}"), InlineKeyboardButton(text="200", callback_data=f"bet_200_{cid}")],
+            [InlineKeyboardButton(text="500", callback_data=f"bet_500_{cid}"), InlineKeyboardButton(text="1000", callback_data=f"bet_1000_{cid}")]
+        ])
+        try: await bot.send_message(uid, f"🎩 <b>Ваша ставка?</b>", reply_markup=bk, parse_mode="HTML")
+        except: await m.answer(f"⚠️ {t['players'][uid]['name']}, напишите в ЛС!")
+    await m.answer(f"🎩 <b>Игроки:</b> {pl}\n\n💰 Проверьте личку!", parse_mode="HTML")
+
+@dp.callback_query(lambda c: c.data.startswith("bj_join_"))
+async def blackjack_join(cb: types.CallbackQuery, state: FSMContext):
+    cid = int(cb.data.split("_")[2])
+    uid = cb.from_user.id
+    if cid not in bj_tables: return await cb.answer("Стол закрыт!", show_alert=True)
+    t = bj_tables[cid]
+    if t["stage"] != "waiting": return await cb.answer("Началась!", show_alert=True)
+    if uid in t["players"]: return await cb.answer("Вы уже тут!", show_alert=True)
+    if len(t["players"]) >= BJ_MAX_PLAYERS: return await cb.answer("Мест нет!", show_alert=True)
+    u = await get_user(cid, uid)
+    if u['balance'] < BJ_MIN_BALANCE: return await cb.answer(f"❌ Нужно {BJ_MIN_BALANCE}+", show_alert=True)
+    t["players"][uid] = {"name": cb.from_user.first_name, "bet": 0, "cards": [], "stand": False, "busted": False}
+    t["order"].append(uid)
+    await cb.answer("✅ Присоединились!")
+    pl = "\n".join([f"• {p['name']}" for p in t["players"].values()])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Присоединиться", callback_data=f"bj_join_{cid}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"bj_cancel_{cid}")]
+    ])
+    try: await cb.message.edit_text(f"🎩 <b>Игроки ({len(t['players'])}/{BJ_MAX_PLAYERS}):\n{pl}\n\n⏳ Ждём...</b>", reply_markup=kb, parse_mode="HTML")
+    except: pass
+
+@dp.callback_query(lambda c: c.data.startswith("bj_cancel_"))
+async def blackjack_cancel(cb: types.CallbackQuery, state: FSMContext):
+    cid = int(cb.data.split("_")[2])
+    uid = cb.from_user.id
+    if cid not in bj_tables: return await cb.answer("Завершена!", show_alert=True)
+    t = bj_tables[cid]
+    if uid != t["creator"]: return await cb.answer("Только создатель!", show_alert=True)
+    if t["stage"] == "playing": return await cb.answer("Игра началась!", show_alert=True)
+    refunded = []
+    for pid, pd in t["players"].items():
+        if pd["bet"] > 0:
+            await update_balance(cid, pid, pd["bet"])
+            refunded.append(f"• {pd['name']}: +{fmt_money(pd['bet'])}")
+    del bj_tables[cid]
+    await state.clear()
+    rt = "\n".join(refunded) if refunded else "Никто не поставил"
+    try: await cb.message.edit_text(f"❌ <b>Отменена!</b>\n\n👤 {cb.from_user.first_name}\n\n💰 Возврат:\n{rt}", parse_mode="HTML")
+    except: pass
+    await cb.answer("✅ Отменена!")
+
+@dp.callback_query(lambda c: c.data.startswith("bet_"))
+async def blackjack_bet(cb: types.CallbackQuery, state: FSMContext):
+    parts = cb.data.split("_")
+    bet = int(parts[1])
+    cid = int(parts[2])
+    uid = cb.from_user.id
+    if cid not in bj_tables: return await cb.answer("Нет игры!", show_alert=True)
+    t = bj_tables[cid]
+    if uid not in t["players"]: return await cb.answer("Не в игре!", show_alert=True)
+    if t["players"][uid]["bet"] > 0: return await cb.answer("Ставка есть!", show_alert=True)
+    u = await get_user(cid, uid)
+    if u['balance'] < bet: return await cb.answer(f"❌ Мало ({fmt_money(u['balance'])})", show_alert=True)
+    await update_balance(cid, uid, -bet)
+    t["players"][uid]["bet"] = bet
+    try: await cb.message.edit_text(f"✅ Ставка: <b>{bet}</b>. Ждём...", parse_mode="HTML")
+    except: pass
+    await cb.answer(f"Ставка {bet} принята!")
+    if all(p["bet"] > 0 for p in t["players"].values()):
+        await blackjack_deal(cid, state)
+
+async def blackjack_deal(cid, state):
+    t = bj_tables[cid]
+    t["deck"] = create_deck()
+    for uid in t["order"]:
+        t["players"][uid]["cards"] = [t["deck"].pop(), t["deck"].pop()]
+    t["dealer"] = [t["deck"].pop(), t["deck"].pop()]
+    t["stage"] = "playing"
+    pi = "\n".join([f"👤 {p['name']}: {p['bet']}" for p in t["players"].values()])
+    await bot.send_message(cid, f"🎩 <b>Карты розданы!</b>\n\n🤖 Мои: {show_cards(t['dealer'], True)}\n\n{pi}\n\n🎮 Ходит: <b>{t['players'][t['order'][0]]['name']}</b>", parse_mode="HTML")
+    await state.set_state(BlackjackStates.playing)
+    await blackjack_player_turn(cid, t["order"][0], state)
+
+async def blackjack_player_turn(cid, uid, state):
+    t = bj_tables[cid]
+    p = t["players"][uid]
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🃏 Ещё", callback_data=f"hit_{uid}_{cid}"), InlineKeyboardButton(text="✋ Хватит", callback_data=f"stand_{uid}_{cid}")]
+    ])
+    await bot.send_message(uid, f"🎩 <b>Ваш ход!</b>\n\n🃏 Ваши: {show_cards(p['cards'])}\n🔢 Сумма: <b>{calc_score(p['cards'])}</b>\n💰 Ставка: {p['bet']}\n\n🎴 Карта Игорёчка: {t['dealer'][0][0]}{t['dealer'][0][1]}", reply_markup=kb, parse_mode="HTML")
+
+@dp.callback_query(lambda c: c.data.startswith("hit_") or c.data.startswith("stand_"))
+async def blackjack_hit_stand(cb: types.CallbackQuery, state: FSMContext):
+    parts = cb.data.split("_")
+    act = parts[0]
+    uid = int(parts[1])
+    cid = int(parts[2])
+    if cid not in bj_tables: return await cb.answer("Нет игры!", show_alert=True)
+    t = bj_tables[cid]
+    p = t["players"][uid]
+    if act == "hit":
+        c = t["deck"].pop()
+        p["cards"].append(c)
+        sc = calc_score(p["cards"])
+        await cb.message.edit_text(f"🃏 Взял карту!\n\n🃏 +{c[0]}{c[1]}\n📊 {show_cards(p['cards'])}\n🔢 Сумма: <b>{sc}</b>", parse_mode="HTML")
+        if sc > 21:
+            p["stand"] = True
+            p["busted"] = True
+            await cb.message.answer(f"💥 <b>Перебор ({sc})!</b>", parse_mode="HTML")
+            await blackjack_next_turn(cid, state)
+        elif sc == 21:
+            p["stand"] = True
+            await cb.message.answer(f"🎉 <b>21!</b>")
+            await blackjack_next_turn(cid, state)
+        else:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🃏 Ещё", callback_data=f"hit_{uid}_{cid}"), InlineKeyboardButton(text="✋ Хватит", callback_data=f"stand_{uid}_{cid}")]
+            ])
+            await cb.message.answer(f"💰 Сумма: {sc}. Ещё?", reply_markup=kb)
+    elif act == "stand":
+        p["stand"] = True
+        await cb.message.edit_text(f"✋ Остановился на <b>{calc_score(p['cards'])}</b>", parse_mode="HTML")
+        await blackjack_next_turn(cid, state)
+
+async def blackjack_next_turn(cid, state):
+    t = bj_tables[cid]
+    nxt = next((u for u in t["order"] if not t["players"][u]["stand"]), None)
+    if nxt:
+        await bot.send_message(cid, f"🎮 Ходит: <b>{t['players'][nxt]['name']}</b>", parse_mode="HTML")
+        await blackjack_player_turn(cid, nxt, state)
+    else:
+        await blackjack_dealer_play(cid, state)
+
+async def blackjack_dealer_play(cid, state):
+    t = bj_tables[cid]
+    await bot.send_message(cid, f"🎩 <b>Ход Игорёчка!</b>\n\n🤖 Мои: {show_cards(t['dealer'])}", parse_mode="HTML")
+    while calc_score(t["dealer"]) < BJ_DEALER_STOP:
+        await asyncio.sleep(1)
+        c = t["deck"].pop()
+        t["dealer"].append(c)
+        await bot.send_message(cid, f"🎩 Берёт: <b>{c[0]}{c[1]}</b> → <b>{calc_score(t['dealer'])}</b>", parse_mode="HTML")
+    ds = calc_score(t["dealer"])
+    res = []
+    for uid in t["order"]:
+        p = t["players"][uid]
+        ps = calc_score(p["cards"])
+        bet = p["bet"]
+        if p["busted"]: res.append(f"❌ {p['name']}: перебор ({ps})")
+        elif ds > 21:
+            await update_balance(cid, uid, bet * 2)
+            res.append(f"🎉 {p['name']}: Игорёчек перебрал! +{bet}")
+        elif ps > ds:
+            await update_balance(cid, uid, bet * 2)
+            res.append(f"🏆 {p['name']}: победа! +{bet}")
+        elif ps == ds:
+            await update_balance(cid, uid, bet)
+            res.append(f"🤝 {p['name']}: ничья")
+        else: res.append(f"😢 {p['name']}: проигрыш")
+    if ds > 21: fn = "😱 Перебрал!"
+    elif any("победа" in r for r in res): fn = "🎉 Поздравляем!"
+    elif any("проигрыш" in r for r in res): fn = "🎩 Забирает ставки!"
+    else: fn = "🤝 Ничья!"
+    await bot.send_message(cid, f"🎩 <b>{fn}</b>\n\n🤖 Карты: {show_cards(t['dealer'])} ({ds})\n\n📋 Результаты:\n" + "\n".join(res), parse_mode="HTML")
+    del bj_tables[cid]
+    await state.clear()
+
+# ═══════════════════════════════════════════
 # АВТО-РЕГИСТРАЦИЯ
 # ═══════════════════════════════════════════
 @dp.message()
 async def auto_register(m: Message):
-    if m.chat.type not in ['group', 'supergroup']:
-        return
+    if m.chat.type not in ['group', 'supergroup']: return
     await get_user(m.chat.id, m.from_user.id)
 
 @dp.message(F.new_chat_members)
@@ -3328,8 +4579,7 @@ async def on_user_join(m: Message):
     cid = m.chat.id
     for user in m.new_chat_members:
         if user.is_bot:
-            if user.id == int(API_TOKEN.split(':')[0]):
-                await m.answer("👋 Привет! /start")
+            if user.id == int(API_TOKEN.split(':')[0]): await m.answer("👋 Привет! Я экономический бот. /start")
             continue
         await get_user(cid, user.id)
         await save_username(cid, user.id, user.full_name)
@@ -3347,13 +4597,25 @@ async def main():
     asyncio.create_task(jail_fine_check_loop())
     asyncio.create_task(check_expired_debts_loop())
     asyncio.create_task(check_all_elections_and_terms())
+    asyncio.create_task(federal_expenses_loop())
+    asyncio.create_task(city_expenses_loop())
     asyncio.create_task(check_overdue_projects())
+    asyncio.create_task(mafia_check_loop())
+    asyncio.create_task(mafia_threat_loop())
+    asyncio.create_task(stock_market_loop())
+    asyncio.create_task(stock_dividend_loop())
+    asyncio.create_task(auction_check_loop())
     print("🎰 Лотерея")
     print("💳 Кредиты")
     print("⚖️ Штрафы")
     print("🕵️ Долги")
     print("🏛️ Выборы")
+    print("💰 Федеральные расходы")
+    print("🏙️ Городские расходы")
     print("⏰ Проекты мэров")
+    print("🕴️ Мафия")
+    print("📈 Биржа")
+    print("🏆 Аукцион")
     await init_cities()
     print("🏙️ Города")
     await dp.start_polling(bot, timeout=30, drop_pending_updates=True, allowed_updates=["message", "callback_query", "my_chat_member"])
