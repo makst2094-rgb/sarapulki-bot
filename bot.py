@@ -80,6 +80,7 @@ JAIL_DEBT_THRESHOLD = 500
 JAIL_DEBT_TIMEOUT = 7200
 MAX_BUSINESSES_PER_TYPE = 10
 
+# Расходы казны (в день)
 FEDERAL_SALARY_PRESIDENT = 50000
 FEDERAL_SALARY_PRIME = 30000
 FEDERAL_SOCIAL_AID = 1000
@@ -261,6 +262,7 @@ async def init_db():
         ]
         for t in tables:
             await conn.execute(t)
+        
         try:
             await conn.execute("ALTER TABLE profiles ADD COLUMN coffee_level INTEGER DEFAULT 0")
         except: pass
@@ -427,6 +429,9 @@ async def arrest_player(cid, uid):
             await conn.execute("UPDATE profiles SET job_key='novice', level=1 WHERE chat_id=$1 AND user_id=$2", cid, uid)
     return arrested, total_value
 
+# ═══════════════════════════════════════════
+# ДОСТИЖЕНИЯ
+# ═══════════════════════════════════════════
 async def check_achievements(cid, uid):
     unlocked = []
     user = await get_user(cid, uid)
@@ -466,6 +471,9 @@ async def notify_achievements(cid, uid, new_achs):
         try: await bot.send_message(cid, f"🏆 <b>Новые достижения!</b>\n\n{ach_text}", parse_mode="HTML")
         except: pass
 
+# ═══════════════════════════════════════════
+# ВЕБ-СЕРВЕР И ФОНОВЫЕ ЗАДАЧИ
+# ═══════════════════════════════════════════
 async def handle_ping(request):
     return web.Response(text="🤖 Bot is alive!")
 
@@ -618,6 +626,9 @@ async def run_collectors(debt):
     await bot.send_message(cid, f"🚨 <b>КОЛЛЕКТОРЫ ЯВИЛИСЬ!</b>\n\n👤 {b_name}\n📜 Долг: {fmt_money(debt_amount)} + {fmt_money(penalty)} штраф\n\n🗑️ <b>Изъято:</b>\n{seized_text}", parse_mode="HTML")
     await bot.send_message(cid, f"✅ <b>ДОЛГ ВОЗВРАЩЁН</b>\n\n👤 От {b_name}\n💰 Получено: {fmt_money(debt_amount)}", parse_mode="HTML")
 
+# ═══════════════════════════════════════════
+# РАСХОДЫ КАЗНЫ
+# ═══════════════════════════════════════════
 async def federal_expenses_loop():
     print("🏛️ Цикл федеральных расходов запущен")
     while True:
@@ -685,6 +696,9 @@ async def city_expenses_loop():
         except Exception as e:
             print(f"Ошибка городских расходов: {e}")
 
+# ═══════════════════════════════════════════
+# ФУНКЦИИ ГОРОДОВ И ПОЛИТИКИ
+# ═══════════════════════════════════════════
 async def init_cities():
     try:
         async with pool.acquire() as conn:
@@ -1129,6 +1143,9 @@ async def check_overdue_projects():
         except Exception as e:
             print(f"Ошибка проверки проектов: {e}")
 
+# ═══════════════════════════════════════════
+# ПРОВЕРКА ВЫБОРОВ И СРОКОВ
+# ═══════════════════════════════════════════
 async def check_all_elections_and_terms():
     print("🏛️ Единая проверка сроков и выборов запущена")
     while True:
@@ -3091,6 +3108,9 @@ async def cmd_president_check_mayor(m: Message):
             await bot.send_message(cid, msg, parse_mode="HTML")
             await m.answer("✅ Наказание применено!")
 
+# ═══════════════════════════════════════════
+# АВТО-РЕГИСТРАЦИЯ
+# ═══════════════════════════════════════════
 @dp.message()
 async def auto_register(m: Message):
     if m.chat.type not in ['group', 'supergroup']: return
@@ -3106,6 +3126,9 @@ async def on_user_join(m: Message):
         await get_user(cid, user.id)
         await save_username(cid, user.id, user.full_name)
 
+# ═══════════════════════════════════════════
+# ГЛАВНАЯ ФУНКЦИЯ
+# ═══════════════════════════════════════════
 async def main():
     await init_db()
     print("🤖 Бот запущен!")
