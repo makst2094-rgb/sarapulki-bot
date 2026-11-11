@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<meta name="theme-color" content="#000000">
+<title>Orbit — API Gateway</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{--bg:#000;--surface:#0a0a0a;--glass:rgba(255,255,255,0.03);--glass-border:rgba(255,255,255,0.08);--glass-highlight:rgba(255,255,255,0.15);--text:#fff;--dim:#888;--code-bg:#0d0d0d;--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px)}
+[data-theme="light"]{--bg:#f5f5f7;--surface:#fff;--glass:rgba(0,0,0,0.03);--glass-border:rgba(0,0,0,0.08);--glass-highlight:rgba(255,255,255,0.8);--text:#1d1d1f;--dim:#6e6e73;--code-bg:#1e1e1e}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;line-height:1.6;overflow-x:hidden;opacity:0;transition:opacity .8s,background .5s,color .5s;-webkit-font-smoothing:antialiased}
+body.loaded{opacity:1}
+
+/* PRELOADER */
+.preloader{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;transition:opacity .8s,visibility .8s}
+.preloader.hidden{opacity:0;visibility:hidden}
+.preloader-text{font-size:clamp(1.5rem,5vw,2rem);font-weight:300;letter-spacing:8px;animation:pulse 2s infinite;color:var(--text)}
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+
+/* CANVAS */
+#planet-canvas{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.6;transition:opacity .5s}
+[data-theme="light"] #planet-canvas{opacity:.3}
+
+/* ЗВЁЗДЫ */
+.stars{position:fixed;inset:0;z-index:0;pointer-events:none}
+.star{position:absolute;width:1px;height:1px;background:var(--text);border-radius:50%;animation:twinkle var(--dur) infinite;animation-delay:var(--del);opacity:.5}
+@keyframes twinkle{0%,100%{opacity:.1}50%{opacity:.8}}
+
+/* HEADER */
+header{position:fixed;top:0;left:0;right:0;padding:16px 20px;padding-top:calc(16px + var(--safe-top));background:rgba(10,10,10,0.6);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border-bottom:1px solid var(--glass-border);z-index:100;transform:translateY(-100%);animation:slideDown .8s .5s forwards;box-shadow:0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 var(--glass-highlight);transition:background .5s}
+[data-theme="light"] header{background:rgba(255,255,255,0.7)}
+@keyframes slideDown{to{transform:translateY(0)}}
+nav{max-width:1400px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+.logo{font-weight:600;letter-spacing:2px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:transform .3s;font-size:.95rem;color:var(--text)}
+.logo:hover{transform:scale(1.05)}
+.logo-icon{width:20px;height:20px;border:2px solid var(--text);border-radius:50%;position:relative;animation:spin 20s linear infinite}
+.logo-icon::before{content:'';position:absolute;inset:50%;transform:translate(-50%,-50%);width:5px;height:5px;background:var(--text);border-radius:50%}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.burger{display:none;width:28px;height:28px;flex-direction:column;justify-content:center;gap:5px;cursor:pointer;background:none;border:none;padding:0}
+.burger span{display:block;width:100%;height:2px;background:var(--text);border-radius:2px;transition:all .3s}
+.burger.active span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+.burger.active span:nth-child(2){opacity:0}
+.burger.active span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+
+.nav-links{display:flex;gap:28px}
+.nav-links a{color:var(--dim);text-decoration:none;font-size:.85rem;transition:color .3s;position:relative;padding:4px 0}
+.nav-links a::after{content:'';position:absolute;bottom:0;left:0;width:0;height:1px;background:var(--text);transition:width .3s}
+.nav-links a:hover{color:var(--text)}
+.nav-links a:hover::after{width:100%}
+.nav-right{display:flex;gap:10px;align-items:center}
+
+/* LANG SWITCH */
+.lang-switch{display:flex;gap:4px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:4px;border-radius:20px;border:1px solid var(--glass-border);box-shadow:inset 0 1px 0 var(--glass-highlight)}
+.lang-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:.7rem;padding:5px 8px;border-radius:14px;transition:all .4s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden}
+.lang-btn::before{content:'';position:absolute;top:50%;left:50%;width:0;height:0;border-radius:50%;background:rgba(128,128,128,.2);transform:translate(-50%,-50%);transition:width .4s,height .4s}
+.lang-btn:hover::before{width:100px;height:100px}
+.lang-btn.active{background:var(--text);color:var(--bg);transform:scale(1.05);box-shadow:0 0 20px rgba(128,128,128,.3)}
+
+/* THEME TOGGLE - LIQUID GLASS */
+.theme-toggle{position:relative;width:60px;height:32px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:16px;cursor:pointer;transition:all .4s;box-shadow:inset 0 1px 0 var(--glass-highlight),0 2px 8px rgba(0,0,0,.2)}
+.theme-toggle::before{content:'';position:absolute;top:3px;left:3px;width:24px;height:24px;background:linear-gradient(135deg,#fff,#e0e0e0);border-radius:50%;transition:all .4s cubic-bezier(.4,0,.2,1);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+[data-theme="light"] .theme-toggle::before{left:31px;background:linear-gradient(135deg,#ffd700,#ffed4e)}
+.theme-toggle:hover{border-color:var(--glass-highlight);transform:scale(1.05)}
+.theme-toggle:active{transform:scale(.95)}
+.theme-icon{position:absolute;top:50%;transform:translateY(-50%);font-size:14px;transition:opacity .3s;pointer-events:none}
+.theme-icon.moon{left:8px;opacity:1}
+.theme-icon.sun{right:8px;opacity:0}
+[data-theme="light"] .theme-icon.moon{opacity:0}
+[data-theme="light"] .theme-icon.sun{opacity:1}
+
+/* BUTTONS */
+.btn{background:linear-gradient(135deg,rgba(255,255,255,.1),rgba(255,255,255,.05));backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);border:1px solid var(--glass-border);padding:10px 18px;border-radius:24px;font-size:.8rem;font-weight:600;cursor:pointer;transition:all .4s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 var(--glass-highlight);white-space:nowrap}
+[data-theme="light"] .btn{background:linear-gradient(135deg,rgba(0,0,0,.05),rgba(0,0,0,.02));box-shadow:0 8px 32px rgba(0,0,0,0.1),inset 0 1px 0 var(--glass-highlight)}
+.btn::before{content:'';position:absolute;top:50%;left:50%;width:0;height:0;border-radius:50%;background:rgba(255,255,255,.2);transform:translate(-50%,-50%);transition:width .6s,height .6s}
+.btn:hover::before{width:300px;height:300px}
+.btn:hover{transform:translateY(-3px);box-shadow:0 12px 40px rgba(255,255,255,.15),inset 0 1px 0 var(--glass-highlight);border-color:var(--glass-highlight)}
+.btn:active{transform:translateY(-1px) scale(.98)}
+
+.btn-outline{background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);border:1px solid var(--glass-border);padding:10px 18px;border-radius:24px;font-size:.8rem;cursor:pointer;transition:all .4s;box-shadow:inset 0 1px 0 var(--glass-highlight);white-space:nowrap}
+.btn-outline:hover{background:rgba(255,255,255,.08);border-color:var(--glass-highlight);transform:translateY(-2px);box-shadow:0 8px 32px rgba(255,255,255,.1),inset 0 1px 0 var(--glass-highlight)}
+
+/* MOBILE MENU */
+.mobile-menu{position:fixed;top:0;right:-100%;width:80%;max-width:320px;height:100vh;height:100dvh;background:rgba(10,10,10,0.95);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border-left:1px solid var(--glass-border);z-index:99;transition:right .4s cubic-bezier(.4,0,.2,1);padding:80px 24px 40px;padding-top:calc(80px + var(--safe-top));display:flex;flex-direction:column;gap:24px}
+[data-theme="light"] .mobile-menu{background:rgba(255,255,255,0.95)}
+.mobile-menu.active{right:0}
+.mobile-menu a{color:var(--dim);text-decoration:none;font-size:1.2rem;padding:12px 0;border-bottom:1px solid var(--glass-border);transition:color .3s}
+.mobile-menu a:hover{color:var(--text)}
+.mobile-menu .mobile-actions{display:flex;flex-direction:column;gap:12px;margin-top:auto}
+
+/* MAIN */
+main{position:relative;z-index:1}
+
+/* HERO */
+.hero{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:100px 20px 60px;padding-top:calc(100px + var(--safe-top))}
+.hero-content{opacity:0;transform:translateY(30px);animation:fadeUp 1s 1s forwards}
+@keyframes fadeUp{to{opacity:1;transform:translateY(0)}}
+.hero h1{font-size:clamp(2.2rem,10vw,4rem);font-weight:700;line-height:1.1;margin-bottom:20px;letter-spacing:-2px;color:var(--text)}
+.typewriter{display:inline-block;border-right:3px solid var(--text);animation:blink 1s step-end infinite}
+@keyframes blink{50%{border-color:transparent}}
+.glitch{position:relative}
+@keyframes glitch{0%,100%{text-shadow:none}92%{text-shadow:none}93%{text-shadow:-2px 0 #ff00ff,2px 0 #00ffff}94%{text-shadow:2px 0 #ff00ff,-2px 0 #00ffff}95%{text-shadow:none}}
+.hero p{color:var(--dim);font-size:clamp(.9rem,3.5vw,1.1rem);max-width:600px;margin:0 auto 32px;opacity:0;animation:fadeIn 1s 1.5s forwards;padding:0 10px}
+@keyframes fadeIn{to{opacity:1}}
+.hero-buttons{display:flex;gap:12px;justify-content:center;opacity:0;animation:fadeIn 1s 1.8s forwards;flex-wrap:wrap;padding:0 10px}
+
+/* SECTIONS */
+section{max-width:1200px;margin:0 auto;padding:80px 20px}
+.section-label{color:var(--dim);font-size:.8rem;margin-bottom:12px;font-family:'Courier New',monospace;opacity:0;transform:translateX(-20px);transition:all .6s}
+.section-label.visible{opacity:1;transform:translateX(0)}
+.section-title{font-size:clamp(1.8rem,7vw,3rem);font-weight:700;margin-bottom:20px;letter-spacing:-1.5px;line-height:1.2;opacity:0;transform:translateY(30px);transition:all .8s cubic-bezier(.4,0,.2,1);color:var(--text)}
+.section-title.visible{opacity:1;transform:translateY(0)}
+.section-desc{color:var(--dim);font-size:clamp(.9rem,3vw,1.1rem);max-width:600px;margin-bottom:40px;opacity:0;transform:translateY(20px);transition:all .8s .2s}
+.section-desc.visible{opacity:1;transform:translateY(0)}
+
+/* CODE BLOCK - КРАСИВЫЙ С ПЕРЕКЛЮЧЕНИЕМ */
+.code-showcase{margin:60px 0;opacity:0;transform:translateY(30px);transition:all .8s}
+.code-showcase.visible{opacity:1;transform:translateY(0)}
+.code-container{background:var(--glass);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border:1px solid var(--glass-border);border-radius:20px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.4),inset 0 1px 0 var(--glass-highlight);position:relative}
+.code-container::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--glass-highlight),transparent)}
+.code-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--glass-border);background:rgba(0,0,0,0.3)}
+[data-theme="light"] .code-header{background:rgba(0,0,0,0.05)}
+.code-dots{display:flex;gap:6px}
+.code-dot{width:12px;height:12px;border-radius:50%;background:#ff5f56}
+.code-dot:nth-child(2){background:#ffbd2e}
+.code-dot:nth-child(3){background:#27c93f}
+.code-tabs{display:flex;gap:8px;background:var(--glass);padding:4px;border-radius:12px;border:1px solid var(--glass-border)}
+.code-tab{padding:8px 16px;border-radius:8px;font-size:.8rem;color:var(--dim);background:none;border:none;cursor:pointer;transition:all .3s;font-weight:500}
+.code-tab.active{background:var(--text);color:var(--bg);box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.code-tab:hover:not(.active){color:var(--text);background:rgba(128,128,128,.1)}
+.code-copy{background:none;border:1px solid var(--glass-border);color:var(--dim);padding:8px 14px;border-radius:8px;font-size:.75rem;cursor:pointer;transition:all .3s;font-weight:500}
+.code-copy:hover{color:var(--text);border-color:var(--glass-highlight);background:rgba(128,128,128,.1)}
+.code-content{padding:24px;overflow-x:auto;position:relative}
+.code-block{display:none;animation:codeFadeIn .4s}
+.code-block.active{display:block}
+@keyframes codeFadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+pre{margin:0;font-family:'SF Mono',Monaco,'Courier New',monospace;font-size:.9rem;line-height:1.7;color:#e0e0e0}
+.kw{color:#ff79c6}
+.str{color:#f1fa8c}
+.fn{color:#8be9fd}
+.com{color:#6272a4;font-style:italic}
+.num{color:#bd93f9}
+
+/* PACKS */
+.packs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:32px}
+.pack-card{background:var(--glass);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border:1px solid var(--glass-border);border-radius:20px;padding:28px 20px;transition:all .5s cubic-bezier(.4,0,.2,1);cursor:pointer;position:relative;overflow:hidden;opacity:0;transform:translateY(30px);box-shadow:0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 var(--glass-highlight)}
+.pack-card.visible{opacity:1;transform:translateY(0)}
+.pack-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--glass-highlight),transparent);opacity:0;transition:opacity .4s}
+.pack-card:hover::before,.pack-card:active::before{opacity:1}
+.pack-card:active{transform:scale(.98)}
+.pack-card.popular{border-color:rgba(255,255,255,.3)}
+.pack-card.popular::after{content:'POPULAR';position:absolute;top:16px;right:16px;background:linear-gradient(135deg,#fff,rgba(255,255,255,.8));color:#000;padding:4px 10px;border-radius:12px;font-size:.7rem;font-weight:700;letter-spacing:1px;box-shadow:0 4px 12px rgba(255,255,255,.3);animation:popularPulse 2s infinite}
+@keyframes popularPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
+.pack-tokens{font-size:1.8rem;font-weight:700;margin-bottom:6px;transition:transform .3s;color:var(--text)}
+.pack-card:hover .pack-tokens{transform:scale(1.05)}
+.pack-label{color:var(--dim);font-size:.8rem;margin-bottom:16px}
+.pack-price{font-size:2rem;font-weight:700;margin-bottom:20px;color:var(--text)}
+.pack-price span{font-size:.9rem;color:var(--dim);font-weight:400}
+.pack-features{list-style:none;margin-bottom:20px}
+.pack-features li{padding:6px 0;color:var(--dim);font-size:.85rem;display:flex;align-items:center;gap:8px;transition:all .3s}
+.pack-features li::before{content:'✓';color:var(--text);font-weight:700;transition:transform .3s}
+.pack-card:hover .pack-features li::before{transform:scale(1.2)}
+.pack-btn{width:100%;padding:12px;border-radius:12px;border:1px solid var(--glass-border);background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);font-weight:600;cursor:pointer;transition:all .3s;position:relative;overflow:hidden;font-size:.9rem}
+.pack-btn::before{content:'';position:absolute;top:50%;left:50%;width:0;height:0;border-radius:50%;background:rgba(255,255,255,.2);transform:translate(-50%,-50%);transition:width .6s,height .6s}
+.pack-btn:hover::before{width:300px;height:300px}
+.pack-btn:hover{background:rgba(255,255,255,.1);border-color:var(--glass-highlight)}
+
+/* MODELS TABLE */
+.table-wrapper{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:32px;border-radius:16px;border:1px solid var(--glass-border);box-shadow:0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 var(--glass-highlight)}
+.models-table{width:100%;min-width:600px;border-collapse:collapse;background:var(--glass);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px)}
+.models-table th{text-align:left;padding:14px;color:var(--dim);font-size:.75rem;text-transform:uppercase;border-bottom:1px solid var(--glass-border);font-weight:500;white-space:nowrap}
+.models-table td{padding:16px 14px;border-bottom:1px solid var(--glass-border);transition:background .3s}
+.models-table tr{transition:all .3s}
+.models-table tr:hover{background:rgba(255,255,255,.02)}
+.model-info{display:flex;align-items:center;gap:12px}
+.model-icon{width:32px;height:32px;border-radius:50%;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:bold;box-shadow:inset 0 1px 0 var(--glass-highlight);transition:all .3s;flex-shrink:0;color:var(--text)}
+.models-table tr:hover .model-icon{transform:rotate(360deg) scale(1.1)}
+.model-name{font-weight:600;font-family:'SF Mono',monospace;font-size:.85rem;white-space:nowrap;color:var(--text)}
+.model-provider{font-size:.75rem;color:var(--dim);margin-top:2px}
+.price{font-family:'SF Mono',monospace;font-size:.85rem;white-space:nowrap;color:var(--text)}
+.price-bar{height:3px;background:var(--glass-border);border-radius:2px;margin-top:6px;width:60px;overflow:hidden}
+.price-fill{height:100%;background:linear-gradient(90deg,var(--text),rgba(255,255,255,.7));transition:width 1s}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{padding:4px 8px;border:1px solid var(--glass-border);border-radius:12px;font-size:.7rem;color:var(--dim);transition:all .3s;background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap}
+.tag:hover{border-color:var(--glass-highlight);color:var(--text);background:rgba(255,255,255,.05);transform:scale(1.05)}
+.tag.new{background:var(--text);color:var(--bg);border-color:var(--text)}
+
+/* FAQ */
+.faq-section{display:grid;grid-template-columns:1fr 1.5fr;gap:60px;margin:80px 0}
+.faq-list{display:flex;flex-direction:column}
+.faq-item{border-bottom:1px solid var(--glass-border);opacity:0;transform:translateX(30px);transition:all .6s}
+.faq-item.visible{opacity:1;transform:translateX(0)}
+.faq-q{padding:20px 0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:500;transition:color .3s;gap:12px;color:var(--text)}
+.faq-q:hover{color:var(--text)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .4s,padding .4s;color:var(--dim);line-height:1.7;font-size:.9rem}
+.faq-item.active .faq-a{max-height:200px;padding-bottom:20px}
+.faq-icon{width:24px;height:24px;border:1px solid var(--glass-border);border-radius:50%;display:flex;align-items:center;justify-content:center;transition:all .3s;font-size:.9rem;background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);flex-shrink:0;color:var(--text)}
+.faq-item.active .faq-icon{transform:rotate(45deg);background:var(--text);color:var(--bg);border-color:var(--text)}
+
+/* CTA */
+.cta-final{text-align:center;padding:100px 20px;border-top:1px solid var(--glass-border);margin-top:80px}
+.cta-final h2{font-size:clamp(2rem,7vw,3.5rem);font-weight:700;margin-bottom:16px;letter-spacing:-1.5px;color:var(--text)}
+.cta-final p{color:var(--dim);margin-bottom:32px;font-size:clamp(.9rem,3vw,1.1rem)}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);z-index:1000;display:none;align-items:center;justify-content:center;opacity:0;transition:opacity .4s;padding:20px}
+.modal-overlay.active{display:flex;opacity:1}
+.modal{background:rgba(10,10,10,0.7);backdrop-filter:blur(60px) saturate(180%);-webkit-backdrop-filter:blur(60px) saturate(180%);border:1px solid var(--glass-border);border-radius:24px;padding:40px 28px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto;position:relative;transform:scale(.9);transition:transform .4s cubic-bezier(.4,0,.2,1);box-shadow:0 20px 60px rgba(0,0,0,0.8),inset 0 1px 0 var(--glass-highlight)}
+[data-theme="light"] .modal{background:rgba(255,255,255,0.9)}
+.modal::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--glass-highlight),transparent)}
+.modal-overlay.active .modal{transform:scale(1)}
+.modal-close{position:absolute;top:16px;right:16px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);color:var(--dim);width:36px;height:36px;border-radius:50%;font-size:1.2rem;cursor:pointer;transition:all .3s;display:flex;align-items:center;justify-content:center}
+.modal-close:hover{color:var(--text);transform:rotate(90deg);background:rgba(128,128,128,.2)}
+.modal h2{text-align:center;font-size:1.5rem;margin-bottom:8px;color:var(--text)}
+.modal-subtitle{text-align:center;color:var(--dim);margin-bottom:28px;font-size:.9rem}
+.social-btn{width:100%;padding:14px;border-radius:12px;border:1px solid var(--glass-border);background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:12px;cursor:pointer;transition:all .4s cubic-bezier(.4,0,.2,1);font-size:.9rem;font-weight:500;box-shadow:inset 0 1px 0 var(--glass-highlight);min-height:48px}
+.social-btn:hover,.social-btn:active{background:rgba(255,255,255,.08);border-color:var(--glass-highlight);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,0.4),inset 0 1px 0 var(--glass-highlight)}
+.divider{text-align:center;color:var(--dim);font-size:.8rem;margin:20px 0;position:relative}
+.divider::before,.divider::after{content:'';position:absolute;top:50%;width:40%;height:1px;background:var(--glass-border)}
+.divider::before{left:0}.divider::after{right:0}
+.input-field{width:100%;padding:14px 16px;border-radius:12px;border:1px solid var(--glass-border);background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);font-size:.95rem;margin-bottom:12px;outline:none;transition:all .3s;box-shadow:inset 0 1px 0 var(--glass-highlight);-webkit-appearance:none}
+.input-field:focus{border-color:var(--glass-highlight);background:rgba(255,255,255,.05);box-shadow:0 0 0 3px rgba(255,255,255,.05),inset 0 1px 0 var(--glass-highlight)}
+.submit-btn{width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,var(--text),rgba(255,255,255,.9));color:var(--bg);font-weight:600;font-size:.95rem;cursor:pointer;transition:all .3s;margin-top:8px;box-shadow:0 8px 24px rgba(255,255,255,.2);min-height:48px}
+.submit-btn:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(255,255,255,.3)}
+.modal-footer{text-align:center;margin-top:16px;font-size:.85rem;color:var(--dim)}
+.modal-footer a{color:var(--text);text-decoration:none;cursor:pointer}
+
+/* DASHBOARD */
+.dashboard-modal{max-width:600px}
+.dash-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--glass-border)}
+.dash-header h2{font-size:1.3rem;color:var(--text)}
+.dash-balance{background:var(--glass);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid var(--glass-border);border-radius:20px;padding:24px;margin-bottom:20px;box-shadow:0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 var(--glass-highlight);position:relative;overflow:hidden}
+.dash-balance::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--glass-highlight),transparent)}
+.dash-balance-label{color:var(--dim);font-size:.8rem;margin-bottom:6px}
+.dash-balance-value{font-size:2rem;font-weight:700;color:var(--text)}
+.dash-balance-value span{font-size:.9rem;color:var(--dim);margin-left:6px}
+.dash-section-title{font-size:.95rem;font-weight:600;margin-bottom:12px;margin-top:24px;color:var(--text)}
+.api-key-item{background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:12px;padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;box-shadow:inset 0 1px 0 var(--glass-highlight)}
+.api-key-value{font-family:'SF Mono',monospace;font-size:.8rem;color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.api-key-copy{background:none;border:1px solid var(--glass-border);color:var(--text);padding:6px 10px;border-radius:8px;cursor:pointer;font-size:.75rem;transition:all .3s;flex-shrink:0;min-height:32px}
+.api-key-copy:hover{background:rgba(255,255,255,.1);border-color:var(--glass-highlight)}
+.empty-state{text-align:center;padding:32px 20px;color:var(--dim)}
+.empty-state-icon{font-size:2.5rem;margin-bottom:12px;opacity:.3}
+
+/* USER PROFILE */
+.user-profile{display:none;align-items:center;gap:10px;padding:5px 14px 5px 5px;border-radius:24px;border:1px solid var(--glass-border);background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);cursor:pointer;transition:all .3s;box-shadow:inset 0 1px 0 var(--glass-highlight)}
+.user-profile.active{display:flex}
+.user-profile:hover{background:rgba(255,255,255,.08);border-color:var(--glass-highlight)}
+.user-avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#fff,#888);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.8rem;color:#000;overflow:hidden;flex-shrink:0}
+.user-name{font-size:.8rem;font-weight:500;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.logout-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:.75rem;margin-left:6px;transition:color .3s}
+.logout-btn:hover{color:var(--text)}
+
+/* TOAST */
+.toast{position:fixed;bottom:calc(20px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(100px);background:rgba(10,10,10,0.9);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid var(--glass-border);padding:14px 20px;border-radius:12px;z-index:2000;opacity:0;transition:all .4s;font-size:.85rem;box-shadow:0 8px 32px rgba(0,0,0,0.6),inset 0 1px 0 var(--glass-highlight);max-width:90vw;text-align:center;color:var(--text)}
+[data-theme="light"] .toast{background:rgba(255,255,255,0.95);color:var(--text)}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+.toast.error{border-color:rgba(255,59,48,.5);color:#ff3b30}
+.toast.success{border-color:rgba(39,201,57,.5);color:#27c939}
+
+/* FOOTER */
+footer{border-top:1px solid var(--glass-border);padding:40px 20px;text-align:center;color:var(--dim);font-size:.8rem}
+.footer-logo{font-size:clamp(3rem,10vw,5rem);font-weight:900;letter-spacing:-4px;opacity:.05;margin-bottom:16px;color:var(--text)}
+
+/* ===== MOBILE ===== */
+@media(max-width:768px){
+.burger{display:flex}
+.nav-links{display:none}
+.nav-right .btn-outline,.nav-right .user-profile .user-name,.nav-right .btn{display:none}
+.nav-right .user-profile.active{display:flex}
+.nav-right .btn-outline.mobile-show{display:block}
+.hero{text-align:center}
+.hero h1{font-size:clamp(2rem,10vw,3rem);letter-spacing:-1.5px}
+.hero p{font-size:.95rem}
+.hero-buttons{flex-direction:column;width:100%;max-width:320px;margin:0 auto}
+.hero-buttons .btn,.hero-buttons .btn-outline{width:100%;text-align:center}
+section{text-align:center}
+.section-label,.section-title,.section-desc{margin-left:auto;margin-right:auto}
+.packs-grid{grid-template-columns:1fr;gap:14px;max-width:400px;margin:32px auto 0}
+.pack-card{padding:24px 18px}
+.faq-section{grid-template-columns:1fr;gap:32px}
+.faq-section>div:first-child{text-align:center}
+.cta-final{padding:80px 16px}
+.cta-final .btn,.cta-final .btn-outline{width:100%;max-width:320px}
+.modal{padding:32px 20px;border-radius:20px}
+#planet-canvas{opacity:.3}
+.code-container{margin:0 auto;max-width:100%}
+}
+
+@media(max-width:480px){
+header{padding:12px 14px;padding-top:calc(12px + var(--safe-top))}
+.logo{font-size:.85rem;letter-spacing:1px}
+.logo-icon{width:18px;height:18px}
+.lang-btn{font-size:.65rem;padding:4px 6px}
+.theme-toggle{width:54px;height:28px}
+.theme-toggle::before{width:20px;height:20px}
+[data-theme="light"] .theme-toggle::before{left:27px}
+.hero{padding:80px 16px 40px;padding-top:calc(80px + var(--safe-top))}
+.hero h1{font-size:2rem}
+.pack-tokens{font-size:1.5rem}
+.pack-price{font-size:1.6rem}
+.code-tabs{gap:4px}
+.code-tab{padding:6px 10px;font-size:.75rem}
+}
+
+@media(min-width:769px){
+.mobile-menu{display:none!important}
+}
+</style>
+</head>
+<body>
+
+<div class="preloader" id="preloader"><div class="preloader-text">ORBIT</div></div>
+
+<canvas id="planet-canvas"></canvas>
+<div class="stars" id="stars"></div>
+
+<header>
+<nav>
+<div class="logo"><div class="logo-icon"></div>ORBIT</div>
+<div class="nav-links">
+<a href="#pricing" data-i18n="nav_pricing">Тарифы</a>
+<a href="#models" data-i18n="nav_models">Модели</a>
+<a href="#faq" data-i18n="nav_faq">FAQ</a>
+</div>
+<div class="nav-right">
+<div class="lang-switch">
+<button class="lang-btn active" onclick="setLang('ru')">RU</button>
+<button class="lang-btn" onclick="setLang('en')">EN</button>
+<button class="lang-btn" onclick="setLang('zh')">中文</button>
+</div>
+<div class="theme-toggle" onclick="toggleTheme()" title="Сменить тему">
+<span class="theme-icon moon">🌙</span>
+<span class="theme-icon sun">☀️</span>
+</div>
+<div id="loginWrapper">
+<button class="btn-outline" onclick="openModal()" data-i18n="login">Войти</button>
+</div>
+<div class="user-profile" id="userProfile" onclick="openDashboard()">
+<div class="user-avatar" id="userAvatar">U</div>
+<span class="user-name" id="userName">User</span>
+<button class="logout-btn" onclick="event.stopPropagation();logout()" data-i18n="logout">Выйти</button>
+</div>
+<button class="btn" onclick="openModal()" data-i18n="get_key">Получить ключ</button>
+<button class="burger" id="burger" onclick="toggleMobileMenu()" aria-label="Menu">
+<span></span><span></span><span></span>
+</button>
+</div>
+</nav>
+</header>
+
+<!-- MOBILE MENU -->
+<div class="mobile-menu" id="mobileMenu">
+<a href="#pricing" onclick="closeMobileMenu()" data-i18n="nav_pricing">Тарифы</a>
+<a href="#models" onclick="closeMobileMenu()" data-i18n="nav_models">Модели</a>
+<a href="#faq" onclick="closeMobileMenu()" data-i18n="nav_faq">FAQ</a>
+<div class="mobile-actions">
+<div id="mobileLoginWrapper">
+<button class="btn-outline" style="width:100%" onclick="closeMobileMenu();openModal()" data-i18n="login">Войти</button>
+</div>
+<div class="user-profile" id="mobileUserProfile" onclick="closeMobileMenu();openDashboard()" style="width:100%;justify-content:flex-start">
+<div class="user-avatar" id="mobileUserAvatar">U</div>
+<span class="user-name" id="mobileUserName">User</span>
+<button class="logout-btn" onclick="event.stopPropagation();logout()" data-i18n="logout">Выйти</button>
+</div>
+<button class="btn" style="width:100%" onclick="closeMobileMenu();openModal()" data-i18n="get_key">Получить ключ</button>
+</div>
+</div>
+
+<main>
+<section class="hero">
+<div class="hero-content">
+<h1><span class="typewriter glitch" id="typewriter"></span></h1>
+<p data-i18n="hero_subtitle">GPT, Claude, Gemini, DeepSeek — через один OpenAI-совместимый endpoint. Платите только за токены.</p>
+<div class="hero-buttons">
+<button class="btn" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})" data-i18n="buy_tokens">Купить токены →</button>
+<button class="btn-outline" onclick="document.getElementById('models').scrollIntoView({behavior:'smooth'})" data-i18n="view_models">Модели</button>
+</div>
+</div>
+</section>
+
+<!-- CODE SHOWCASE -->
+<section class="code-showcase" id="code">
+<div class="section-label">// интеграция</div>
+<h2 class="section-title" data-i18n="code_title">Начните за 2 минуты</h2>
+<p class="section-desc" data-i18n="code_desc">Скопируйте код, вставьте свой API-ключ и начните использовать все модели.</p>
+
+<div class="code-container">
+<div class="code-header">
+<div class="code-dots">
+<div class="code-dot"></div>
+<div class="code-dot"></div>
+<div class="code-dot"></div>
+</div>
+<div class="code-tabs">
+<button class="code-tab active" onclick="switchCode('python',this)">Python</button>
+<button class="code-tab" onclick="switchCode('javascript',this)">JavaScript</button>
+<button class="code-tab" onclick="switchCode('curl',this)">cURL</button>
+</div>
+<button class="code-copy" onclick="copyCode(this)" data-i18n="copy">Копировать</button>
+</div>
+<div class="code-content">
+<div class="code-block active" id="code-python">
+<pre><span class="kw">import</span> os
+<span class="kw">from</span> openai <span class="kw">import</span> OpenAI
+
+<span class="com"># Инициализация клиента</span>
+client = OpenAI(
+    base_url=<span class="str">"https://api.orbit.dev/v1"</span>,
+    api_key=os.environ[<span class="str">"ORBIT_API_KEY"</span>]
+)
+
+<span class="com"># Отправка запроса</span>
+response = client.chat.completions.create(
+    model=<span class="str">"claude-sonnet-5-5"</span>,
+    messages=[
+        {<span class="str">"role"</span>: <span class="str">"user"</span>, <span class="str">"content"</span>: <span class="str">"Привет, Orbit!"</span>}
+    ],
+    stream=<span class="kw">True</span>
+)
+
+<span class="com"># Получение ответа</span>
+<span class="kw">for</span> chunk <span class="kw">in</span> response:
+    print(chunk.choices[<span class="num">0</span>].delta.content <span class="kw">or</span> <span class="str">""</span>, end=<span class="str">""</span>)</pre>
+</div>
+<div class="code-block" id="code-javascript">
+<pre><span class="kw">import</span> OpenAI <span class="kw">from</span> <span class="str">"openai"</span>;
+
+<span class="com">// Инициализация клиента</span>
+<span class="kw">const</span> client = <span class="kw">new</span> OpenAI({
+  baseURL: <span class="str">"https://api.orbit.dev/v1"</span>,
+  apiKey: process.env.ORBIT_API_KEY,
+});
+
+<span class="com">// Отправка запроса</span>
+<span class="kw">const</span> stream = <span class="kw">await</span> client.chat.completions.create({
+  model: <span class="str">"claude-sonnet-5-5"</span>,
+  messages: [
+    { role: <span class="str">"user"</span>, content: <span class="str">"Привет, Orbit!"</span> }
+  ],
+  stream: <span class="kw">true</span>,
+});
+
+<span class="com">// Получение ответа</span>
+<span class="kw">for await</span> (<span class="kw">const</span> chunk <span class="kw">of</span> stream) {
+  process.stdout.write(chunk.choices[<span class="num">0</span>].delta.content <span class="kw">||</span> <span class="str">""</span>);
+}</pre>
+</div>
+<div class="code-block" id="code-curl">
+<pre><span class="com"># Отправка запроса через cURL</span>
+curl https://api.orbit.dev/v1/chat/completions \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -H <span class="str">"Authorization: Bearer $ORBIT_API_KEY"</span> \
+  -d <span class="str">'{
+    "model": "claude-sonnet-5-5",
+    "messages": [
+      {"role": "user", "content": "Привет, Orbit!"}
+    ],
+    "stream": true
+  }'</span></pre>
+</div>
+</div>
+</div>
+</section>
+
+<section id="pricing">
+<div class="section-label">// тарифы</div>
+<h2 class="section-title" data-i18n="pricing_title">Выберите пакет токенов</h2>
+<p class="section-desc" data-i18n="pricing_desc">Чем больше пакет — тем ниже цена за токен. Токены не сгорают и работают со всеми моделями.</p>
+
+<div class="packs-grid">
+<div class="pack-card" onclick="buyPack('starter',1000000,5)">
+<div class="pack-tokens">1M</div>
+<div class="pack-label" data-i18n="pack_starter_label">Стартовый пакет</div>
+<div class="pack-price">$5<span data-i18n="pack_per_m">/млн токенов</span></div>
+<ul class="pack-features">
+<li data-i18n="pack_feat_1">Доступ ко всем моделям</li>
+<li data-i18n="pack_feat_2">SSE стриминг</li>
+<li data-i18n="pack_feat_3">Поддержка 24/7</li>
+</ul>
+<button class="pack-btn" data-i18n="buy">Купить</button>
+</div>
+
+<div class="pack-card popular" onclick="buyPack('pro',5000000,20)">
+<div class="pack-tokens">5M</div>
+<div class="pack-label" data-i18n="pack_pro_label">Профессиональный</div>
+<div class="pack-price">$20<span data-i18n="pack_per_m">/млн токенов</span></div>
+<ul class="pack-features">
+<li data-i18n="pack_feat_1">Доступ ко всем моделям</li>
+<li data-i18n="pack_feat_2">SSE стриминг</li>
+<li data-i18n="pack_feat_4">Приоритетная поддержка</li>
+</ul>
+<button class="pack-btn" data-i18n="buy">Купить</button>
+</div>
+
+<div class="pack-card" onclick="buyPack('business',10000000,35)">
+<div class="pack-tokens">10M</div>
+<div class="pack-label" data-i18n="pack_biz_label">Бизнес</div>
+<div class="pack-price">$35<span data-i18n="pack_per_m">/млн токенов</span></div>
+<ul class="pack-features">
+<li data-i18n="pack_feat_1">Доступ ко всем моделям</li>
+<li data-i18n="pack_feat_5">Скидка 30%</li>
+<li data-i18n="pack_feat_4">Приоритетная поддержка</li>
+</ul>
+<button class="pack-btn" data-i18n="buy">Купить</button>
+</div>
+
+<div class="pack-card" onclick="buyPack('enterprise',50000000,150)">
+<div class="pack-tokens">50M</div>
+<div class="pack-label" data-i18n="pack_ent_label">Корпоративный</div>
+<div class="pack-price">$150<span data-i18n="pack_per_m">/млн токенов</span></div>
+<ul class="pack-features">
+<li data-i18n="pack_feat_6">Всё из Бизнес</li>
+<li data-i18n="pack_feat_7">Скидка 40%</li>
+<li data-i18n="pack_feat_8">Персональный менеджер</li>
+</ul>
+<button class="pack-btn" data-i18n="buy">Купить</button>
+</div>
+</div>
+</section>
+
+<section id="models">
+<div class="section-label">// каталог</div>
+<h2 class="section-title" data-i18n="models_title">Модели и цены</h2>
+<p class="section-desc" data-i18n="models_desc">Цены указаны за 1 млн токенов. Все модели доступны сразу после покупки пакета.</p>
+
+<div class="table-wrapper">
+<table class="models-table">
+<thead>
+<tr><th data-i18n="th_model">МОДЕЛЬ</th><th data-i18n="th_input">ВХОД $/1M</th><th data-i18n="th_output">ВЫХОД $/1M</th><th data-i18n="th_features">ОСОБЕННОСТИ</th></tr>
+</thead>
+<tbody>
+<tr><td><div class="model-info"><div class="model-icon">Cl</div><div><div class="model-name">claude-sonnet-5-5</div><div class="model-provider">Claude · Anthropic</div></div></div></td><td class="price">$0.048<div class="price-bar"><div class="price-fill" style="width:30%"></div></div></td><td class="price">$0.18<div class="price-bar"><div class="price-fill" style="width:60%"></div></div></td><td><div class="tags"><span class="tag new" data-i18n="tag_new">новая</span><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag" data-i18n="tag_code">код</span></div></td></tr>
+<tr><td><div class="model-info"><div class="model-icon">Gp</div><div><div class="model-name">gpt-6.1-sol</div><div class="model-provider">GPT · OpenAI</div></div></div></td><td class="price">$0.048<div class="price-bar"><div class="price-fill" style="width:30%"></div></div></td><td class="price">$0.18<div class="price-bar"><div class="price-fill" style="width:60%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_universal">универсальная</span></div></td></tr>
+<tr><td><div class="model-info"><div class="model-icon">Ds</div><div><div class="model-name">deepseek-v4-pro</div><div class="model-provider">DeepSeek</div></div></div></td><td class="price">$0.014<div class="price-bar"><div class="price-fill" style="width:10%"></div></div></td><td class="price">$0.042<div class="price-bar"><div class="price-fill" style="width:15%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag" data-i18n="tag_code">код</span></div></td></tr>
+<tr><td><div class="model-info"><div class="model-icon">Qw</div><div><div class="model-name">qwen3.8-max</div><div class="model-provider">Qwen · Alibaba</div></div></div></td><td class="price">$0.012<div class="price-bar"><div class="price-fill" style="width:8%"></div></div></td><td class="price">$0.036<div class="price-bar"><div class="price-fill" style="width:12%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag">1M ctx</span></div></td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section class="faq-section" id="faq">
+<div>
+<div class="section-label">// вопросы</div>
+<h2 class="section-title" data-i18n="faq_title">Коротко<br>о главном</h2>
+<p style="color:var(--dim);margin-top:20px" data-i18n="faq_subtitle">Не нашли ответ — напишите нам в Telegram.</p>
+</div>
+<div class="faq-list">
+<div class="faq-item active"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="faq1_q">Как получить API-ключ?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="faq1_a">Купите пакет токенов и войдите в личный кабинет — ключ создаётся автоматически.</div></div>
+<div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="faq2_q">Токены сгорают?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="faq2_a">Нет. Купленные токены хранятся на балансе бессрочно и списываются по мере использования.</div></div>
+<div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="faq3_q">Какие модели доступны?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="faq3_a">GPT-4o, Claude Sonnet/Opus, Gemini, DeepSeek, Qwen, GLM, Kimi и другие — все через один ключ.</div></div>
+<div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="faq4_q">Есть ли стриминг?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="faq4_a">Да, полноценный SSE-стриминг. Токены приходят по мере генерации.</div></div>
+</div>
+</section>
+
+<section class="cta-final">
+<div class="section-label">// старт</div>
+<h2 data-i18n="cta_title">Готовы к запуску?</h2>
+<p data-i18n="cta_subtitle">Купите пакет токенов — первый ответ через минуту.</p>
+<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+<button class="btn" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})" data-i18n="buy_tokens">Купить токены →</button>
+<button class="btn-outline" onclick="document.getElementById('models').scrollIntoView({behavior:'smooth'})" data-i18n="view_models">Модели</button>
+</div>
+</section>
+</main>
+
+<footer>
+<div class="footer-logo">ORBIT</div>
+<p>© 2026 Orbit API Gateway</p>
+</footer>
+
+<!-- AUTH MODAL -->
+<div class="modal-overlay" id="modal">
+<div class="modal">
+<button class="modal-close" onclick="closeModal()">×</button>
+<h2 data-i18n="auth_title">Добро пожаловать</h2>
+<p class="modal-subtitle" data-i18n="auth_subtitle">Войдите или создайте аккаунт</p>
+
+<div id="socialButtons">
+<button class="social-btn" onclick="loginWithGoogle()" id="googleBtn">
+<svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+<span data-i18n="login_google">Войти через Google</span>
+</button>
+<button class="social-btn" onclick="loginWithGithub()" id="githubBtn">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+<span data-i18n="login_github">Войти через GitHub</span>
+</button>
+<div class="divider" data-i18n="or_email">или через email</div>
+<button class="social-btn" onclick="showEmailForm()">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+<span data-i18n="login_email">Войти через Email</span>
+</button>
+</div>
+
+<div id="emailForm" style="display:none">
+<input type="email" class="input-field" id="emailInput" placeholder="Email" autocomplete="email">
+<input type="password" class="input-field" id="passwordInput" placeholder="Пароль" autocomplete="current-password">
+<button class="submit-btn" onclick="loginWithEmail()" data-i18n="submit_login">Войти</button>
+<div class="modal-footer"><span data-i18n="no_account">Нет аккаунта?</span> <a onclick="toggleAuthMode()" data-i18n="register">Зарегистрироваться</a></div>
+<div class="modal-footer" style="margin-top:8px"><a onclick="showSocialButtons()" style="color:var(--dim)" data-i18n="back">← Назад</a></div>
+</div>
+</div>
+</div>
+
+<!-- DASHBOARD MODAL -->
+<div class="modal-overlay" id="dashboardModal">
+<div class="modal dashboard-modal">
+<button class="modal-close" onclick="closeDashboard()">×</button>
+<div class="dash-header">
+<h2 data-i18n="dashboard">Личный кабинет</h2>
+</div>
+
+<div class="dash-balance">
+<div class="dash-balance-label" data-i18n="your_balance">Ваш баланс</div>
+<div class="dash-balance-value"><span id="balanceValue">0</span><span data-i18n="tokens">токенов</span></div>
+</div>
+
+<div class="dash-section-title" data-i18n="your_keys">Ваши API-ключи</div>
+<div id="keysList"></div>
+
+<button class="btn" style="width:100%;margin-top:20px" onclick="generateKey()" data-i18n="generate_key">+ Сгенерировать новый ключ</button>
+<button class="btn-outline" style="width:100%;margin-top:12px" onclick="closeDashboard();document.getElementById('pricing').scrollIntoView({behavior:'smooth'})" data-i18n="buy_more">Купить ещё токенов</button>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+<script>
+// FIREBASE
+const firebaseConfig={apiKey:"AIzaSyB5afBtmKeT0clRbGlztLPJp7yEDbJURDo",authDomain:"sayt-8f6d1.firebaseapp.com",projectId:"sayt-8f6d1",storageBucket:"sayt-8f6d1.firebasestorage.app",messagingSenderId:"51073229890",appId:"1:51073229890:web:d4a082cb8163bd56f4b9db"};
+let auth,db;
+try{firebase.initializeApp(firebaseConfig);auth=firebase.auth();db=firebase.firestore()}catch(e){console.error(e)}
+
+const isMobile=window.innerWidth<768||('ontouchstart' in window);
+
+// THEME
+function toggleTheme(){
+const html=document.documentElement;
+const current=html.getAttribute('data-theme');
+const next=current==='light'?'dark':'light';
+html.setAttribute('data-theme',next);
+localStorage.setItem('orbit_theme',next);
+}
+
+// Load saved theme
+const savedTheme=localStorage.getItem('orbit_theme')||'dark';
+document.documentElement.setAttribute('data-theme',savedTheme);
+
+// PRELOADER
+window.addEventListener('load',()=>{setTimeout(()=>{document.getElementById('preloader').classList.add('hidden');document.body.classList.add('loaded')},800)});
+
+// STARS
+const starsEl=document.getElementById('stars');
+const starsCount=isMobile?60:150;
+for(let i=0;i<starsCount;i++){const s=document.createElement('div');s.className='star';s.style.left=Math.random()*100+'%';s.style.top=Math.random()*100+'%';s.style.setProperty('--dur',(Math.random()*3+2)+'s');s.style.setProperty('--del',Math.random()*4+'s');starsEl.appendChild(s)}
+
+// 3D PLANET
+const canvas=document.getElementById('planet-canvas');
+const ctx=canvas.getContext('2d');
+let W,H;
+function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight}
+resize();
+window.addEventListener('resize',resize);
+
+const dots=[];
+const N=isMobile?600:1500;
+const R=isMobile?140:200;
+for(let i=0;i<N;i++){
+const th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1),r=R*Math.cbrt(Math.random());
+dots.push({bx:r*Math.sin(ph)*Math.cos(th),by:r*Math.sin(ph)*Math.sin(th),bz:r*Math.cos(ph)})
+}
+
+let rotX=0,rotY=0,targetRotX=0,targetRotY=0;
+
+if(!isMobile){
+document.addEventListener('mousemove',e=>{
+targetRotX=(e.clientY/H-.5)*.5;
+targetRotY=(e.clientX/W-.5)*.5;
+});
+}else{
+let autoRot=0;
+setInterval(()=>{autoRot+=.01;targetRotY=autoRot},50);
+if(window.DeviceOrientationEvent){
+window.addEventListener('deviceorientation',e=>{
+if(e.gamma!==null){targetRotY=(e.gamma/90)*.5}
+if(e.beta!==null){targetRotX=((e.beta-45)/90)*.5}
+});
+}
+}
+
+let lastFrame=0;
+function animate(ts){
+requestAnimationFrame(animate);
+if(ts-lastFrame<(isMobile?33:16))return;
+lastFrame=ts;
+
+ctx.clearRect(0,0,W,H);
+rotX+=(targetRotX-rotX)*.05;
+rotY+=(targetRotY-rotY)*.05;
+
+const cx=W/2,cy=H/2;
+const dotSize=isMobile?2:1.5;
+dots.forEach(d=>{
+const cosY=Math.cos(rotY),sinY=Math.sin(rotY);
+const x1=d.bx*cosY-d.bz*sinY,z1=d.bx*sinY+d.bz*cosY;
+const cosX=Math.cos(rotX),sinX=Math.sin(rotX);
+const y1=d.by*cosX-z1*sinX,z2=d.by*sinX+z1*cosX;
+
+const sc=600/(600+z2);
+const px=cx+x1*sc,py=cy+y1*sc;
+const a=((z2+R)/(2*R))*.7;
+if(a>.1){ctx.fillStyle=`rgba(128,128,128,${a})`;ctx.fillRect(px,py,dotSize,dotSize)}
+});
+}
+requestAnimationFrame(animate);
+
+// TYPEWRITER
+const T={
+ru:{
+typewriter:"Все модели.\nОдин ключ.",
+nav_pricing:"Тарифы",nav_models:"Модели",nav_faq:"FAQ",login:"Войти",logout:"Выйти",get_key:"Получить ключ",
+hero_subtitle:"GPT, Claude, Gemini, DeepSeek — через один OpenAI-совместимый endpoint. Платите только за токены.",
+buy_tokens:"Купить токены →",view_models:"Модели",
+code_title:"Начните за 2 минуты",code_desc:"Скопируйте код, вставьте свой API-ключ и начните использовать все модели.",
+copy:"Копировать",copied:"Скопировано!",
+pricing_title:"Выберите пакет токенов",pricing_desc:"Чем больше пакет — тем ниже цена за токен. Токены не сгорают и работают со всеми моделями.",
+pack_starter_label:"Стартовый пакет",pack_pro_label:"Профессиональный",pack_biz_label:"Бизнес",pack_ent_label:"Корпоративный",
+pack_per_m:"/млн токенов",buy:"Купить",
+pack_feat_1:"Доступ ко всем моделям",pack_feat_2:"SSE стриминг",pack_feat_3:"Поддержка 24/7",
+pack_feat_4:"Приоритетная поддержка",pack_feat_5:"Скидка 30%",pack_feat_6:"Всё из Бизнес",pack_feat_7:"Скидка 40%",pack_feat_8:"Персональный менеджер",
+models_title:"Модели и цены",models_desc:"Цены указаны за 1 млн токенов. Все модели доступны сразу после покупки пакета.",
+th_model:"МОДЕЛЬ",th_input:"ВХОД $/1M",th_output:"ВЫХОД $/1M",th_features:"ОСОБЕННОСТИ",
+tag_new:"новая",tag_reason:"рассуждающая",tag_code:"код",tag_universal:"универсальная",
+faq_title:"Коротко<br>о главном",faq_subtitle:"Не нашли ответ — напишите нам в Telegram.",
+faq1_q:"Как получить API-ключ?",faq1_a:"Купите пакет токенов и войдите в личный кабинет — ключ создаётся автоматически.",
+faq2_q:"Токены сгорают?",faq2_a:"Нет. Купленные токены хранятся на балансе бессрочно и списываются по мере использования.",
+faq3_q:"Какие модели доступны?",faq3_a:"GPT-4o, Claude Sonnet/Opus, Gemini, DeepSeek, Qwen, GLM, Kimi и другие — все через один ключ.",
+faq4_q:"Есть ли стриминг?",faq4_a:"Да, полноценный SSE-стриминг. Токены приходят по мере генерации.",
+cta_title:"Готовы к запуску?",cta_subtitle:"Купите пакет токенов — первый ответ через минуту.",
+auth_title:"Добро пожаловать",auth_subtitle:"Войдите или создайте аккаунт",
+login_google:"Войти через Google",login_github:"Войти через GitHub",or_email:"или через email",login_email:"Войти через Email",
+submit_login:"Войти",no_account:"Нет аккаунта?",register:"Зарегистрироваться",back:"← Назад",
+dashboard:"Личный кабинет",your_balance:"Ваш баланс",tokens:"токенов",your_keys:"Ваши API-ключи",
+generate_key:"+ Сгенерировать новый ключ",buy_more:"Купить ещё токенов",
+buy_success:"Пакет куплен! Токены зачислены на баланс.",login_success:"Добро пожаловать!",
+logout_msg:"Вы вышли",fill_fields:"Заполните поля",pass_min:"Пароль мин. 6 символов",
+email_taken:"Email уже занят",error:"Ошибка",use_live:"Открой через Live Server!",
+key_copied:"Ключ скопирован!",no_keys:"У вас пока нет ключей. Сгенерируйте первый!",
+confirm_buy:"Подтвердить покупку",cancel:"Отмена",buy_pack_title:"Покупка пакета"
+},
+en:{
+typewriter:"Every model.\nOne key.",
+nav_pricing:"Pricing",nav_models:"Models",nav_faq:"FAQ",login:"Sign in",logout:"Sign out",get_key:"Get key",
+hero_subtitle:"GPT, Claude, Gemini, DeepSeek — through one OpenAI-compatible endpoint. Pay only for tokens.",
+buy_tokens:"Buy tokens →",view_models:"Models",
+code_title:"Start in 2 minutes",code_desc:"Copy the code, insert your API key and start using all models.",
+copy:"Copy",copied:"Copied!",
+pricing_title:"Choose a token pack",pricing_desc:"The bigger the pack, the lower the price per token. Tokens never expire and work with all models.",
+pack_starter_label:"Starter pack",pack_pro_label:"Professional",pack_biz_label:"Business",pack_ent_label:"Enterprise",
+pack_per_m:"/M tokens",buy:"Buy",
+pack_feat_1:"Access to all models",pack_feat_2:"SSE streaming",pack_feat_3:"24/7 support",
+pack_feat_4:"Priority support",pack_feat_5:"30% discount",pack_feat_6:"Everything in Business",pack_feat_7:"40% discount",pack_feat_8:"Personal manager",
+models_title:"Models & Pricing",models_desc:"Prices per 1M tokens. All models available immediately after purchase.",
+th_model:"MODEL",th_input:"INPUT $/1M",th_output:"OUTPUT $/1M",th_features:"FEATURES",
+tag_new:"new",tag_reason:"reasoning",tag_code:"code",tag_universal:"universal",
+faq_title:"Quick<br>FAQ",faq_subtitle:"Can't find an answer? Message us on Telegram.",
+faq1_q:"How to get an API key?",faq1_a:"Buy a token pack and sign in to your dashboard — the key is created automatically.",
+faq2_q:"Do tokens expire?",faq2_a:"No. Purchased tokens stay on your balance forever and are spent as you use them.",
+faq3_q:"Which models are available?",faq3_a:"GPT-4o, Claude Sonnet/Opus, Gemini, DeepSeek, Qwen, GLM, Kimi and more — all via one key.",
+faq4_q:"Is streaming supported?",faq4_a:"Yes, full SSE streaming. Tokens arrive as they're generated.",
+cta_title:"Ready for launch?",cta_subtitle:"Buy a token pack — first response in a minute.",
+auth_title:"Welcome",auth_subtitle:"Sign in or create an account",
+login_google:"Sign in with Google",login_github:"Sign in with GitHub",or_email:"or via email",login_email:"Sign in with Email",
+submit_login:"Sign in",no_account:"No account?",register:"Register",back:"← Back",
+dashboard:"Dashboard",your_balance:"Your balance",tokens:"tokens",your_keys:"Your API keys",
+generate_key:"+ Generate new key",buy_more:"Buy more tokens",
+buy_success:"Pack purchased! Tokens added to balance.",login_success:"Welcome!",
+logout_msg:"Signed out",fill_fields:"Fill in all fields",pass_min:"Password min 6 chars",
+email_taken:"Email already in use",error:"Error",use_live:"Open via Live Server!",
+key_copied:"Key copied!",no_keys:"No keys yet. Generate your first one!",
+confirm_buy:"Confirm purchase",cancel:"Cancel",buy_pack_title:"Purchase pack"
+},
+zh:{
+typewriter:"所有模型。\n一个密钥。",
+nav_pricing:"价格",nav_models:"模型",nav_faq:"常见问题",login:"登录",logout:"退出",get_key:"获取密钥",
+hero_subtitle:"GPT、Claude、Gemini、DeepSeek — 通过一个兼容 OpenAI 的端点。按令牌付费。",
+buy_tokens:"购买令牌 →",view_models:"模型",
+code_title:"2分钟开始使用",code_desc:"复制代码，插入您的 API 密钥并开始使用所有模型。",
+copy:"复制",copied:"已复制!",
+pricing_title:"选择令牌包",pricing_desc:"包越大，单价越低。令牌永不过期，适用于所有模型。",
+pack_starter_label:"入门包",pack_pro_label:"专业版",pack_biz_label:"商业版",pack_ent_label:"企业版",
+pack_per_m:"/百万令牌",buy:"购买",
+pack_feat_1:"访问所有模型",pack_feat_2:"SSE 流式传输",pack_feat_3:"24/7 支持",
+pack_feat_4:"优先支持",pack_feat_5:"30% 折扣",pack_feat_6:"包含商业版全部功能",pack_feat_7:"40% 折扣",pack_feat_8:"专属经理",
+models_title:"模型与定价",models_desc:"价格为每百万令牌。购买包后立即访问所有模型。",
+th_model:"模型",th_input:"输入 $/1M",th_output:"输出 $/1M",th_features:"特性",
+tag_new:"新",tag_reason:"推理",tag_code:"代码",tag_universal:"通用",
+faq_title:"快速<br>问答",faq_subtitle:"找不到答案？通过 Telegram 联系我们。",
+faq1_q:"如何获取 API 密钥？",faq1_a:"购买令牌包并登录仪表板 — 密钥自动生成。",
+faq2_q:"令牌会过期吗？",faq2_a:"不会。购买的令牌永久保存在余额中，使用时扣除。",
+faq3_q:"有哪些模型可用？",faq3_a:"GPT-4o、Claude Sonnet/Opus、Gemini、DeepSeek、Qwen、GLM、Kimi 等 — 全部通过一个密钥。",
+faq4_q:"支持流式传输吗？",faq4_a:"支持完整的 SSE 流式传输。令牌在生成时到达。",
+cta_title:"准备启动？",cta_subtitle:"购买令牌包 — 一分钟内获得首个响应。",
+auth_title:"欢迎",auth_subtitle:"登录或创建账户",
+login_google:"通过 Google 登录",login_github:"通过 GitHub 登录",or_email:"或通过邮箱",login_email:"通过邮箱登录",
+submit_login:"登录",no_account:"没有账户？",register:"注册",back:"← 返回",
+dashboard:"仪表板",your_balance:"您的余额",tokens:"令牌",your_keys:"您的 API 密钥",
+generate_key:"+ 生成新密钥",buy_more:"购买更多令牌",
+buy_success:"包已购买！令牌已添加到余额。",login_success:"欢迎！",
+logout_msg:"已退出",fill_fields:"请填写所有字段",pass_min:"密码至少 6 位",
+email_taken:"邮箱已被使用",error:"错误",use_live:"请通过 Live Server 打开！",
+key_copied:"密钥已复制！",no_keys:"还没有密钥。生成第一个！",
+confirm_buy:"确认购买",cancel:"取消",buy_pack_title:"购买包"
+}
+};
+
+let currentLang='ru';
+
+function typeWriter(text){
+const el=document.getElementById('typewriter');
+el.innerHTML='';
+let i=0;
+function type(){
+if(i<text.length){
+const c=text[i];
+el.innerHTML+=c==='\n'?'<br>':c;
+i++;
+setTimeout(type,80);
+}
+}
+type();
+}
+
+function setLang(lang){
+currentLang=lang;
+document.querySelectorAll('.lang-btn').forEach(b=>b.classList.remove('active'));
+event.target.classList.add('active');
+
+typeWriter(T[lang].typewriter);
+
+const els=document.querySelectorAll('[data-i18n]');
+els.forEach((el,i)=>{
+setTimeout(()=>{
+el.style.transition='opacity .3s, transform .3s';
+el.style.opacity='0';
+el.style.transform='translateY(-10px)';
+setTimeout(()=>{
+const key=el.getAttribute('data-i18n');
+if(T[lang][key]){
+el.innerHTML=T[lang][key];
+}
+el.style.opacity='1';
+el.style.transform='translateY(0)';
+},150);
+},i*20);
+});
+
+localStorage.setItem('orbit_lang',lang);
+}
+
+// CODE SWITCH
+function switchCode(lang,btn){
+document.querySelectorAll('.code-tab').forEach(t=>t.classList.remove('active'));
+btn.classList.add('active');
+document.querySelectorAll('.code-block').forEach(b=>b.classList.remove('active'));
+document.getElementById('code-'+lang).classList.add('active');
+}
+
+function copyCode(btn){
+const activeBlock=document.querySelector('.code-block.active pre');
+const text=activeBlock.textContent;
+navigator.clipboard.writeText(text);
+const orig=btn.textContent;
+btn.textContent=T[currentLang].copied;
+setTimeout(()=>btn.textContent=orig,2000);
+}
+
+// SCROLL ANIMATIONS
+const obs=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')}),{threshold:.1,rootMargin:'0px 0px -50px 0px'});
+document.querySelectorAll('.pack-card,.faq-item,.section-label,.section-title,.section-desc,.code-showcase').forEach((el,i)=>{el.style.transitionDelay=(i*.08)+'s';obs.observe(el)});
+
+// FAQ
+function toggleFaq(el){const it=el.parentElement;document.querySelectorAll('.faq-item').forEach(i=>{if(i!==it)i.classList.remove('active')});it.classList.toggle('active')}
+
+// MOBILE MENU
+function toggleMobileMenu(){
+const m=document.getElementById('mobileMenu');
+const b=document.getElementById('burger');
+m.classList.toggle('active');
+b.classList.toggle('active');
+document.body.style.overflow=m.classList.contains('active')?'hidden':'';
+}
+function closeMobileMenu(){
+document.getElementById('mobileMenu').classList.remove('active');
+document.getElementById('burger').classList.remove('active');
+document.body.style.overflow='';
+}
+
+// MODAL
+const modal=document.getElementById('modal');
+const dashModal=document.getElementById('dashboardModal');
+const loginWrapper=document.getElementById('loginWrapper');
+const mobileLoginWrapper=document.getElementById('mobileLoginWrapper');
+const userProfile=document.getElementById('userProfile');
+const mobileUserProfile=document.getElementById('mobileUserProfile');
+const userAvatar=document.getElementById('userAvatar');
+const mobileUserAvatar=document.getElementById('mobileUserAvatar');
+const userName=document.getElementById('userName');
+const mobileUserName=document.getElementById('mobileUserName');
+
+function openModal(){modal.classList.add('active');document.body.style.overflow='hidden'}
+function closeModal(){modal.classList.remove('active');if(!document.getElementById('mobileMenu').classList.contains('active'))document.body.style.overflow='';setTimeout(showSocialButtons,400)}
+modal.addEventListener('click',e=>{if(e.target===modal)closeModal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeDashboard();closeMobileMenu()}});
+
+function showSocialButtons(){document.getElementById('socialButtons').style.display='block';document.getElementById('emailForm').style.display='none'}
+function showEmailForm(){document.getElementById('socialButtons').style.display='none';document.getElementById('emailForm').style.display='block'}
+
+function toggleAuthMode(){
+const btn=document.querySelector('.submit-btn');
+if(btn.textContent.includes(T[currentLang].submit_login)){btn.textContent=T[currentLang].register}else{btn.textContent=T[currentLang].submit_login}
+}
+
+// DASHBOARD
+function openDashboard(){
+if(!currentUser)return;
+dashModal.classList.add('active');
+document.body.style.overflow='hidden';
+renderDashboard();
+}
+function closeDashboard(){dashModal.classList.remove('active');if(!document.getElementById('mobileMenu').classList.contains('active'))document.body.style.overflow=''}
+dashModal.addEventListener('click',e=>{if(e.target===dashModal)closeDashboard()});
+
+let currentUser=null;
+
+function renderDashboard(){
+if(!currentUser)return;
+const bal=currentUser.balance||0;
+document.getElementById('balanceValue').textContent=bal.toLocaleString();
+const keysList=document.getElementById('keysList');
+const keys=currentUser.keys||[];
+if(keys.length===0){
+keysList.innerHTML=`<div class="empty-state"><div class="empty-state-icon">🔑</div><div>${T[currentLang].no_keys}</div></div>`;
+}else{
+keysList.innerHTML=keys.map((k,i)=>`
+<div class="api-key-item">
+<div class="api-key-value">${k}</div>
+<button class="api-key-copy" onclick="copyKey('${k}',this)">copy</button>
+</div>
+`).join('');
+}
+}
+
+function copyKey(key,btn){
+navigator.clipboard.writeText(key);
+const orig=btn.textContent;
+btn.textContent='✓';
+setTimeout(()=>btn.textContent=orig,1500);
+showToast(T[currentLang].key_copied,'success');
+}
+
+function generateKey(){
+if(!currentUser)return;
+const key='orbit_'+Math.random().toString(36).substr(2,24)+Math.random().toString(36).substr(2,16);
+if(!currentUser.keys)currentUser.keys=[];
+currentUser.keys.unshift(key);
+saveUser();
+renderDashboard();
+showToast('API key: '+key.substr(0,20)+'...','success');
+}
+
+// BUY PACK
+let pendingPack=null;
+
+function buyPack(name,tokens,price){
+if(!currentUser){
+showToast(currentLang==='ru'?'Сначала войдите в аккаунт':currentLang==='en'?'Sign in first':'请先登录','error');
+openModal();
+return;
+}
+pendingPack={name,tokens,price};
+showBuyConfirm();
+}
+
+function showBuyConfirm(){
+if(!pendingPack)return;
+const p=pendingPack;
+const overlay=document.createElement('div');
+overlay.className='modal-overlay active';
+overlay.style.zIndex='1100';
+overlay.innerHTML=`
+<div class="modal" style="max-width:400px">
+<button class="modal-close" onclick="this.parentElement.parentElement.remove()">×</button>
+<h2 style="font-size:1.3rem">${T[currentLang].buy_pack_title}</h2>
+<p class="modal-subtitle">${p.name.toUpperCase()} · ${p.tokens.toLocaleString()} ${T[currentLang].tokens}</p>
+<div style="text-align:center;font-size:2.5rem;font-weight:700;margin:20px 0">$${p.price}</div>
+<button class="btn" style="width:100%;margin-bottom:12px;min-height:48px" onclick="confirmPurchase(this.parentElement.parentElement)">${T[currentLang].confirm_buy}</button>
+<button class="btn-outline" style="width:100%;min-height:48px" onclick="this.parentElement.parentElement.remove()">${T[currentLang].cancel}</button>
+</div>`;
+document.body.appendChild(overlay);
+}
+
+function confirmPurchase(modalEl){
+if(!pendingPack||!currentUser)return;
+currentUser.balance=(currentUser.balance||0)+pendingPack.tokens;
+if(!currentUser.purchases)currentUser.purchases=[];
+currentUser.purchases.unshift({
+pack:pendingPack.name,
+tokens:pendingPack.tokens,
+price:pendingPack.price,
+date:new Date().toISOString()
+});
+saveUser();
+modalEl.parentElement.remove();
+renderDashboard();
+showToast(T[currentLang].buy_success,'success');
+pendingPack=null;
+}
+
+function saveUser(){
+if(currentUser&&db){
+db.collection('users').doc(currentUser.uid).set({
+balance:currentUser.balance,
+keys:currentUser.keys||[],
+purchases:currentUser.purchases||[],
+email:currentUser.email,
+name:currentUser.name,
+updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+},{merge:true}).catch(e=>console.error(e));
+}
+localStorage.setItem('orbit_user',JSON.stringify(currentUser));
+}
+
+// FIREBASE AUTH
+function setLoading(id,load){
+const b=document.getElementById(id);
+if(!b)return;
+if(load){b.disabled=true;b.dataset.orig=b.innerHTML;b.innerHTML='<span style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;margin-right:8px"></span>...'}
+else{b.disabled=false;b.innerHTML=b.dataset.orig}
+}
+
+function checkFB(){
+if(!auth){showToast(T[currentLang].use_live,'error');return false}
+return true;
+}
+
+function loginWithGoogle(){
+if(!checkFB())return;
+setLoading('googleBtn',true);
+auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
+.then(r=>handleSuccess(r.user)).catch(handleError).finally(()=>setLoading('googleBtn',false));
+}
+
+function loginWithGithub(){
+if(!checkFB())return;
+setLoading('githubBtn',true);
+auth.signInWithPopup(new firebase.auth.GithubAuthProvider())
+.then(r=>handleSuccess(r.user)).catch(handleError).finally(()=>setLoading('githubBtn',false));
+}
+
+function loginWithEmail(){
+if(!checkFB())return;
+const e=document.getElementById('emailInput').value.trim();
+const p=document.getElementById('passwordInput').value;
+if(!e||!p)return showToast(T[currentLang].fill_fields,'error');
+auth.signInWithEmailAndPassword(e,p)
+.then(r=>handleSuccess(r.user))
+.catch(err=>{
+if(err.code==='auth/user-not-found'||err.code==='auth/invalid-credential'||err.code==='auth/wrong-password')registerWithEmail(e,p);
+else showToast(T[currentLang].error+': '+err.message,'error');
+});
+}
+
+function registerWithEmail(e,p){
+if(p.length<6)return showToast(T[currentLang].pass_min,'error');
+auth.createUserWithEmailAndPassword(e,p)
+.then(r=>handleSuccess(r.user))
+.catch(err=>showToast(err.code==='auth/email-already-in-use'?T[currentLang].email_taken:err.message,'error'));
+}
+
+function handleSuccess(user){
+const data={
+name:user.displayName||user.email.split('@')[0],
+email:user.email,
+avatar:(user.displayName||user.email).charAt(0).toUpperCase(),
+uid:user.uid,
+photoURL:user.photoURL,
+balance:0,
+keys:[],
+purchases:[]
+};
+
+if(db){
+db.collection('users').doc(user.uid).get().then(doc=>{
+if(doc.exists){
+const d=doc.data();
+data.balance=d.balance||0;
+data.keys=d.keys||[];
+data.purchases=d.purchases||[];
+}
+currentUser=data;
+localStorage.setItem('orbit_user',JSON.stringify(data));
+closeModal();
+updateUserUI(data);
+showToast(T[currentLang].login_success,'success');
+}).catch(()=>{
+currentUser=data;
+saveUser();
+closeModal();
+updateUserUI(data);
+showToast(T[currentLang].login_success,'success');
+});
+}else{
+currentUser=data;
+localStorage.setItem('orbit_user',JSON.stringify(data));
+closeModal();
+updateUserUI(data);
+showToast(T[currentLang].login_success,'success');
+}
+}
+
+function handleError(e){
+let m=T[currentLang].error;
+if(e.code==='auth/popup-closed-by-user')m=currentLang==='ru'?'Вход отменён':currentLang==='en'?'Cancelled':'已取消';
+else if(e.code==='auth/popup-blocked')m=currentLang==='ru'?'Разреши всплывающие окна':currentLang==='en'?'Allow popups':'允许弹窗';
+else if(e.code==='auth/operation-not-supported-in-this-environment')m=T[currentLang].use_live;
+else m=e.message;
+showToast(m,'error');
+}
+
+function logout(){
+if(auth){
+auth.signOut().then(()=>{
+currentUser=null;
+localStorage.removeItem('orbit_user');
+loginWrapper.style.display='block';
+mobileLoginWrapper.style.display='block';
+userProfile.classList.remove('active');
+mobileUserProfile.classList.remove('active');
+userAvatar.style.background='linear-gradient(135deg,#fff,#888)';
+userAvatar.textContent='U';
+mobileUserAvatar.style.background='linear-gradient(135deg,#fff,#888)';
+mobileUserAvatar.textContent='U';
+showToast(T[currentLang].logout_msg,'success');
+});
+}
+}
+
+function updateUserUI(d){
+loginWrapper.style.display='none';
+mobileLoginWrapper.style.display='none';
+userProfile.classList.add('active');
+mobileUserProfile.classList.add('active');
+userAvatar.textContent=d.avatar;
+mobileUserAvatar.textContent=d.avatar;
+userName.textContent=d.name;
+mobileUserName.textContent=d.name;
+if(d.photoURL){
+const bg=`url(${d.photoURL}) center/cover`;
+userAvatar.style.background=bg;
+mobileUserAvatar.style.background=bg;
+userAvatar.textContent='';
+mobileUserAvatar.textContent='';
+}else{
+userAvatar.style.background='linear-gradient(135deg,#fff,#888)';
+mobileUserAvatar.style.background='linear-gradient(135deg,#fff,#888)';
+}
+}
+
+if(auth){
+auth.onAuthStateChanged(u=>{
+if(u){
+const d={name:u.displayName||u.email.split('@')[0],email:u.email,avatar:(u.displayName||u.email).charAt(0).toUpperCase(),uid:u.uid,photoURL:u.photoURL,balance:0,keys:[],purchases:[]};
+if(db){
+db.collection('users').doc(u.uid).get().then(doc=>{
+if(doc.exists){const x=doc.data();d.balance=x.balance||0;d.keys=x.keys||[];d.purchases=x.purchases||[]}
+currentUser=d;
+localStorage.setItem('orbit_user',JSON.stringify(d));
+updateUserUI(d);
+}).catch(()=>{currentUser=d;updateUserUI(d)});
+}else{currentUser=d;updateUserUI(d)}
+}else{
+loginWrapper.style.display='block';
+mobileLoginWrapper.style.display='block';
+userProfile.classList.remove('active');
+mobileUserProfile.classList.remove('active');
+}
+});
+}
+
+function showToast(m,t='success'){
+const el=document.getElementById('toast');
+el.textContent=m;
+el.className='toast '+t+' show';
+setTimeout(()=>el.classList.remove('show'),3000);
+}
+
+// INIT
+window.addEventListener('DOMContentLoaded',()=>{
+const saved=localStorage.getItem('orbit_user');
+if(saved){
+try{
+const d=JSON.parse(saved);
+currentUser=d;
+updateUserUI(d);
+}catch(e){localStorage.removeItem('orbit_user')}
+}
+const savedLang=localStorage.getItem('orbit_lang')||'ru';
+typeWriter(T[savedLang].typewriter);
+const btn=document.querySelector(`button[onclick="setLang('${savedLang}')"]`);
+if(btn)btn.click();
+});
+
+window.addEventListener('resize',()=>{
+const newIsMobile=window.innerWidth<768;
+if(newIsMobile!==isMobile){location.reload()}
+});
+</script>
+</body>
+</html>
