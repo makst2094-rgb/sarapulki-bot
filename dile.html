@@ -1,691 +1,642 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-<meta name="theme-color" content="#000000">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#050506" id="metaTheme">
 <title>Orbit — API Gateway</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%23888' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23888'/%3E%3C/svg%3E">
 <style>
+/* ============ TOKENS ============ */
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{
-  --bg:#000;
-  --surface:#0a0a0a;
-  --glass:rgba(255,255,255,0.03);
-  --glass-border:rgba(255,255,255,0.08);
-  --glass-highlight:rgba(255,255,255,0.15);
-  --text:#fff;
-  --text-strong:#fff;
-  --dim:#888;
-  --code-bg:#0d0d0d;
-  --code-text:#e0e0e0;
-  --planet-opacity:0.55;
-  --safe-top:env(safe-area-inset-top,0px);
-  --safe-bottom:env(safe-area-inset-bottom,0px);
-  --modal-bg:rgba(10,10,10,0.75);
-  --header-bg:rgba(10,10,10,0.65);
-  --toast-bg:rgba(10,10,10,0.92);
-  --input-bg:rgba(255,255,255,0.03);
-  --input-focus:rgba(255,255,255,0.06);
-  --btn-bg:linear-gradient(135deg,rgba(255,255,255,.08),rgba(255,255,255,.03));
-  --btn-shadow:0 8px 32px rgba(0,0,0,0.4);
-  --btn-hover-shadow:0 12px 40px rgba(255,255,255,.12);
-  --toggle-track:rgba(255,255,255,0.06);
-  --toggle-thumb:linear-gradient(135deg,#fff,#d0d0d0);
-  --toggle-icon:#000;
-  --mobile-menu-bg:rgba(10,10,10,0.96);
-  --table-hover:rgba(255,255,255,0.025);
-  --tag-hover:rgba(255,255,255,0.06);
-  --card-hover-bg:rgba(255,255,255,0.04);
-  --code-header-bg:rgba(0,0,0,0.4);
+  color-scheme:dark;
+  --bg:#050506; --bg-soft:#0b0b0e;
+  --text:#f5f5f7; --text-strong:#ffffff; --dim:#9a9aa3;
+  --glass:rgba(255,255,255,.04); --glass-2:rgba(255,255,255,.07);
+  --border:rgba(255,255,255,.09); --hi:rgba(255,255,255,.16);
+  --header-bg:rgba(8,8,10,.62); --modal-bg:rgba(12,12,15,.78); --menu-bg:rgba(10,10,13,.96);
+  --shadow:0 10px 34px rgba(0,0,0,.45); --shadow-lg:0 24px 70px rgba(0,0,0,.6);
+  --hover:rgba(255,255,255,.06);
+  --code-bg:#0c0c10; --code-head:#101016; --code-text:#f2f2f7; --code-gutter:#4a4a55;
+  --code-kw:#ff79c6; --code-str:#f1fa8c; --code-fn:#8be9fd; --code-com:#7d88ad; --code-num:#bd93f9;
+  --scroll-thumb:rgba(255,255,255,.18); --scroll-hover:rgba(255,255,255,.32);
+  --ok:#34c759; --err:#ff453a; --warn:#ffd60a;
+  --planet-rgb:236,236,246; --planet-alpha:.8;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
 }
 [data-theme="light"]{
-  --bg:#f5f5f7;
-  --surface:#fff;
-  --glass:rgba(0,0,0,0.02);
-  --glass-border:rgba(0,0,0,0.08);
-  --glass-highlight:rgba(255,255,255,0.9);
-  --text:#1d1d1f;
-  --text-strong:#000;
-  --dim:#6e6e73;
-  --code-bg:#1e1e1e;
-  --code-text:#d4d4d4;
-  --planet-opacity:0.45;
-  --modal-bg:rgba(255,255,255,0.85);
-  --header-bg:rgba(255,255,255,0.72);
-  --toast-bg:rgba(255,255,255,0.95);
-  --input-bg:rgba(0,0,0,0.02);
-  --input-focus:rgba(0,0,0,0.04);
-  --btn-bg:linear-gradient(135deg,rgba(0,0,0,.04),rgba(0,0,0,.02));
-  --btn-shadow:0 8px 32px rgba(0,0,0,0.08);
-  --btn-hover-shadow:0 12px 40px rgba(0,0,0,0.12);
-  --toggle-track:rgba(0,0,0,0.06);
-  --toggle-thumb:linear-gradient(135deg,#1d1d1f,#333);
-  --toggle-icon:#fff;
-  --mobile-menu-bg:rgba(255,255,255,0.97);
-  --table-hover:rgba(0,0,0,0.025);
-  --tag-hover:rgba(0,0,0,0.04);
-  --card-hover-bg:rgba(0,0,0,0.02);
-  --code-header-bg:rgba(0,0,0,0.04);
+  color-scheme:light;
+  --bg:#f4f4f6; --bg-soft:#ffffff;
+  --text:#1d1d1f; --text-strong:#000000; --dim:#5d5d64;
+  --glass:rgba(255,255,255,.6); --glass-2:rgba(255,255,255,.8);
+  --border:rgba(0,0,0,.08); --hi:rgba(255,255,255,.95);
+  --header-bg:rgba(255,255,255,.7); --modal-bg:rgba(255,255,255,.88); --menu-bg:rgba(250,250,252,.97);
+  --shadow:0 10px 30px rgba(0,0,0,.08); --shadow-lg:0 24px 60px rgba(0,0,0,.14);
+  --hover:rgba(0,0,0,.045);
+  --code-bg:#ffffff; --code-head:#f6f6f8; --code-text:#16161a; --code-gutter:#b6b6bd;
+  --code-kw:#a626a4; --code-str:#3f7d20; --code-fn:#0b72a8; --code-com:#8a8a92; --code-num:#986801;
+  --scroll-thumb:rgba(0,0,0,.2); --scroll-hover:rgba(0,0,0,.35);
+  --planet-rgb:22,22,28; --planet-alpha:.5;
 }
 html{scroll-behavior:smooth}
-body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;line-height:1.6;overflow-x:hidden;opacity:0;transition:opacity .8s,background .5s,color .5s;-webkit-font-smoothing:antialiased}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,sans-serif;
+  line-height:1.6; overflow-x:hidden; opacity:0;
+  transition:opacity .7s ease, background-color .45s ease, color .45s ease;
+  -webkit-font-smoothing:antialiased;
+}
 body.loaded{opacity:1}
+::selection{background:var(--text);color:var(--bg)}
+:focus-visible{outline:2px solid var(--dim);outline-offset:2px;border-radius:6px}
+/* scrollbars in theme language */
+*{scrollbar-width:thin;scrollbar-color:var(--scroll-thumb) transparent}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:8px;border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:var(--scroll-hover)}
 
-/* PRELOADER */
-.preloader{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;transition:opacity .8s,visibility .8s}
-.preloader.hidden{opacity:0;visibility:hidden}
-.preloader-text{font-size:clamp(1.5rem,5vw,2rem);font-weight:300;letter-spacing:8px;animation:pulse 2s infinite;color:var(--text)}
-@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
-
-/* CANVAS - ШАР */
-#planet-canvas{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:var(--planet-opacity);transition:opacity .5s}
-
-/* ЗВЁЗДЫ */
+/* ============ BACKGROUND ============ */
+#planetCanvas{position:fixed;inset:0;z-index:0;pointer-events:none;transition:opacity .5s}
 .stars{position:fixed;inset:0;z-index:0;pointer-events:none}
-.star{position:absolute;width:1px;height:1px;background:var(--text);border-radius:50%;animation:twinkle var(--dur) infinite;animation-delay:var(--del);opacity:.4}
-[data-theme="light"] .star{opacity:.25}
-@keyframes twinkle{0%,100%{opacity:.1}50%{opacity:.8}}
+.star{position:absolute;width:1.5px;height:1.5px;border-radius:50%;background:var(--text);opacity:.35;animation:twinkle var(--dur) ease-in-out infinite;animation-delay:var(--del)}
+[data-theme="light"] .star{opacity:.18}
+@keyframes twinkle{0%,100%{opacity:.08;transform:scale(.8)}50%{opacity:.6;transform:scale(1.25)}}
 
-/* HEADER */
-header{position:fixed;top:0;left:0;right:0;padding:16px 20px;padding-top:calc(16px + var(--safe-top));background:var(--header-bg);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border-bottom:1px solid var(--glass-border);z-index:100;transform:translateY(-100%);animation:slideDown .8s .5s forwards;box-shadow:0 8px 32px rgba(0,0,0,0.3),inset 0 1px 0 var(--glass-highlight);transition:background .5s,box-shadow .5s}
+/* ============ PRELOADER / BANNER ============ */
+.preloader{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;transition:opacity .7s,visibility .7s}
+.preloader.hidden{opacity:0;visibility:hidden}
+.preloader span{font-size:clamp(1.4rem,5vw,2rem);font-weight:300;letter-spacing:.6em;padding-left:.6em;color:var(--text);animation:pulse 1.8s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+.file-banner{position:fixed;top:calc(70px + var(--safe-t));left:50%;transform:translateX(-50%);z-index:200;max-width:min(92vw,560px);background:var(--modal-bg);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(255,214,10,.4);border-radius:14px;padding:12px 40px 12px 16px;font-size:.8rem;color:var(--text);box-shadow:var(--shadow);display:none}
+.file-banner.show{display:block;animation:fadeUp .5s both}
+.file-banner b{color:var(--warn)}
+.file-banner button{position:absolute;top:8px;right:8px;width:26px;height:26px;border:none;background:var(--glass);border-radius:50%;color:var(--dim);cursor:pointer}
+
+/* ============ HEADER ============ */
+header{position:fixed;top:0;left:0;right:0;z-index:100;padding:14px 22px;padding-top:calc(14px + var(--safe-t));background:var(--header-bg);backdrop-filter:blur(36px) saturate(180%);-webkit-backdrop-filter:blur(36px) saturate(180%);border-bottom:1px solid var(--border);box-shadow:inset 0 1px 0 var(--hi);transform:translateY(-100%);animation:slideDown .7s .4s cubic-bezier(.2,.8,.2,1) forwards;transition:background-color .45s}
 @keyframes slideDown{to{transform:translateY(0)}}
-nav{max-width:1400px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
-.logo{font-weight:600;letter-spacing:2px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:transform .3s;font-size:.95rem;color:var(--text)}
-.logo:hover{transform:scale(1.05)}
-.logo-icon{width:20px;height:20px;border:2px solid var(--text);border-radius:50%;position:relative;animation:spin 20s linear infinite}
-.logo-icon::before{content:'';position:absolute;inset:50%;transform:translate(-50%,-50%);width:5px;height:5px;background:var(--text);border-radius:50%}
+nav{max-width:1280px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:14px}
+.logo{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:.18em;font-size:.92rem;color:var(--text-strong);cursor:pointer;user-select:none;transition:transform .3s;flex-shrink:0}
+.logo:hover{transform:scale(1.04)}
+.logo-icon{width:20px;height:20px;border:2px solid var(--text);border-radius:50%;position:relative;animation:spin 22s linear infinite;flex-shrink:0}
+.logo-icon::before{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:6px;height:6px;background:var(--text);border-radius:50%}
 @keyframes spin{to{transform:rotate(360deg)}}
+.nav-links{display:flex;gap:26px}
+.nav-links a{color:var(--dim);text-decoration:none;font-size:.84rem;padding:4px 0;position:relative;transition:color .3s}
+.nav-links a::after{content:'';position:absolute;left:0;bottom:0;height:1px;width:0;background:var(--text);transition:width .3s}
+.nav-links a:hover,.nav-links a.active{color:var(--text)}
+.nav-links a:hover::after,.nav-links a.active::after{width:100%}
+.nav-right{display:flex;align-items:center;gap:10px}
 
-.burger{display:none;width:28px;height:28px;flex-direction:column;justify-content:center;gap:5px;cursor:pointer;background:none;border:none;padding:0}
-.burger span{display:block;width:100%;height:2px;background:var(--text);border-radius:2px;transition:all .3s}
+/* language pill */
+.lang-switch{display:flex;gap:3px;padding:3px;border-radius:18px;background:var(--glass);border:1px solid var(--border);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:inset 0 1px 0 var(--hi)}
+.lang-btn{border:none;background:none;color:var(--dim);font-size:.7rem;font-weight:600;padding:5px 9px;border-radius:14px;cursor:pointer;transition:all .35s cubic-bezier(.2,.8,.2,1)}
+.lang-btn:hover{color:var(--text)}
+.lang-btn.active{background:var(--text);color:var(--bg);box-shadow:0 2px 10px rgba(0,0,0,.25)}
+
+/* theme toggle — liquid glass, monochrome icons */
+.theme-toggle{position:relative;width:58px;height:30px;flex-shrink:0;border-radius:16px;border:1px solid var(--border);background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);cursor:pointer;box-shadow:inset 0 1px 0 var(--hi),0 2px 8px rgba(0,0,0,.15);transition:transform .3s,border-color .3s}
+.theme-toggle:hover{transform:scale(1.06);border-color:var(--hi)}
+.theme-toggle:active{transform:scale(.94)}
+.theme-thumb{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:var(--text);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.3);transition:left .45s cubic-bezier(.34,1.4,.4,1),background-color .45s}
+[data-theme="light"] .theme-thumb{left:31px}
+.theme-thumb svg{position:absolute;width:13px;height:13px;stroke:var(--bg);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:opacity .3s,transform .4s}
+.theme-thumb .i-moon{opacity:1;transform:rotate(0)}
+.theme-thumb .i-sun{opacity:0;transform:rotate(-90deg)}
+[data-theme="light"] .theme-thumb .i-moon{opacity:0;transform:rotate(90deg)}
+[data-theme="light"] .theme-thumb .i-sun{opacity:1;transform:rotate(0)}
+
+/* buttons */
+.btn{background:var(--text);color:var(--bg);border:1px solid var(--text);padding:10px 20px;border-radius:22px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap;position:relative;overflow:hidden;transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s,background-color .45s,color .45s;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.btn:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(0,0,0,.3)}
+.btn:active{transform:translateY(0) scale(.97)}
+.btn:disabled{opacity:.55;cursor:wait;transform:none}
+.btn-outline{background:var(--glass);color:var(--text);border:1px solid var(--border);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:10px 20px;border-radius:22px;font-size:.82rem;font-weight:500;cursor:pointer;white-space:nowrap;box-shadow:inset 0 1px 0 var(--hi);transition:all .3s}
+.btn-outline:hover{background:var(--hover);border-color:var(--hi);transform:translateY(-2px)}
+.btn-outline:active{transform:scale(.97)}
+
+/* burger */
+.burger{display:none;width:40px;height:40px;border:none;background:none;cursor:pointer;flex-direction:column;align-items:center;justify-content:center;gap:5px;flex-shrink:0}
+.burger span{display:block;width:22px;height:2px;background:var(--text);border-radius:2px;transition:all .35s cubic-bezier(.2,.8,.2,1)}
 .burger.active span:nth-child(1){transform:translateY(7px) rotate(45deg)}
-.burger.active span:nth-child(2){opacity:0}
+.burger.active span:nth-child(2){opacity:0;transform:scaleX(0)}
 .burger.active span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
 
-.nav-links{display:flex;gap:28px}
-.nav-links a{color:var(--dim);text-decoration:none;font-size:.85rem;transition:color .3s;position:relative;padding:4px 0}
-.nav-links a::after{content:'';position:absolute;bottom:0;left:0;width:0;height:1px;background:var(--text);transition:width .3s}
-.nav-links a:hover{color:var(--text)}
-.nav-links a:hover::after{width:100%}
-.nav-right{display:flex;gap:10px;align-items:center}
+/* mobile menu */
+.menu-scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:98;opacity:0;pointer-events:none;transition:opacity .35s}
+.menu-scrim.show{opacity:1;pointer-events:auto}
+.mobile-menu{position:fixed;top:0;right:0;bottom:0;width:min(84vw,320px);z-index:99;background:var(--menu-bg);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border-left:1px solid var(--border);transform:translateX(105%);transition:transform .45s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column;gap:6px;padding:calc(84px + var(--safe-t)) 24px calc(28px + var(--safe-b))}
+.mobile-menu.active{transform:translateX(0)}
+.mobile-menu a{color:var(--text);text-decoration:none;font-size:1.15rem;font-weight:500;padding:14px 4px;border-bottom:1px solid var(--border);opacity:0;transform:translateX(20px);transition:opacity .4s,transform .4s,color .3s}
+.mobile-menu.active a{opacity:1;transform:translateX(0)}
+.mobile-menu.active a:nth-child(1){transition-delay:.08s}.mobile-menu.active a:nth-child(2){transition-delay:.14s}.mobile-menu.active a:nth-child(3){transition-delay:.2s}.mobile-menu.active a:nth-child(4){transition-delay:.26s}
+.mobile-actions{margin-top:auto;display:flex;flex-direction:column;gap:10px}
+.mobile-actions .btn,.mobile-actions .btn-outline{width:100%;padding:13px}
 
-/* LANG SWITCH */
-.lang-switch{display:flex;gap:4px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);padding:4px;border-radius:20px;border:1px solid var(--glass-border);box-shadow:inset 0 1px 0 var(--glass-highlight)}
-.lang-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:.7rem;padding:5px 8px;border-radius:14px;transition:all .4s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden}
-.lang-btn::before{content:'';position:absolute;top:50%;left:50%;width:0;height:0;border-radius:50%;background:rgba(128,128,128,.2);transform:translate(-50%,-50%);transition:width .4s,height .4s}
-.lang-btn:hover::before{width:100px;height:100px}
-.lang-btn.active{background:var(--text);color:var(--bg);transform:scale(1.05);box-shadow:0 0 20px rgba(128,128,128,.3)}
-
-/* THEME TOGGLE - LIQUID GLASS с Ч/Б иконками */
-.theme-toggle{position:relative;width:60px;height:32px;background:var(--toggle-track);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:16px;cursor:pointer;transition:all .4s;box-shadow:inset 0 1px 0 var(--glass-highlight),0 2px 8px rgba(0,0,0,.15);flex-shrink:0;overflow:hidden}
-.theme-toggle::before{content:'';position:absolute;top:3px;left:3px;width:24px;height:24px;background:var(--toggle-thumb);border-radius:50%;transition:all .4s cubic-bezier(.4,0,.2,1);box-shadow:0 2px 8px rgba(0,0,0,.25)}
-[data-theme="light"] .theme-toggle::before{left:31px}
-.theme-toggle:hover{border-color:var(--glass-highlight);transform:scale(1.05)}
-.theme-toggle:active{transform:scale(.95)}
-.theme-icon{position:absolute;top:50%;transform:translateY(-50%);width:14px;height:14px;transition:opacity .3s;pointer-events:none;display:flex;align-items:center;justify-content:center}
-.theme-icon svg{width:14px;height:14px;fill:var(--toggle-icon);transition:fill .4s}
-.theme-icon.moon{left:8px;opacity:1}
-.theme-icon.sun{right:8px;opacity:0}
-[data-theme="light"] .theme-icon.moon{opacity:0}
-[data-theme="light"] .theme-icon.sun{opacity:1}
-
-/* BUTTONS */
-.btn{background:var(--btn-bg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);border:1px solid var(--glass-border);padding:10px 18px;border-radius:24px;font-size:.8rem;font-weight:600;cursor:pointer;transition:all .4s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden;box-shadow:var(--btn-shadow),inset 0 1px 0 var(--glass-highlight);white-space:nowrap}
-.btn::before{content:'';position:absolute;top:50%;left:50%;width:0;height:0;border-radius:50%;background:rgba(255,255,255,.15);transform:translate(-50%,-50%);transition:width .6s,height .6s}
-.btn:hover::before{width:300px;height:300px}
-.btn:hover{transform:translateY(-3px);box-shadow:var(--btn-hover-shadow),inset 0 1px 0 var(--glass-highlight);border-color:var(--glass-highlight)}
-.btn:active{transform:translateY(-1px) scale(.98)}
-
-.btn-outline{background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);border:1px solid var(--glass-border);padding:10px 18px;border-radius:24px;font-size:.8rem;cursor:pointer;transition:all .4s;box-shadow:inset 0 1px 0 var(--glass-highlight);white-space:nowrap}
-.btn-outline:hover{background:var(--card-hover-bg);border-color:var(--glass-highlight);transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,0,0,0.1),inset 0 1px 0 var(--glass-highlight)}
-
-/* MOBILE MENU */
-.mobile-menu{position:fixed;top:0;right:-100%;width:80%;max-width:320px;height:100vh;height:100dvh;background:var(--mobile-menu-bg);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border-left:1px solid var(--glass-border);z-index:99;transition:right .4s cubic-bezier(.4,0,.2,1);padding:80px 24px 40px;padding-top:calc(80px + var(--safe-top));display:flex;flex-direction:column;gap:24px}
-.mobile-menu.active{right:0}
-.mobile-menu a{color:var(--dim);text-decoration:none;font-size:1.2rem;padding:12px 0;border-bottom:1px solid var(--glass-border);transition:color .3s}
-.mobile-menu a:hover{color:var(--text)}
-.mobile-menu .mobile-actions{display:flex;flex-direction:column;gap:12px;margin-top:auto}
-
-/* MAIN */
-main{position:relative;z-index:1}
-
-/* HERO */
-.hero{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:100px 20px 60px;padding-top:calc(100px + var(--safe-top))}
-.hero-content{opacity:0;transform:translateY(30px);animation:fadeUp 1s 1s forwards}
-@keyframes fadeUp{to{opacity:1;transform:translateY(0)}}
-.hero h1{font-size:clamp(2.2rem,10vw,4rem);font-weight:700;line-height:1.1;margin-bottom:20px;letter-spacing:-2px;color:var(--text-strong)}
-.typewriter{display:inline-block;border-right:3px solid var(--text);animation:blink 1s step-end infinite}
-@keyframes blink{50%{border-color:transparent}}
-.glitch{position:relative}
-@keyframes glitch{0%,100%{text-shadow:none}92%{text-shadow:none}93%{text-shadow:-2px 0 #ff00ff,2px 0 #00ffff}94%{text-shadow:2px 0 #ff00ff,-2px 0 #00ffff}95%{text-shadow:none}}
-.hero p{color:var(--dim);font-size:clamp(.9rem,3.5vw,1.1rem);max-width:600px;margin:0 auto 32px;opacity:0;animation:fadeIn 1s 1.5s forwards;padding:0 10px}
-@keyframes fadeIn{to{opacity:1}}
-.hero-buttons{display:flex;gap:12px;justify-content:center;opacity:0;animation:fadeIn 1s 1.8s forwards;flex-wrap:wrap;padding:0 10px}
-
-/* SECTIONS */
-section{max-width:1200px;margin:0 auto;padding:80px 20px}
-.section-label{color:var(--dim);font-size:.8rem;margin-bottom:12px;font-family:'Courier New',monospace;opacity:0;transform:translateX(-20px);transition:all .6s}
-.section-label.visible{opacity:1;transform:translateX(0)}
-.section-title{font-size:clamp(1.8rem,7vw,3rem);font-weight:700;margin-bottom:20px;letter-spacing:-1.5px;line-height:1.2;opacity:0;transform:translateY(30px);transition:all .8s cubic-bezier(.4,0,.2,1);color:var(--text-strong)}
-.section-title.visible{opacity:1;transform:translateY(0)}
-.section-desc{color:var(--dim);font-size:clamp(.9rem,3vw,1.1rem);max-width:600px;margin-bottom:40px;opacity:0;transform:translateY(20px);transition:all .8s .2s}
-.section-desc.visible{opacity:1;transform:translateY(0)}
-
-/* CODE SHOWCASE */
-.code-showcase{margin:60px 0;opacity:0;transform:translateY(30px);transition:all .8s}
-.code-showcase.visible{opacity:1;transform:translateY(0)}
-.code-container{background:var(--glass);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border:1px solid var(--glass-border);border-radius:20px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3),inset 0 1px 0 var(--glass-highlight);position:relative}
-.code-container::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--glass-highlight),transparent)}
-.code-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--glass-border);background:var(--code-header-bg);flex-wrap:wrap;gap:12px}
-.code-dots{display:flex;gap:6px}
-.code-dot{width:12px;height:12px;border-radius:50%;background:#ff5f56}
-.code-dot:nth-child(2){background:#ffbd2e}
-.code-dot:nth-child(3){background:#27c93f}
-.code-tabs{display:flex;gap:4px;background:var(--glass);padding:4px;border-radius:12px;border:1px solid var(--glass-border)}
-.code-tab{padding:8px 14px;border-radius:8px;font-size:.78rem;color:var(--dim);background:none;border:none;cursor:pointer;transition:all .3s;font-weight:500}
-.code-tab.active{background:var(--text);color:var(--bg);box-shadow:0 2px 8px rgba(0,0,0,.2)}
-.code-tab:hover:not(.active){color:var(--text);background:rgba(128,128,128,.1)}
-.code-copy{background:none;border:1px solid var(--glass-border);color:var(--dim);padding:8px 14px;border-radius:8px;font-size:.75rem;cursor:pointer;transition:all .3s;font-weight:500}
-.code-copy:hover{color:var(--text);border-color:var(--glass-highlight);background:rgba(128,128,128,.1)}
-.code-content{padding:24px;overflow-x:auto;position:relative}
-.code-block{display:none;animation:codeFadeIn .4s}
-.code-block.active{display:block}
-@keyframes codeFadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-pre{margin:0;font-family:'SF Mono',Monaco,'Courier New',monospace;font-size:.9rem;line-height:1.7;color:var(--code-text)}
-.kw{color:#ff79c6}
-.str{color:#f1fa8c}
-.fn{color:#8be9fd}
-.com{color:#6272a4;font-style:italic}
-.num{color:#bd93f9}
-
-/* PACKS */
-.packs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:32px}
-.pack-card{background:var(--glass);backdrop-filter:blur(40px) saturate(180%);-webkit-backdrop-filter:blur(40px) saturate(180%);border:1px solid var(--glass-border);border-radius:20px;padding:28px 20px;transition:all .5s cubic-bezier(.4,0,.2,1);cursor:pointer;position:relative;overflow:hidden;opacity:0;transform:translateY(30px);box-shadow:var(--btn-shadow),inset 0 1px 0 var(--glass-highlight)}
-.pack-card.visible{opacity:1;transform:translateY(0)}
-.pack-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--glass-highlight),transparent);opacity:0;transition:opacity .4s}
-.pack-card:hover::before,.pack-card:active::before{opacity:1}
-.pack-card:active{transform:scale(.98)}
-.pack-card.popular{border-color:rgba(255,255,255,.25)}
-[data-theme="light"] .pack-card.popular{border-color:rgba(0,0,0,.2)}
-.pack-card.popular::after{content:'POPULAR';position:absolute;top:16px;right:16px;background:linear-gradient(135deg,var(--text),rgba(128,128,128,.8));color:var(--bg);padding:4px 10px;border-radius:12px;font-size:.7rem;font-weight:700;letter-spacing:1px;box-shadow:0 4px 12px rgba(0,0,0,.2);animation:popularPulse 2s infinite}
-@keyframes popularPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
-.pack-tokens{font-size:1.8rem;font-weight:700;margin-bottom:6px;transition:transform .3s;color:var(--text-strong)}
-.pack-card:hover .pack-tokens{transform:scale(1.05)}
-.pack-label{color:var(--dim);font-size:.8rem;margin-bottom:16px}
-.pack-price{font-size:2rem;font-weight:700;margin-bottom:20px;color:var(--text-strong)}
-.pack-price span{font-size:.9rem;color:var(--dim);font-weight:400}
-.pack-features{list-style:none;margin-bottom:20px}
-.pack-features li{padding:6px 0;color:var(--dim);font-size:.85rem;display:flex;align-items:center;gap:8px;transition:all .3s}
-.pack-features li::before{content:'✓';color:var(--text);font-weight:700;transition:transform .3s}
-.pack-card:hover .pack-features li::before{transform:scale(1.2)}
-.pack-btn{width:100%;padding:12px;border-radius:12px;border:1px solid var(--glass-border);background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);font-weight:600;cursor:pointer;transition:all .3s;position:relative;overflow:hidden;font-size:.9rem}
-.pack-btn::before{content:'';position:absolute;top:50%;left:50%;width:0;height:0;border-radius:50%;background:rgba(255,255,255,.15);transform:translate(-50%,-50%);transition:width .6s,height .6s}
-.pack-btn:hover::before{width:300px;height:300px}
-.pack-btn:hover{background:var(--card-hover-bg);border-color:var(--glass-highlight)}
-
-/* MODELS TABLE */
-.table-wrapper{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:32px;border-radius:16px;border:1px solid var(--glass-border);box-shadow:var(--btn-shadow),inset 0 1px 0 var(--glass-highlight)}
-.models-table{width:100%;min-width:600px;border-collapse:collapse;background:var(--glass);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px)}
-.models-table th{text-align:left;padding:14px;color:var(--dim);font-size:.75rem;text-transform:uppercase;border-bottom:1px solid var(--glass-border);font-weight:500;white-space:nowrap}
-.models-table td{padding:16px 14px;border-bottom:1px solid var(--glass-border);transition:background .3s}
-.models-table tr{transition:all .3s}
-.models-table tr:hover{background:var(--table-hover)}
-.model-info{display:flex;align-items:center;gap:12px}
-.model-icon{width:32px;height:32px;border-radius:50%;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:bold;box-shadow:inset 0 1px 0 var(--glass-highlight);transition:all .3s;flex-shrink:0;color:var(--text)}
-.models-table tr:hover .model-icon{transform:rotate(360deg) scale(1.1)}
-.model-name{font-weight:600;font-family:'SF Mono',monospace;font-size:.85rem;white-space:nowrap;color:var(--text-strong)}
-.model-provider{font-size:.75rem;color:var(--dim);margin-top:2px}
-.price{font-family:'SF Mono',monospace;font-size:.85rem;white-space:nowrap;color:var(--text-strong)}
-.price-bar{height:3px;background:var(--glass-border);border-radius:2px;margin-top:6px;width:60px;overflow:hidden}
-.price-fill{height:100%;background:linear-gradient(90deg,var(--text),rgba(128,128,128,.7));transition:width 1s}
-.tags{display:flex;gap:6px;flex-wrap:wrap}
-.tag{padding:4px 8px;border:1px solid var(--glass-border);border-radius:12px;font-size:.7rem;color:var(--dim);transition:all .3s;background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);white-space:nowrap}
-.tag:hover{border-color:var(--glass-highlight);color:var(--text);background:var(--tag-hover);transform:scale(1.05)}
-.tag.new{background:var(--text);color:var(--bg);border-color:var(--text)}
-
-/* FAQ */
-.faq-section{display:grid;grid-template-columns:1fr 1.5fr;gap:60px;margin:80px 0}
-.faq-list{display:flex;flex-direction:column}
-.faq-item{border-bottom:1px solid var(--glass-border);opacity:0;transform:translateX(30px);transition:all .6s}
-.faq-item.visible{opacity:1;transform:translateX(0)}
-.faq-q{padding:20px 0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-weight:500;transition:color .3s;gap:12px;color:var(--text)}
-.faq-q:hover{color:var(--text-strong)}
-.faq-a{max-height:0;overflow:hidden;transition:max-height .4s,padding .4s;color:var(--dim);line-height:1.7;font-size:.9rem}
-.faq-item.active .faq-a{max-height:200px;padding-bottom:20px}
-.faq-icon{width:24px;height:24px;border:1px solid var(--glass-border);border-radius:50%;display:flex;align-items:center;justify-content:center;transition:all .3s;font-size:.9rem;background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);flex-shrink:0;color:var(--text)}
-.faq-item.active .faq-icon{transform:rotate(45deg);background:var(--text);color:var(--bg);border-color:var(--text)}
-
-/* CTA */
-.cta-final{text-align:center;padding:100px 20px;border-top:1px solid var(--glass-border);margin-top:80px}
-.cta-final h2{font-size:clamp(2rem,7vw,3.5rem);font-weight:700;margin-bottom:16px;letter-spacing:-1.5px;color:var(--text-strong)}
-.cta-final p{color:var(--dim);margin-bottom:32px;font-size:clamp(.9rem,3vw,1.1rem)}
-
-/* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);z-index:1000;display:none;align-items:center;justify-content:center;opacity:0;transition:opacity .4s;padding:20px}
-[data-theme="light"] .modal-overlay{background:rgba(0,0,0,.5)}
-.modal-overlay.active{display:flex;opacity:1}
-.modal{background:var(--modal-bg);backdrop-filter:blur(60px) saturate(180%);-webkit-backdrop-filter:blur(60px) saturate(180%);border:1px solid var(--glass-border);border-radius:24px;padding:40px 28px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto;position:relative;transform:scale(.9);transition:transform .4s cubic-bezier(.4,0,.2,1);box-shadow:0 20px 60px rgba(0,0,0,0.6),inset 0 1px 0 var(--glass-highlight)}
-.modal::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--glass-highlight),transparent)}
-.modal-overlay.active .modal{transform:scale(1)}
-.modal-close{position:absolute;top:16px;right:16px;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);color:var(--dim);width:36px;height:36px;border-radius:50%;font-size:1.2rem;cursor:pointer;transition:all .3s;display:flex;align-items:center;justify-content:center}
-.modal-close:hover{color:var(--text);transform:rotate(90deg);background:rgba(128,128,128,.15)}
-.modal h2{text-align:center;font-size:1.5rem;margin-bottom:8px;color:var(--text-strong)}
-.modal-subtitle{text-align:center;color:var(--dim);margin-bottom:28px;font-size:.9rem}
-.social-btn{width:100%;padding:14px;border-radius:12px;border:1px solid var(--glass-border);background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:12px;cursor:pointer;transition:all .4s cubic-bezier(.4,0,.2,1);font-size:.9rem;font-weight:500;box-shadow:inset 0 1px 0 var(--glass-highlight);min-height:48px}
-.social-btn:hover,.social-btn:active{background:var(--card-hover-bg);border-color:var(--glass-highlight);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,0.3),inset 0 1px 0 var(--glass-highlight)}
-.divider{text-align:center;color:var(--dim);font-size:.8rem;margin:20px 0;position:relative}
-.divider::before,.divider::after{content:'';position:absolute;top:50%;width:40%;height:1px;background:var(--glass-border)}
-.divider::before{left:0}.divider::after{right:0}
-.input-field{width:100%;padding:14px 16px;border-radius:12px;border:1px solid var(--glass-border);background:var(--input-bg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);color:var(--text);font-size:.95rem;margin-bottom:12px;outline:none;transition:all .3s;box-shadow:inset 0 1px 0 var(--glass-highlight);-webkit-appearance:none}
-.input-field::placeholder{color:var(--dim)}
-.input-field:focus{border-color:var(--glass-highlight);background:var(--input-focus);box-shadow:0 0 0 3px rgba(128,128,128,.08),inset 0 1px 0 var(--glass-highlight)}
-.submit-btn{width:100%;padding:14px;border-radius:12px;border:none;background:var(--text);color:var(--bg);font-weight:600;font-size:.95rem;cursor:pointer;transition:all .3s;margin-top:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);min-height:48px}
-.submit-btn:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.2)}
-.modal-footer{text-align:center;margin-top:16px;font-size:.85rem;color:var(--dim)}
-.modal-footer a{color:var(--text);text-decoration:none;cursor:pointer}
-
-/* DASHBOARD */
-.dashboard-modal{max-width:600px}
-.dash-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--glass-border)}
-.dash-header h2{font-size:1.3rem;color:var(--text-strong)}
-.dash-balance{background:var(--glass);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid var(--glass-border);border-radius:20px;padding:24px;margin-bottom:20px;box-shadow:var(--btn-shadow),inset 0 1px 0 var(--glass-highlight);position:relative;overflow:hidden}
-.dash-balance::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--glass-highlight),transparent)}
-.dash-balance-label{color:var(--dim);font-size:.8rem;margin-bottom:6px}
-.dash-balance-value{font-size:2rem;font-weight:700;color:var(--text-strong)}
-.dash-balance-value span{font-size:.9rem;color:var(--dim);margin-left:6px}
-.dash-section-title{font-size:.95rem;font-weight:600;margin-bottom:12px;margin-top:24px;color:var(--text-strong)}
-.api-key-item{background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:12px;padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;box-shadow:inset 0 1px 0 var(--glass-highlight)}
-.api-key-value{font-family:'SF Mono',monospace;font-size:.8rem;color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.api-key-copy{background:none;border:1px solid var(--glass-border);color:var(--text);padding:6px 10px;border-radius:8px;cursor:pointer;font-size:.75rem;transition:all .3s;flex-shrink:0;min-height:32px}
-.api-key-copy:hover{background:var(--card-hover-bg);border-color:var(--glass-highlight)}
-.empty-state{text-align:center;padding:32px 20px;color:var(--dim)}
-.empty-state-icon{font-size:2.5rem;margin-bottom:12px;opacity:.3}
-
-/* USER PROFILE */
-.user-profile{display:none;align-items:center;gap:10px;padding:5px 14px 5px 5px;border-radius:24px;border:1px solid var(--glass-border);background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);cursor:pointer;transition:all .3s;box-shadow:inset 0 1px 0 var(--glass-highlight)}
+/* user chip */
+.user-profile{display:none;align-items:center;gap:9px;padding:4px 12px 4px 4px;border-radius:22px;border:1px solid var(--border);background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);cursor:pointer;box-shadow:inset 0 1px 0 var(--hi);transition:all .3s;max-width:100%}
 .user-profile.active{display:flex}
-.user-profile:hover{background:var(--card-hover-bg);border-color:var(--glass-highlight)}
-.user-avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#fff,#888);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:.8rem;color:#000;overflow:hidden;flex-shrink:0}
-.user-name{font-size:.8rem;font-weight:500;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
-.logout-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:.75rem;margin-left:6px;transition:color .3s}
-.logout-btn:hover{color:var(--text)}
+.user-profile:hover{background:var(--hover);border-color:var(--hi)}
+.user-avatar{width:28px;height:28px;border-radius:50%;background:var(--text);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.75rem;overflow:hidden;flex-shrink:0;background-size:cover;background-position:center}
+.user-name{font-size:.8rem;font-weight:500;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logout-btn{border:none;background:none;color:var(--dim);font-size:.72rem;cursor:pointer;padding:4px;transition:color .3s}
+.logout-btn:hover{color:var(--err)}
 
-/* TOAST */
-.toast{position:fixed;bottom:calc(20px + var(--safe-bottom));left:50%;transform:translateX(-50%) translateY(100px);background:var(--toast-bg);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid var(--glass-border);padding:14px 20px;border-radius:12px;z-index:2000;opacity:0;transition:all .4s;font-size:.85rem;box-shadow:0 8px 32px rgba(0,0,0,0.4),inset 0 1px 0 var(--glass-highlight);max-width:90vw;text-align:center;color:var(--text)}
+/* ============ LAYOUT ============ */
+main{position:relative;z-index:1}
+section{max-width:1160px;margin:0 auto;padding:88px 24px;scroll-margin-top:92px}
+.section-label{font-family:'SF Mono',ui-monospace,monospace;font-size:.78rem;color:var(--dim);margin-bottom:14px}
+.section-title{font-size:clamp(1.7rem,5.5vw,2.9rem);font-weight:700;letter-spacing:-.03em;line-height:1.15;color:var(--text-strong);margin-bottom:18px}
+.section-desc{color:var(--dim);font-size:clamp(.92rem,2.6vw,1.05rem);max-width:620px;margin-bottom:42px}
+
+/* reveal */
+.reveal{opacity:0;transform:translateY(26px);transition:opacity .7s cubic-bezier(.2,.8,.2,1),transform .7s cubic-bezier(.2,.8,.2,1)}
+.reveal.in{opacity:1;transform:translateY(0)}
+
+/* hero */
+.hero{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-top:calc(110px + var(--safe-t))}
+.hero-content{opacity:0;animation:fadeUp .9s .9s cubic-bezier(.2,.8,.2,1) forwards}
+@keyframes fadeUp{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:translateY(0)}}
+.hero h1{font-size:clamp(2.3rem,9vw,5.2rem);font-weight:700;letter-spacing:-.035em;line-height:1.08;color:var(--text-strong);min-height:2.25em;margin-bottom:22px}
+.typewriter{display:inline-block;border-right:3px solid var(--text);padding-right:4px;animation:caret 1s step-end infinite}
+@keyframes caret{50%{border-color:transparent}}
+.hero p{color:var(--dim);font-size:clamp(.95rem,3vw,1.12rem);max-width:600px;margin:0 auto 36px;opacity:0;animation:fadeIn .8s 1.5s forwards}
+@keyframes fadeIn{to{opacity:1}}
+.hero-buttons{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;opacity:0;animation:fadeIn .8s 1.8s forwards}
+.hero-buttons .btn,.hero-buttons .btn-outline{padding:13px 26px;font-size:.9rem}
+
+/* ============ CODE SHOWCASE ============ */
+.code-container{background:var(--code-bg);border:1px solid var(--border);border-radius:18px;overflow:hidden;box-shadow:var(--shadow-lg),inset 0 1px 0 var(--hi);transition:background-color .45s,border-color .45s;position:relative}
+.code-container::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--hi),transparent);z-index:1}
+.code-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:var(--code-head);border-bottom:1px solid var(--border);transition:background-color .45s;flex-wrap:wrap}
+.code-dots{display:flex;gap:6px;flex-shrink:0}
+.code-dot{width:11px;height:11px;border-radius:50%}
+.code-dot:nth-child(1){background:#ff5f57}.code-dot:nth-child(2){background:#febc2e}.code-dot:nth-child(3){background:#28c840}
+.code-tabs{display:flex;gap:3px;padding:3px;border-radius:11px;background:var(--glass);border:1px solid var(--border);max-width:100%;overflow-x:auto}
+.code-tab{border:none;background:none;color:var(--dim);font-size:.76rem;font-weight:600;padding:7px 14px;border-radius:8px;cursor:pointer;white-space:nowrap;transition:all .3s}
+.code-tab:hover{color:var(--code-text)}
+.code-tab.active{background:var(--text);color:var(--bg);box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.code-copy{border:1px solid var(--border);background:var(--glass);color:var(--dim);font-size:.72rem;font-weight:600;padding:7px 13px;border-radius:9px;cursor:pointer;transition:all .3s;flex-shrink:0}
+.code-copy:hover{color:var(--code-text);border-color:var(--hi);background:var(--hover)}
+.code-content{padding:20px 0;overflow-x:auto}
+.code-block{display:none}
+.code-block.active{display:block;animation:codeIn .4s cubic-bezier(.2,.8,.2,1)}
+@keyframes codeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+pre{counter-reset:line;font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;font-size:.86rem;line-height:1.75;color:var(--code-text);transition:color .45s;min-width:max-content;padding-right:24px}
+.cl{display:block;padding:0 20px 0 0;white-space:pre}
+.cl::before{counter-increment:line;content:counter(line);display:inline-block;width:44px;padding-right:16px;text-align:right;color:var(--code-gutter);user-select:none;font-size:.75em}
+.cl:hover{background:var(--hover)}
+.kw{color:var(--code-kw)}.str{color:var(--code-str)}.fn{color:var(--code-fn)}.com{color:var(--code-com);font-style:italic}.num{color:var(--code-num)}
+
+/* ============ PACKS ============ */
+.packs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:16px}
+.pack-card{position:relative;overflow:hidden;background:var(--glass);backdrop-filter:blur(36px) saturate(160%);-webkit-backdrop-filter:blur(36px) saturate(160%);border:1px solid var(--border);border-radius:20px;padding:28px 22px;cursor:pointer;box-shadow:var(--shadow),inset 0 1px 0 var(--hi);transition:transform .45s cubic-bezier(.2,.8,.2,1),border-color .35s,box-shadow .45s,background-color .45s}
+.pack-card::before{content:'';position:absolute;inset:0;background:radial-gradient(320px circle at var(--mx,50%) var(--my,0%),var(--hover),transparent 65%);opacity:0;transition:opacity .4s;pointer-events:none}
+.pack-card:hover{transform:translateY(-7px);border-color:var(--hi);box-shadow:var(--shadow-lg),inset 0 1px 0 var(--hi)}
+.pack-card:hover::before{opacity:1}
+.pack-card:active{transform:scale(.98)}
+.pack-card.popular{border-color:var(--hi)}
+.popular-badge{position:absolute;top:14px;right:14px;background:var(--text);color:var(--bg);font-size:.62rem;font-weight:800;letter-spacing:.1em;padding:4px 10px;border-radius:10px;animation:badgePulse 2.4s ease-in-out infinite}
+@keyframes badgePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+.pack-tokens{font-size:1.9rem;font-weight:800;letter-spacing:-.02em;color:var(--text-strong);margin-bottom:4px}
+.pack-label{color:var(--dim);font-size:.8rem;margin-bottom:16px}
+.pack-price{font-size:2.1rem;font-weight:800;color:var(--text-strong);margin-bottom:18px}
+.pack-price small{font-size:.8rem;font-weight:400;color:var(--dim)}
+.pack-features{list-style:none;margin-bottom:22px}
+.pack-features li{display:flex;align-items:center;gap:9px;padding:5px 0;color:var(--dim);font-size:.84rem}
+.pack-features li::before{content:'✓';color:var(--text);font-weight:800;flex-shrink:0}
+.pack-btn{width:100%;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--glass-2);color:var(--text);font-weight:700;font-size:.88rem;cursor:pointer;transition:all .3s}
+.pack-card:hover .pack-btn{background:var(--text);color:var(--bg);border-color:var(--text)}
+
+/* ============ MODELS TABLE ============ */
+.table-wrapper{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:16px;background:var(--glass);backdrop-filter:blur(36px);-webkit-backdrop-filter:blur(36px);box-shadow:var(--shadow),inset 0 1px 0 var(--hi)}
+.models-table{width:100%;min-width:660px;border-collapse:collapse}
+.models-table th{text-align:left;padding:14px 16px;font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--border);white-space:nowrap}
+.models-table td{padding:16px;border-bottom:1px solid var(--border);font-size:.86rem;transition:background .3s}
+.models-table tr:last-child td{border-bottom:none}
+.models-table tbody tr{transition:background .3s}
+.models-table tbody tr:hover{background:var(--hover)}
+.model-info{display:flex;align-items:center;gap:12px}
+.model-icon{width:34px;height:34px;border-radius:50%;background:var(--glass-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;color:var(--text);flex-shrink:0;transition:transform .5s cubic-bezier(.2,.8,.2,1)}
+.models-table tr:hover .model-icon{transform:rotate(360deg)}
+.model-name{font-family:'SF Mono',ui-monospace,monospace;font-weight:600;font-size:.84rem;color:var(--text-strong);white-space:nowrap}
+.model-provider{font-size:.72rem;color:var(--dim);margin-top:2px}
+.price{font-family:'SF Mono',ui-monospace,monospace;font-size:.84rem;color:var(--text-strong);white-space:nowrap}
+.price-bar{height:3px;width:64px;background:var(--border);border-radius:2px;margin-top:7px;overflow:hidden}
+.price-fill{height:100%;background:var(--text);border-radius:2px;transition:width 1.1s cubic-bezier(.2,.8,.2,1)}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{padding:3px 9px;border:1px solid var(--border);border-radius:11px;font-size:.68rem;color:var(--dim);background:var(--glass);white-space:nowrap;transition:all .3s}
+.tag:hover{color:var(--text);border-color:var(--hi)}
+.tag.new{background:var(--text);color:var(--bg);border-color:var(--text);font-weight:700}
+.table-hint{display:none;text-align:center;color:var(--dim);font-size:.72rem;margin-top:10px;font-family:'SF Mono',monospace}
+
+/* ============ FAQ ============ */
+.faq-grid{display:grid;grid-template-columns:1fr 1.5fr;gap:64px;align-items:start}
+.faq-item{border-bottom:1px solid var(--border)}
+.faq-q{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:20px 0;cursor:pointer;font-weight:600;font-size:.95rem;color:var(--text);transition:color .3s;user-select:none}
+.faq-q:hover{color:var(--text-strong)}
+.faq-icon{width:26px;height:26px;flex-shrink:0;border:1px solid var(--border);border-radius:50%;background:var(--glass);display:flex;align-items:center;justify-content:center;font-size:.95rem;color:var(--text);transition:all .4s cubic-bezier(.2,.8,.2,1)}
+.faq-item.active .faq-icon{transform:rotate(135deg);background:var(--text);color:var(--bg);border-color:var(--text)}
+.faq-a{max-height:0;overflow:hidden;color:var(--dim);font-size:.88rem;line-height:1.7;transition:max-height .45s cubic-bezier(.2,.8,.2,1),padding .45s}
+.faq-item.active .faq-a{max-height:220px;padding-bottom:20px}
+
+/* ============ CTA / FOOTER ============ */
+.cta-final{text-align:center;border-top:1px solid var(--border);padding:110px 24px}
+.cta-final h2{font-size:clamp(2rem,7vw,3.6rem);font-weight:800;letter-spacing:-.03em;color:var(--text-strong);margin-bottom:14px}
+.cta-final p{color:var(--dim);margin-bottom:34px}
+.cta-buttons{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+footer{border-top:1px solid var(--border);padding:48px 24px calc(36px + var(--safe-b));text-align:center;color:var(--dim);font-size:.78rem;position:relative;z-index:1}
+.footer-logo{font-size:clamp(3rem,12vw,5.5rem);font-weight:900;letter-spacing:-.04em;color:var(--text);opacity:.06;line-height:1;margin-bottom:14px;user-select:none}
+
+/* ============ MODALS ============ */
+.modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.65);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;visibility:hidden;transition:opacity .35s,visibility .35s}
+[data-theme="light"] .modal-overlay{background:rgba(20,20,25,.35)}
+.modal-overlay.active{opacity:1;visibility:visible}
+.modal{background:var(--modal-bg);backdrop-filter:blur(50px) saturate(180%);-webkit-backdrop-filter:blur(50px) saturate(180%);border:1px solid var(--border);border-radius:24px;padding:38px 30px;width:100%;max-width:430px;max-height:min(88vh,88dvh);overflow-y:auto;position:relative;box-shadow:var(--shadow-lg),inset 0 1px 0 var(--hi);transform:scale(.92) translateY(14px);transition:transform .4s cubic-bezier(.2,.8,.2,1),background-color .45s}
+.modal-overlay.active .modal{transform:scale(1) translateY(0)}
+.modal::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--hi),transparent)}
+.modal-close{position:absolute;top:14px;right:14px;width:34px;height:34px;border-radius:50%;border:1px solid var(--border);background:var(--glass);color:var(--dim);font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .3s;z-index:2}
+.modal-close:hover{color:var(--text);transform:rotate(90deg);background:var(--hover)}
+.modal h2{text-align:center;font-size:1.45rem;font-weight:700;color:var(--text-strong);margin-bottom:6px}
+.modal-subtitle{text-align:center;color:var(--dim);font-size:.86rem;margin-bottom:26px}
+.social-btn{width:100%;min-height:48px;padding:13px;border-radius:13px;border:1px solid var(--border);background:var(--glass);color:var(--text);display:flex;align-items:center;justify-content:center;gap:11px;font-size:.9rem;font-weight:600;cursor:pointer;margin-bottom:11px;box-shadow:inset 0 1px 0 var(--hi);transition:all .3s}
+.social-btn:hover{background:var(--hover);border-color:var(--hi);transform:translateY(-2px)}
+.social-btn:active{transform:scale(.98)}
+.social-btn:disabled{opacity:.6;cursor:wait;transform:none}
+.social-btn svg{flex-shrink:0}
+.divider{display:flex;align-items:center;gap:12px;color:var(--dim);font-size:.76rem;margin:18px 0}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.input-field{width:100%;padding:14px 16px;border-radius:13px;border:1px solid var(--border);background:var(--glass);color:var(--text);font-size:.92rem;margin-bottom:11px;outline:none;-webkit-appearance:none;appearance:none;box-shadow:inset 0 1px 0 var(--hi);transition:all .3s}
+.input-field::placeholder{color:var(--dim)}
+.input-field:focus{border-color:var(--hi);background:var(--hover);box-shadow:0 0 0 3px var(--hover)}
+.submit-btn{width:100%;min-height:48px;padding:14px;border-radius:13px;border:none;background:var(--text);color:var(--bg);font-weight:700;font-size:.92rem;cursor:pointer;margin-top:6px;transition:all .3s}
+.submit-btn:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.25)}
+.modal-footer{text-align:center;margin-top:16px;font-size:.82rem;color:var(--dim)}
+.modal-footer a{color:var(--text);cursor:pointer;text-decoration:none;font-weight:600}
+.modal-footer a:hover{text-decoration:underline}
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid transparent;border-top-color:currentColor;border-right-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-3px;margin-right:8px}
+
+/* dashboard */
+.dashboard-modal{max-width:560px}
+.dash-balance{background:var(--glass-2);border:1px solid var(--border);border-radius:18px;padding:24px;margin-bottom:8px;box-shadow:inset 0 1px 0 var(--hi);position:relative;overflow:hidden}
+.dash-balance::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--hi),transparent)}
+.dash-balance-label{color:var(--dim);font-size:.76rem;margin-bottom:4px}
+.dash-balance-value{font-size:2.1rem;font-weight:800;color:var(--text-strong);letter-spacing:-.02em}
+.dash-balance-value small{font-size:.85rem;font-weight:400;color:var(--dim);margin-left:8px}
+.dash-section-title{font-size:.9rem;font-weight:700;color:var(--text-strong);margin:24px 0 12px}
+.api-key-item{display:flex;align-items:center;gap:10px;background:var(--glass);border:1px solid var(--border);border-radius:12px;padding:11px 12px;margin-bottom:9px;box-shadow:inset 0 1px 0 var(--hi);animation:codeIn .35s}
+.api-key-value{flex:1;min-width:0;font-family:'SF Mono',ui-monospace,monospace;font-size:.76rem;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.key-act{border:1px solid var(--border);background:none;color:var(--text);padding:6px 11px;border-radius:8px;font-size:.7rem;font-weight:600;cursor:pointer;flex-shrink:0;transition:all .3s;min-height:30px}
+.key-act:hover{background:var(--hover);border-color:var(--hi)}
+.key-act.danger:hover{color:var(--err);border-color:var(--err)}
+.purchase-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--border);font-size:.8rem;color:var(--dim)}
+.purchase-item b{color:var(--text)}
+.empty-state{text-align:center;padding:28px 16px;color:var(--dim);font-size:.84rem}
+.empty-state .es-icon{font-size:2rem;opacity:.35;margin-bottom:8px}
+.dash-actions{display:flex;flex-direction:column;gap:10px;margin-top:22px}
+.dash-actions .btn,.dash-actions .btn-outline{width:100%;padding:13px}
+
+/* buy modal */
+.buy-price{text-align:center;font-size:2.6rem;font-weight:800;color:var(--text-strong);margin:18px 0 6px;letter-spacing:-.02em}
+.demo-note{text-align:center;font-size:.72rem;color:var(--dim);margin-bottom:20px}
+.buy-actions{display:flex;flex-direction:column;gap:10px}
+.buy-actions .btn,.buy-actions .btn-outline{width:100%;min-height:48px;padding:13px}
+
+/* toast */
+.toast{position:fixed;bottom:calc(22px + var(--safe-b));left:50%;transform:translateX(-50%) translateY(90px);z-index:2000;background:var(--modal-bg);backdrop-filter:blur(36px);-webkit-backdrop-filter:blur(36px);border:1px solid var(--border);border-radius:13px;padding:13px 22px;font-size:.84rem;color:var(--text);box-shadow:var(--shadow-lg),inset 0 1px 0 var(--hi);opacity:0;transition:all .45s cubic-bezier(.2,.8,.2,1);max-width:92vw;text-align:center;pointer-events:none}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
-.toast.error{border-color:rgba(255,59,48,.5);color:#ff3b30}
-.toast.success{border-color:rgba(39,201,57,.5);color:#27c939}
+.toast.success{border-color:rgba(52,199,89,.5)}
+.toast.error{border-color:rgba(255,69,58,.5)}
 
-/* FOOTER */
-footer{border-top:1px solid var(--glass-border);padding:40px 20px;text-align:center;color:var(--dim);font-size:.8rem}
-.footer-logo{font-size:clamp(3rem,10vw,5rem);font-weight:900;letter-spacing:-4px;opacity:.05;margin-bottom:16px;color:var(--text)}
+/* i18n swap animation */
+.i18n-fade{opacity:0!important;transform:translateY(-8px)!important;filter:blur(3px);transition:opacity .18s,transform .18s,filter .18s!important}
 
-/* ===== MOBILE ===== */
-@media(max-width:768px){
-.burger{display:flex}
-.nav-links{display:none}
-.nav-right .btn-outline,.nav-right .user-profile .user-name,.nav-right .btn{display:none}
-.nav-right .user-profile.active{display:flex}
-.nav-right .btn-outline.mobile-show{display:block}
-.hero{text-align:center}
-.hero h1{font-size:clamp(2rem,10vw,3rem);letter-spacing:-1.5px}
-.hero p{font-size:.95rem}
-.hero-buttons{flex-direction:column;width:100%;max-width:320px;margin:0 auto}
-.hero-buttons .btn,.hero-buttons .btn-outline{width:100%;text-align:center}
-section{text-align:center}
-.section-label,.section-title,.section-desc{margin-left:auto;margin-right:auto}
-.packs-grid{grid-template-columns:1fr;gap:14px;max-width:400px;margin:32px auto 0}
-.pack-card{padding:24px 18px}
-.faq-section{grid-template-columns:1fr;gap:32px}
-.faq-section>div:first-child{text-align:center}
-.cta-final{padding:80px 16px}
-.cta-final .btn,.cta-final .btn-outline{width:100%;max-width:320px}
-.modal{padding:32px 20px;border-radius:20px}
-#planet-canvas{opacity:var(--planet-opacity)}
-.code-container{margin:0 auto;max-width:100%}
-.code-header{flex-direction:column;align-items:stretch;gap:12px}
-.code-tabs{justify-content:center}
-.code-copy{align-self:center}
+/* ============ MOBILE ============ */
+@media (max-width:860px){
+  .nav-links{display:none}
+  .burger{display:flex}
+  .nav-right .btn,.nav-right #loginWrap,.nav-right .user-profile .user-name,.nav-right .user-profile .logout-btn{display:none}
+  .nav-right .user-profile.active{display:flex;padding:4px}
 }
-
-@media(max-width:480px){
-header{padding:12px 14px;padding-top:calc(12px + var(--safe-top))}
-.logo{font-size:.85rem;letter-spacing:1px}
-.logo-icon{width:18px;height:18px}
-.lang-btn{font-size:.65rem;padding:4px 6px}
-.theme-toggle{width:54px;height:28px}
-.theme-toggle::before{width:20px;height:20px}
-[data-theme="light"] .theme-toggle::before{left:27px}
-.hero{padding:80px 16px 40px;padding-top:calc(80px + var(--safe-top))}
-.hero h1{font-size:2rem}
-.pack-tokens{font-size:1.5rem}
-.pack-price{font-size:1.6rem}
-.code-tabs{gap:2px}
-.code-tab{padding:6px 10px;font-size:.72rem}
+@media (max-width:768px){
+  section{padding:64px 18px;text-align:center;scroll-margin-top:80px}
+  .section-desc{margin-left:auto;margin-right:auto}
+  .hero{padding-top:calc(96px + var(--safe-t))}
+  .hero-buttons{flex-direction:column;width:100%;max-width:320px;margin:0 auto}
+  .hero-buttons .btn,.hero-buttons .btn-outline{width:100%}
+  .packs-grid{grid-template-columns:1fr;max-width:400px;margin:0 auto}
+  .pack-features li{justify-content:center}
+  .faq-grid{grid-template-columns:1fr;gap:28px}
+  .faq-q{text-align:left}
+  .faq-a{text-align:left}
+  .table-hint{display:block}
+  .code-header{justify-content:center}
+  .code-content{text-align:left}
+  .cta-buttons{flex-direction:column;align-items:center}
+  .cta-buttons .btn,.cta-buttons .btn-outline{width:100%;max-width:320px}
+  .modal{padding:32px 20px}
+  .modal h2{font-size:1.3rem}
 }
-
-@media(min-width:769px){
-.mobile-menu{display:none!important}
+@media (max-width:420px){
+  header{padding:10px 12px;padding-top:calc(10px + var(--safe-t))}
+  .logo{font-size:.8rem;letter-spacing:.12em;gap:7px}
+  .logo-icon{width:17px;height:17px}
+  .lang-btn{font-size:.62rem;padding:4px 7px}
+  .theme-toggle{width:50px;height:27px}
+  .theme-thumb{width:19px;height:19px}
+  [data-theme="light"] .theme-thumb{left:26px}
+  .nav-right{gap:7px}
+  .hero h1{font-size:2.05rem}
+  pre{font-size:.76rem}
+  .cl::before{width:34px;padding-right:10px}
+  .code-tab{padding:6px 10px;font-size:.7rem}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  html{scroll-behavior:auto}
 }
 </style>
 </head>
 <body>
 
-<div class="preloader" id="preloader"><div class="preloader-text">ORBIT</div></div>
-
-<canvas id="planet-canvas"></canvas>
+<div class="preloader" id="preloader"><span>ORBIT</span></div>
+<canvas id="planetCanvas"></canvas>
 <div class="stars" id="stars"></div>
 
+<div class="file-banner" id="fileBanner">
+  <span data-i18n="file_banner">Файл открыт напрямую — вход не работает. Запусти через <b>Live Server</b>.</span>
+  <button onclick="document.getElementById('fileBanner').classList.remove('show')" aria-label="close">×</button>
+</div>
+
 <header>
-<nav>
-<div class="logo"><div class="logo-icon"></div>ORBIT</div>
-<div class="nav-links">
-<a href="#pricing" data-i18n="nav_pricing">Тарифы</a>
-<a href="#models" data-i18n="nav_models">Модели</a>
-<a href="#faq" data-i18n="nav_faq">FAQ</a>
-</div>
-<div class="nav-right">
-<div class="lang-switch">
-<button class="lang-btn active" onclick="setLang('ru')">RU</button>
-<button class="lang-btn" onclick="setLang('en')">EN</button>
-<button class="lang-btn" onclick="setLang('zh')">中文</button>
-</div>
-<div class="theme-toggle" onclick="toggleTheme()" title="Сменить тему">
-<span class="theme-icon moon">
-<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-</span>
-<span class="theme-icon sun">
-<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="var(--toggle-icon)" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
-</span>
-</div>
-<div id="loginWrapper">
-<button class="btn-outline" onclick="openModal()" data-i18n="login">Войти</button>
-</div>
-<div class="user-profile" id="userProfile" onclick="openDashboard()">
-<div class="user-avatar" id="userAvatar">U</div>
-<span class="user-name" id="userName">User</span>
-<button class="logout-btn" onclick="event.stopPropagation();logout()" data-i18n="logout">Выйти</button>
-</div>
-<button class="btn" onclick="openModal()" data-i18n="get_key">Получить ключ</button>
-<button class="burger" id="burger" onclick="toggleMobileMenu()" aria-label="Menu">
-<span></span><span></span><span></span>
-</button>
-</div>
-</nav>
+  <nav>
+    <div class="logo" onclick="window.scrollTo({top:0,behavior:'smooth'})"><div class="logo-icon"></div>ORBIT</div>
+    <div class="nav-links">
+      <a href="#pricing" data-i18n="nav_pricing" data-spy="pricing">Тарифы</a>
+      <a href="#code" data-i18n="nav_code" data-spy="code">Код</a>
+      <a href="#models" data-i18n="nav_models" data-spy="models">Модели</a>
+      <a href="#faq" data-i18n="nav_faq" data-spy="faq">FAQ</a>
+    </div>
+    <div class="nav-right">
+      <div class="lang-switch" role="group" aria-label="language">
+        <button class="lang-btn active" data-lang="ru" onclick="setLang('ru')">RU</button>
+        <button class="lang-btn" data-lang="en" onclick="setLang('en')">EN</button>
+        <button class="lang-btn" data-lang="zh" onclick="setLang('zh')">中文</button>
+      </div>
+      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" data-i18n-title="theme_toggle" title="Сменить тему" aria-label="theme">
+        <span class="theme-thumb">
+          <svg class="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
+          <svg class="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>
+        </span>
+      </button>
+      <div id="loginWrap"><button class="btn-outline" onclick="openAuth()" data-i18n="login">Войти</button></div>
+      <div class="user-profile" id="userProfile" onclick="openDash()">
+        <div class="user-avatar" id="userAvatar">U</div>
+        <span class="user-name" id="userName">User</span>
+        <button class="logout-btn" onclick="event.stopPropagation();logout()" data-i18n="logout">Выйти</button>
+      </div>
+      <button class="btn" onclick="handleGetKey()" data-i18n="get_key">Получить ключ</button>
+      <button class="burger" id="burgerBtn" onclick="toggleMenu()" aria-label="menu"><span></span><span></span><span></span></button>
+    </div>
+  </nav>
 </header>
 
-<!-- MOBILE MENU -->
+<div class="menu-scrim" id="menuScrim" onclick="closeMenu()"></div>
 <div class="mobile-menu" id="mobileMenu">
-<a href="#pricing" onclick="closeMobileMenu()" data-i18n="nav_pricing">Тарифы</a>
-<a href="#models" onclick="closeMobileMenu()" data-i18n="nav_models">Модели</a>
-<a href="#faq" onclick="closeMobileMenu()" data-i18n="nav_faq">FAQ</a>
-<div class="mobile-actions">
-<div id="mobileLoginWrapper">
-<button class="btn-outline" style="width:100%" onclick="closeMobileMenu();openModal()" data-i18n="login">Войти</button>
-</div>
-<div class="user-profile" id="mobileUserProfile" onclick="closeMobileMenu();openDashboard()" style="width:100%;justify-content:flex-start">
-<div class="user-avatar" id="mobileUserAvatar">U</div>
-<span class="user-name" id="mobileUserName">User</span>
-<button class="logout-btn" onclick="event.stopPropagation();logout()" data-i18n="logout">Выйти</button>
-</div>
-<button class="btn" style="width:100%" onclick="closeMobileMenu();openModal()" data-i18n="get_key">Получить ключ</button>
-</div>
+  <a href="#pricing" onclick="closeMenu()" data-i18n="nav_pricing">Тарифы</a>
+  <a href="#code" onclick="closeMenu()" data-i18n="nav_code">Код</a>
+  <a href="#models" onclick="closeMenu()" data-i18n="nav_models">Модели</a>
+  <a href="#faq" onclick="closeMenu()" data-i18n="nav_faq">FAQ</a>
+  <div class="mobile-actions">
+    <div id="mLoginWrap"><button class="btn-outline" onclick="closeMenu();openAuth()" data-i18n="login">Войти</button></div>
+    <div class="user-profile" id="mUserProfile" onclick="closeMenu();openDash()" style="justify-content:flex-start">
+      <div class="user-avatar" id="mUserAvatar">U</div>
+      <span class="user-name" id="mUserName" style="max-width:130px">User</span>
+      <button class="logout-btn" onclick="event.stopPropagation();logout()" data-i18n="logout">Выйти</button>
+    </div>
+    <button class="btn" onclick="closeMenu();handleGetKey()" data-i18n="get_key">Получить ключ</button>
+  </div>
 </div>
 
 <main>
-<section class="hero">
-<div class="hero-content">
-<h1><span class="typewriter glitch" id="typewriter"></span></h1>
-<p data-i18n="hero_subtitle">GPT, Claude, Gemini, DeepSeek — через один OpenAI-совместимый endpoint. Платите только за токены.</p>
-<div class="hero-buttons">
-<button class="btn" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})" data-i18n="buy_tokens">Купить токены →</button>
-<button class="btn-outline" onclick="document.getElementById('models').scrollIntoView({behavior:'smooth'})" data-i18n="view_models">Модели</button>
-</div>
-</div>
-</section>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-content">
+      <h1><span class="typewriter" id="typewriter"></span></h1>
+      <p data-i18n="hero_sub">GPT, Claude, Gemini, DeepSeek — через один OpenAI-совместимый endpoint. Платите только за токены.</p>
+      <div class="hero-buttons">
+        <button class="btn" onclick="goTo('pricing')" data-i18n="buy_tokens">Купить токены →</button>
+        <button class="btn-outline" onclick="goTo('code')" data-i18n="view_code">Как подключить</button>
+      </div>
+    </div>
+  </section>
 
-<!-- CODE SHOWCASE -->
-<section class="code-showcase" id="code">
-<div class="section-label">// интеграция</div>
-<h2 class="section-title" data-i18n="code_title">Начните за 2 минуты</h2>
-<p class="section-desc" data-i18n="code_desc">Скопируйте код, вставьте свой API-ключ и начните использовать все модели.</p>
+  <!-- CODE -->
+  <section id="code">
+    <div class="section-label reveal">// <span data-i18n="code_label">интеграция</span></div>
+    <h2 class="section-title reveal" data-i18n="code_title">Начните за 2 минуты</h2>
+    <p class="section-desc reveal" data-i18n="code_desc">Купите пакет, скопируйте код, вставьте свой API-ключ — и все модели работают в вашем проекте.</p>
 
-<div class="code-container">
-<div class="code-header">
-<div class="code-dots">
-<div class="code-dot"></div>
-<div class="code-dot"></div>
-<div class="code-dot"></div>
-</div>
-<div class="code-tabs">
-<button class="code-tab active" onclick="switchCode('python',this)">Python</button>
-<button class="code-tab" onclick="switchCode('javascript',this)">JavaScript</button>
-<button class="code-tab" onclick="switchCode('curl',this)">cURL</button>
-</div>
-<button class="code-copy" onclick="copyCode(this)" data-i18n="copy">Копировать</button>
-</div>
-<div class="code-content">
-<div class="code-block active" id="code-python">
-<pre><span class="kw">import</span> os
-<span class="kw">from</span> openai <span class="kw">import</span> OpenAI
+    <div class="code-container reveal">
+      <div class="code-header">
+        <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+        <div class="code-tabs" role="tablist">
+          <button class="code-tab active" data-code="python" onclick="switchCode('python',this)">Python</button>
+          <button class="code-tab" data-code="javascript" onclick="switchCode('javascript',this)">JavaScript</button>
+          <button class="code-tab" data-code="curl" onclick="switchCode('curl',this)">cURL</button>
+        </div>
+        <button class="code-copy" id="copyBtn" onclick="copyActiveCode()" data-i18n="copy">Копировать</button>
+      </div>
+      <div class="code-content">
+        <div class="code-block active" id="code-python"><pre><span class="cl"><span class="kw">import</span> os</span><span class="cl"><span class="kw">from</span> openai <span class="kw">import</span> OpenAI</span><span class="cl"></span><span class="cl"><span class="com"># Один ключ — все модели</span></span><span class="cl">client = OpenAI(</span><span class="cl">    base_url=<span class="str">"https://api.orbit.dev/v1"</span>,</span><span class="cl">    api_key=os.environ[<span class="str">"ORBIT_API_KEY"</span>],</span><span class="cl">)</span><span class="cl"></span><span class="cl">stream = client.chat.completions.create(</span><span class="cl">    model=<span class="str">"claude-sonnet-5-5"</span>,</span><span class="cl">    messages=[{<span class="str">"role"</span>: <span class="str">"user"</span>, <span class="str">"content"</span>: <span class="str">"Привет, Orbit!"</span>}],</span><span class="cl">    stream=<span class="kw">True</span>,</span><span class="cl">)</span><span class="cl"></span><span class="cl"><span class="kw">for</span> chunk <span class="kw">in</span> stream:</span><span class="cl">    <span class="fn">print</span>(chunk.choices[<span class="num">0</span>].delta.content <span class="kw">or</span> <span class="str">""</span>, end=<span class="str">""</span>)</span></pre></div>
+        <div class="code-block" id="code-javascript"><pre><span class="cl"><span class="kw">import</span> OpenAI <span class="kw">from</span> <span class="str">"openai"</span>;</span><span class="cl"></span><span class="cl"><span class="com">// Один ключ — все модели</span></span><span class="cl"><span class="kw">const</span> client = <span class="kw">new</span> <span class="fn">OpenAI</span>({</span><span class="cl">  baseURL: <span class="str">"https://api.orbit.dev/v1"</span>,</span><span class="cl">  apiKey: process.env.ORBIT_API_KEY,</span><span class="cl">});</span><span class="cl"></span><span class="cl"><span class="kw">const</span> stream = <span class="kw">await</span> client.chat.completions.<span class="fn">create</span>({</span><span class="cl">  model: <span class="str">"claude-sonnet-5-5"</span>,</span><span class="cl">  messages: [{ role: <span class="str">"user"</span>, content: <span class="str">"Привет, Orbit!"</span> }],</span><span class="cl">  stream: <span class="kw">true</span>,</span><span class="cl">});</span><span class="cl"></span><span class="cl"><span class="kw">for await</span> (<span class="kw">const</span> chunk <span class="kw">of</span> stream) {</span><span class="cl">  process.stdout.<span class="fn">write</span>(chunk.choices[<span class="num">0</span>].delta.content ?? <span class="str">""</span>);</span><span class="cl">}</span></pre></div>
+        <div class="code-block" id="code-curl"><pre><span class="cl"><span class="com"># Один ключ — все модели</span></span><span class="cl">curl https://api.orbit.dev/v1/chat/completions \</span><span class="cl">  -H <span class="str">"Content-Type: application/json"</span> \</span><span class="cl">  -H <span class="str">"Authorization: Bearer $ORBIT_API_KEY"</span> \</span><span class="cl">  -d <span class="str">'{</span></span><span class="cl"><span class="str">    "model": "claude-sonnet-5-5",</span></span><span class="cl"><span class="str">    "messages": [</span></span><span class="cl"><span class="str">      {"role": "user", "content": "Привет, Orbit!"}</span></span><span class="cl"><span class="str">    ],</span></span><span class="cl"><span class="str">    "stream": true</span></span><span class="cl"><span class="str">  }'</span></span></pre></div>
+      </div>
+    </div>
+  </section>
 
-<span class="com"># Инициализация клиента</span>
-client = OpenAI(
-    base_url=<span class="str">"https://api.orbit.dev/v1"</span>,
-    api_key=os.environ[<span class="str">"ORBIT_API_KEY"</span>]
-)
+  <!-- PRICING -->
+  <section id="pricing">
+    <div class="section-label reveal">// <span data-i18n="pricing_label">тарифы</span></div>
+    <h2 class="section-title reveal" data-i18n="pricing_title">Выберите пакет токенов</h2>
+    <p class="section-desc reveal" data-i18n="pricing_desc">Чем больше пакет — тем ниже цена за токен. Токены не сгорают и работают со всеми моделями.</p>
+    <div class="packs-grid">
+      <div class="pack-card reveal" data-pack="starter" onclick="openBuy('starter')">
+        <div class="pack-tokens">1M</div>
+        <div class="pack-label" data-i18n="pack_starter">Стартовый</div>
+        <div class="pack-price">$5 <small data-i18n="per_m">/ 1M токенов</small></div>
+        <ul class="pack-features">
+          <li data-i18n="f_all">Все модели каталога</li>
+          <li data-i18n="f_stream">SSE-стриминг</li>
+          <li data-i18n="f_support">Поддержка 24/7</li>
+        </ul>
+        <button class="pack-btn" data-i18n="buy">Купить</button>
+      </div>
+      <div class="pack-card popular reveal" data-pack="pro" onclick="openBuy('pro')">
+        <div class="popular-badge" data-i18n="popular">ХИТ</div>
+        <div class="pack-tokens">5M</div>
+        <div class="pack-label" data-i18n="pack_pro">Профессиональный</div>
+        <div class="pack-price">$20 <small data-i18n="per_m">/ 1M токенов</small></div>
+        <ul class="pack-features">
+          <li data-i18n="f_all">Все модели каталога</li>
+          <li data-i18n="f_stream">SSE-стриминг</li>
+          <li data-i18n="f_priority">Приоритетная поддержка</li>
+        </ul>
+        <button class="pack-btn" data-i18n="buy">Купить</button>
+      </div>
+      <div class="pack-card reveal" data-pack="business" onclick="openBuy('business')">
+        <div class="pack-tokens">10M</div>
+        <div class="pack-label" data-i18n="pack_biz">Бизнес</div>
+        <div class="pack-price">$35 <small data-i18n="per_m">/ 1M токенов</small></div>
+        <ul class="pack-features">
+          <li data-i18n="f_all">Все модели каталога</li>
+          <li data-i18n="f_disc30">Скидка 30% за объём</li>
+          <li data-i18n="f_priority">Приоритетная поддержка</li>
+        </ul>
+        <button class="pack-btn" data-i18n="buy">Купить</button>
+      </div>
+      <div class="pack-card reveal" data-pack="enterprise" onclick="openBuy('enterprise')">
+        <div class="pack-tokens">50M</div>
+        <div class="pack-label" data-i18n="pack_ent">Корпоративный</div>
+        <div class="pack-price">$150 <small data-i18n="per_m">/ 1M токенов</small></div>
+        <ul class="pack-features">
+          <li data-i18n="f_biz_all">Всё из «Бизнес»</li>
+          <li data-i18n="f_disc40">Скидка 40% за объём</li>
+          <li data-i18n="f_manager">Персональный менеджер</li>
+        </ul>
+        <button class="pack-btn" data-i18n="buy">Купить</button>
+      </div>
+    </div>
+  </section>
 
-<span class="com"># Отправка запроса</span>
-response = client.chat.completions.create(
-    model=<span class="str">"claude-sonnet-5-5"</span>,
-    messages=[
-        {<span class="str">"role"</span>: <span class="str">"user"</span>, <span class="str">"content"</span>: <span class="str">"Привет, Orbit!"</span>}
-    ],
-    stream=<span class="kw">True</span>
-)
+  <!-- MODELS -->
+  <section id="models">
+    <div class="section-label reveal">// <span data-i18n="models_label">каталог</span></div>
+    <h2 class="section-title reveal" data-i18n="models_title">Модели и цены</h2>
+    <p class="section-desc reveal" data-i18n="models_desc">Цены за 1 млн токенов. Все модели доступны сразу после покупки пакета.</p>
+    <div class="table-wrapper reveal">
+      <table class="models-table">
+        <thead><tr>
+          <th data-i18n="th_model">Модель</th><th data-i18n="th_input">Вход $/1M</th><th data-i18n="th_output">Выход $/1M</th><th data-i18n="th_features">Особенности</th>
+        </tr></thead>
+        <tbody>
+          <tr><td><div class="model-info"><div class="model-icon">Cl</div><div><div class="model-name">claude-sonnet-5-5</div><div class="model-provider">Anthropic</div></div></div></td><td class="price">$0.048<div class="price-bar"><div class="price-fill" style="width:30%"></div></div></td><td class="price">$0.18<div class="price-bar"><div class="price-fill" style="width:60%"></div></div></td><td><div class="tags"><span class="tag new" data-i18n="tag_new">новая</span><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag" data-i18n="tag_code">код</span></div></td></tr>
+          <tr><td><div class="model-info"><div class="model-icon">Gp</div><div><div class="model-name">gpt-6.1-sol</div><div class="model-provider">OpenAI</div></div></div></td><td class="price">$0.048<div class="price-bar"><div class="price-fill" style="width:30%"></div></div></td><td class="price">$0.18<div class="price-bar"><div class="price-fill" style="width:60%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_universal">универсальная</span></div></td></tr>
+          <tr><td><div class="model-info"><div class="model-icon">Ge</div><div><div class="model-name">gemini-4-argon</div><div class="model-provider">Google</div></div></div></td><td class="price">$0.08<div class="price-bar"><div class="price-fill" style="width:50%"></div></div></td><td class="price">$0.40<div class="price-bar"><div class="price-fill" style="width:100%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_flagship">флагман</span><span class="tag" data-i18n="tag_reason">рассуждающая</span></div></td></tr>
+          <tr><td><div class="model-info"><div class="model-icon">Ki</div><div><div class="model-name">kimi-k3</div><div class="model-provider">Moonshot AI</div></div></div></td><td class="price">$0.014<div class="price-bar"><div class="price-fill" style="width:10%"></div></div></td><td class="price">$0.07<div class="price-bar"><div class="price-fill" style="width:20%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag">1M ctx</span></div></td></tr>
+          <tr><td><div class="model-info"><div class="model-icon">Ds</div><div><div class="model-name">deepseek-v4-pro</div><div class="model-provider">DeepSeek</div></div></div></td><td class="price">$0.014<div class="price-bar"><div class="price-fill" style="width:10%"></div></div></td><td class="price">$0.042<div class="price-bar"><div class="price-fill" style="width:15%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag" data-i18n="tag_code">код</span></div></td></tr>
+          <tr><td><div class="model-info"><div class="model-icon">Gl</div><div><div class="model-name">glm-5.3</div><div class="model-provider">Zhipu AI</div></div></div></td><td class="price">$0.012<div class="price-bar"><div class="price-fill" style="width:8%"></div></div></td><td class="price">$0.036<div class="price-bar"><div class="price-fill" style="width:12%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag" data-i18n="tag_agents">агенты</span></div></td></tr>
+          <tr><td><div class="model-info"><div class="model-icon">Qw</div><div><div class="model-name">qwen3.8-max</div><div class="model-provider">Alibaba</div></div></div></td><td class="price">$0.012<div class="price-bar"><div class="price-fill" style="width:8%"></div></div></td><td class="price">$0.036<div class="price-bar"><div class="price-fill" style="width:12%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag">1M ctx</span></div></td></tr>
+          <tr><td><div class="model-info"><div class="model-icon">Cl</div><div><div class="model-name">claude-opus-5-5</div><div class="model-provider">Anthropic</div></div></div></td><td class="price">$0.144<div class="price-bar"><div class="price-fill" style="width:80%"></div></div></td><td class="price">$0.54<div class="price-bar"><div class="price-fill" style="width:100%"></div></div></td><td><div class="tags"><span class="tag new" data-i18n="tag_new">новая</span><span class="tag" data-i18n="tag_code">код</span></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-hint" data-i18n="table_hint">← листайте таблицу →</div>
+  </section>
 
-<span class="com"># Получение ответа</span>
-<span class="kw">for</span> chunk <span class="kw">in</span> response:
-    print(chunk.choices[<span class="num">0</span>].delta.content <span class="kw">or</span> <span class="str">""</span>, end=<span class="str">""</span>)</pre>
-</div>
-<div class="code-block" id="code-javascript">
-<pre><span class="kw">import</span> OpenAI <span class="kw">from</span> <span class="str">"openai"</span>;
+  <!-- FAQ -->
+  <section id="faq">
+    <div class="faq-grid">
+      <div>
+        <div class="section-label reveal">// <span data-i18n="faq_label">вопросы</span></div>
+        <h2 class="section-title reveal" data-i18n="faq_title">Коротко о главном</h2>
+        <p class="section-desc reveal" style="margin-bottom:0" data-i18n="faq_sub">Не нашли ответ — напишите нам в Telegram.</p>
+      </div>
+      <div class="reveal">
+        <div class="faq-item active"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="q1">Как получить API-ключ?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="a1">Купите пакет и откройте личный кабинет — ключ создаётся автоматически и работает со всеми моделями.</div></div>
+        <div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="q2">Токены сгорают?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="a2">Нет. Баланс хранится бессрочно и списывается только по мере использования.</div></div>
+        <div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="q3">Какие модели доступны?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="a3">GPT, Claude, Gemini, DeepSeek, Qwen, GLM, Kimi и другие — весь каталог через один ключ.</div></div>
+        <div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="q4">Есть ли стриминг?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="a4">Да, полноценный SSE-стриминг: токены приходят по мере генерации, как у официальных API.</div></div>
+        <div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="q5">Как устроена оплата?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="a5">Сейчас сайт в демо-режиме: токены начисляются мгновенно. В боевой версии — карта, СБП и крипта.</div></div>
+      </div>
+    </div>
+  </section>
 
-<span class="com">// Инициализация клиента</span>
-<span class="kw">const</span> client = <span class="kw">new</span> OpenAI({
-  baseURL: <span class="str">"https://api.orbit.dev/v1"</span>,
-  apiKey: process.env.ORBIT_API_KEY,
-});
-
-<span class="com">// Отправка запроса</span>
-<span class="kw">const</span> stream = <span class="kw">await</span> client.chat.completions.create({
-  model: <span class="str">"claude-sonnet-5-5"</span>,
-  messages: [
-    { role: <span class="str">"user"</span>, content: <span class="str">"Привет, Orbit!"</span> }
-  ],
-  stream: <span class="kw">true</span>,
-});
-
-<span class="com">// Получение ответа</span>
-<span class="kw">for await</span> (<span class="kw">const</span> chunk <span class="kw">of</span> stream) {
-  process.stdout.write(chunk.choices[<span class="num">0</span>].delta.content <span class="kw">||</span> <span class="str">""</span>);
-}</pre>
-</div>
-<div class="code-block" id="code-curl">
-<pre><span class="com"># Отправка запроса через cURL</span>
-curl https://api.orbit.dev/v1/chat/completions \
-  -H <span class="str">"Content-Type: application/json"</span> \
-  -H <span class="str">"Authorization: Bearer $ORBIT_API_KEY"</span> \
-  -d <span class="str">'{
-    "model": "claude-sonnet-5-5",
-    "messages": [
-      {"role": "user", "content": "Привет, Orbit!"}
-    ],
-    "stream": true
-  }'</span></pre>
-</div>
-</div>
-</div>
-</section>
-
-<section id="pricing">
-<div class="section-label">// тарифы</div>
-<h2 class="section-title" data-i18n="pricing_title">Выберите пакет токенов</h2>
-<p class="section-desc" data-i18n="pricing_desc">Чем больше пакет — тем ниже цена за токен. Токены не сгорают и работают со всеми моделями.</p>
-
-<div class="packs-grid">
-<div class="pack-card" onclick="buyPack('starter',1000000,5)">
-<div class="pack-tokens">1M</div>
-<div class="pack-label" data-i18n="pack_starter_label">Стартовый пакет</div>
-<div class="pack-price">$5<span data-i18n="pack_per_m">/млн токенов</span></div>
-<ul class="pack-features">
-<li data-i18n="pack_feat_1">Доступ ко всем моделям</li>
-<li data-i18n="pack_feat_2">SSE стриминг</li>
-<li data-i18n="pack_feat_3">Поддержка 24/7</li>
-</ul>
-<button class="pack-btn" data-i18n="buy">Купить</button>
-</div>
-
-<div class="pack-card popular" onclick="buyPack('pro',5000000,20)">
-<div class="pack-tokens">5M</div>
-<div class="pack-label" data-i18n="pack_pro_label">Профессиональный</div>
-<div class="pack-price">$20<span data-i18n="pack_per_m">/млн токенов</span></div>
-<ul class="pack-features">
-<li data-i18n="pack_feat_1">Доступ ко всем моделям</li>
-<li data-i18n="pack_feat_2">SSE стриминг</li>
-<li data-i18n="pack_feat_4">Приоритетная поддержка</li>
-</ul>
-<button class="pack-btn" data-i18n="buy">Купить</button>
-</div>
-
-<div class="pack-card" onclick="buyPack('business',10000000,35)">
-<div class="pack-tokens">10M</div>
-<div class="pack-label" data-i18n="pack_biz_label">Бизнес</div>
-<div class="pack-price">$35<span data-i18n="pack_per_m">/млн токенов</span></div>
-<ul class="pack-features">
-<li data-i18n="pack_feat_1">Доступ ко всем моделям</li>
-<li data-i18n="pack_feat_5">Скидка 30%</li>
-<li data-i18n="pack_feat_4">Приоритетная поддержка</li>
-</ul>
-<button class="pack-btn" data-i18n="buy">Купить</button>
-</div>
-
-<div class="pack-card" onclick="buyPack('enterprise',50000000,150)">
-<div class="pack-tokens">50M</div>
-<div class="pack-label" data-i18n="pack_ent_label">Корпоративный</div>
-<div class="pack-price">$150<span data-i18n="pack_per_m">/млн токенов</span></div>
-<ul class="pack-features">
-<li data-i18n="pack_feat_6">Всё из Бизнес</li>
-<li data-i18n="pack_feat_7">Скидка 40%</li>
-<li data-i18n="pack_feat_8">Персональный менеджер</li>
-</ul>
-<button class="pack-btn" data-i18n="buy">Купить</button>
-</div>
-</div>
-</section>
-
-<section id="models">
-<div class="section-label">// каталог</div>
-<h2 class="section-title" data-i18n="models_title">Модели и цены</h2>
-<p class="section-desc" data-i18n="models_desc">Цены указаны за 1 млн токенов. Все модели доступны сразу после покупки пакета.</p>
-
-<div class="table-wrapper">
-<table class="models-table">
-<thead>
-<tr><th data-i18n="th_model">МОДЕЛЬ</th><th data-i18n="th_input">ВХОД $/1M</th><th data-i18n="th_output">ВЫХОД $/1M</th><th data-i18n="th_features">ОСОБЕННОСТИ</th></tr>
-</thead>
-<tbody>
-<tr><td><div class="model-info"><div class="model-icon">Cl</div><div><div class="model-name">claude-sonnet-5-5</div><div class="model-provider">Claude · Anthropic</div></div></div></td><td class="price">$0.048<div class="price-bar"><div class="price-fill" style="width:30%"></div></div></td><td class="price">$0.18<div class="price-bar"><div class="price-fill" style="width:60%"></div></div></td><td><div class="tags"><span class="tag new" data-i18n="tag_new">новая</span><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag" data-i18n="tag_code">код</span></div></td></tr>
-<tr><td><div class="model-info"><div class="model-icon">Gp</div><div><div class="model-name">gpt-6.1-sol</div><div class="model-provider">GPT · OpenAI</div></div></div></td><td class="price">$0.048<div class="price-bar"><div class="price-fill" style="width:30%"></div></div></td><td class="price">$0.18<div class="price-bar"><div class="price-fill" style="width:60%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_universal">универсальная</span></div></td></tr>
-<tr><td><div class="model-info"><div class="model-icon">Ds</div><div><div class="model-name">deepseek-v4-pro</div><div class="model-provider">DeepSeek</div></div></div></td><td class="price">$0.014<div class="price-bar"><div class="price-fill" style="width:10%"></div></div></td><td class="price">$0.042<div class="price-bar"><div class="price-fill" style="width:15%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag" data-i18n="tag_code">код</span></div></td></tr>
-<tr><td><div class="model-info"><div class="model-icon">Qw</div><div><div class="model-name">qwen3.8-max</div><div class="model-provider">Qwen · Alibaba</div></div></div></td><td class="price">$0.012<div class="price-bar"><div class="price-fill" style="width:8%"></div></div></td><td class="price">$0.036<div class="price-bar"><div class="price-fill" style="width:12%"></div></div></td><td><div class="tags"><span class="tag" data-i18n="tag_reason">рассуждающая</span><span class="tag">1M ctx</span></div></td></tr>
-</tbody>
-</table>
-</div>
-</section>
-
-<section class="faq-section" id="faq">
-<div>
-<div class="section-label">// вопросы</div>
-<h2 class="section-title" data-i18n="faq_title">Коротко<br>о главном</h2>
-<p style="color:var(--dim);margin-top:20px" data-i18n="faq_subtitle">Не нашли ответ — напишите нам в Telegram.</p>
-</div>
-<div class="faq-list">
-<div class="faq-item active"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="faq1_q">Как получить API-ключ?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="faq1_a">Купите пакет токенов и войдите в личный кабинет — ключ создаётся автоматически.</div></div>
-<div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="faq2_q">Токены сгорают?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="faq2_a">Нет. Купленные токены хранятся на балансе бессрочно и списываются по мере использования.</div></div>
-<div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="faq3_q">Какие модели доступны?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="faq3_a">GPT-4o, Claude Sonnet/Opus, Gemini, DeepSeek, Qwen, GLM, Kimi и другие — все через один ключ.</div></div>
-<div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-i18n="faq4_q">Есть ли стриминг?</span><div class="faq-icon">+</div></div><div class="faq-a" data-i18n="faq4_a">Да, полноценный SSE-стриминг. Токены приходят по мере генерации.</div></div>
-</div>
-</section>
-
-<section class="cta-final">
-<div class="section-label">// старт</div>
-<h2 data-i18n="cta_title">Готовы к запуску?</h2>
-<p data-i18n="cta_subtitle">Купите пакет токенов — первый ответ через минуту.</p>
-<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-<button class="btn" onclick="document.getElementById('pricing').scrollIntoView({behavior:'smooth'})" data-i18n="buy_tokens">Купить токены →</button>
-<button class="btn-outline" onclick="document.getElementById('models').scrollIntoView({behavior:'smooth'})" data-i18n="view_models">Модели</button>
-</div>
-</section>
+  <!-- CTA -->
+  <section class="cta-final">
+    <div class="section-label reveal">// <span data-i18n="cta_label">старт</span></div>
+    <h2 class="reveal" data-i18n="cta_title">Готовы к запуску?</h2>
+    <p class="reveal" data-i18n="cta_sub">Купите пакет токенов — первый ответ через минуту.</p>
+    <div class="cta-buttons reveal">
+      <button class="btn" onclick="goTo('pricing')" data-i18n="buy_tokens">Купить токены →</button>
+      <button class="btn-outline" onclick="goTo('code')" data-i18n="view_code">Как подключить</button>
+    </div>
+  </section>
 </main>
 
 <footer>
-<div class="footer-logo">ORBIT</div>
-<p>© 2026 Orbit API Gateway</p>
+  <div class="footer-logo">ORBIT</div>
+  <p data-i18n="footer_tag">Единый API для языковых моделей</p>
+  <p style="margin-top:6px">© 2026 Orbit API Gateway</p>
 </footer>
 
 <!-- AUTH MODAL -->
-<div class="modal-overlay" id="modal">
-<div class="modal">
-<button class="modal-close" onclick="closeModal()">×</button>
-<h2 data-i18n="auth_title">Добро пожаловать</h2>
-<p class="modal-subtitle" data-i18n="auth_subtitle">Войдите или создайте аккаунт</p>
-
-<div id="socialButtons">
-<button class="social-btn" onclick="loginWithGoogle()" id="googleBtn">
-<svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-<span data-i18n="login_google">Войти через Google</span>
-</button>
-<button class="social-btn" onclick="loginWithGithub()" id="githubBtn">
-<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-<span data-i18n="login_github">Войти через GitHub</span>
-</button>
-<div class="divider" data-i18n="or_email">или через email</div>
-<button class="social-btn" onclick="showEmailForm()">
-<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-<span data-i18n="login_email">Войти через Email</span>
-</button>
-</div>
-
-<div id="emailForm" style="display:none">
-<input type="email" class="input-field" id="emailInput" placeholder="Email" autocomplete="email">
-<input type="password" class="input-field" id="passwordInput" placeholder="Пароль" autocomplete="current-password">
-<button class="submit-btn" onclick="loginWithEmail()" data-i18n="submit_login">Войти</button>
-<div class="modal-footer"><span data-i18n="no_account">Нет аккаунта?</span> <a onclick="toggleAuthMode()" data-i18n="register">Зарегистрироваться</a></div>
-<div class="modal-footer" style="margin-top:8px"><a onclick="showSocialButtons()" style="color:var(--dim)" data-i18n="back">← Назад</a></div>
-</div>
-</div>
+<div class="modal-overlay" id="authModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeOv('authModal')" aria-label="close">×</button>
+    <h2 data-i18n="auth_title">Добро пожаловать</h2>
+    <p class="modal-subtitle" data-i18n="auth_sub">Войдите или создайте аккаунт</p>
+    <div id="socialWrap">
+      <button class="social-btn" id="googleBtn" onclick="loginWithGoogle()">
+        <svg width="19" height="19" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+        <span data-i18n="g_login">Войти через Google</span>
+      </button>
+      <button class="social-btn" id="githubBtn" onclick="loginWithGithub()">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        <span data-i18n="gh_login">Войти через GitHub</span>
+      </button>
+      <div class="divider" data-i18n="or_email">или через email</div>
+      <button class="social-btn" onclick="showEmailForm()">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 6-10 7L2 6"/></svg>
+        <span data-i18n="email_login">Войти через Email</span>
+      </button>
+    </div>
+    <div id="emailForm" style="display:none">
+      <input type="email" class="input-field" id="emailInput" data-i18n-ph="email_ph" placeholder="Email" autocomplete="email" inputmode="email">
+      <input type="password" class="input-field" id="passInput" data-i18n-ph="pass_ph" placeholder="Пароль" autocomplete="current-password">
+      <button class="submit-btn" id="authSubmit" data-i18n="submit_login" onclick="submitEmail()">Войти</button>
+      <div class="modal-footer"><span id="authSwitchText" data-i18n="no_account">Нет аккаунта?</span> <a id="authSwitchLink" data-i18n="register" onclick="toggleAuthMode()">Создать</a></div>
+      <div class="modal-footer" style="margin-top:8px"><a onclick="showSocial()" style="color:var(--dim)" data-i18n="back">← Назад</a></div>
+    </div>
+  </div>
 </div>
 
 <!-- DASHBOARD MODAL -->
-<div class="modal-overlay" id="dashboardModal">
-<div class="modal dashboard-modal">
-<button class="modal-close" onclick="closeDashboard()">×</button>
-<div class="dash-header">
-<h2 data-i18n="dashboard">Личный кабинет</h2>
+<div class="modal-overlay" id="dashModal">
+  <div class="modal dashboard-modal">
+    <button class="modal-close" onclick="closeOv('dashModal')" aria-label="close">×</button>
+    <h2 data-i18n="dash_title">Личный кабинет</h2>
+    <p class="modal-subtitle" id="dashEmail"></p>
+    <div class="dash-balance">
+      <div class="dash-balance-label" data-i18n="balance">Баланс</div>
+      <div class="dash-balance-value"><span id="balanceValue">0</span><small data-i18n="tokens">токенов</small></div>
+    </div>
+    <div class="dash-section-title" data-i18n="your_keys">API-ключи</div>
+    <div id="keysList"></div>
+    <div class="dash-section-title" data-i18n="purchases">Покупки</div>
+    <div id="purchasesList"></div>
+    <div class="dash-actions">
+      <button class="btn" onclick="generateKey()" data-i18n="gen_key">+ Сгенерировать ключ</button>
+      <button class="btn-outline" onclick="closeOv('dashModal');goTo('pricing')" data-i18n="buy_more">Купить ещё токенов</button>
+    </div>
+  </div>
 </div>
 
-<div class="dash-balance">
-<div class="dash-balance-label" data-i18n="your_balance">Ваш баланс</div>
-<div class="dash-balance-value"><span id="balanceValue">0</span><span data-i18n="tokens">токенов</span></div>
-</div>
-
-<div class="dash-section-title" data-i18n="your_keys">Ваши API-ключи</div>
-<div id="keysList"></div>
-
-<button class="btn" style="width:100%;margin-top:20px" onclick="generateKey()" data-i18n="generate_key">+ Сгенерировать новый ключ</button>
-<button class="btn-outline" style="width:100%;margin-top:12px" onclick="closeDashboard();document.getElementById('pricing').scrollIntoView({behavior:'smooth'})" data-i18n="buy_more">Купить ещё токенов</button>
-</div>
+<!-- BUY MODAL -->
+<div class="modal-overlay" id="buyModal">
+  <div class="modal" style="max-width:400px">
+    <button class="modal-close" onclick="closeOv('buyModal')" aria-label="close">×</button>
+    <h2 data-i18n="buy_title">Покупка пакета</h2>
+    <p class="modal-subtitle"><span id="buyPackName"></span> · <span id="buyPackTokens"></span></p>
+    <div class="buy-price" id="buyPackPrice">$0</div>
+    <p class="demo-note" data-i18n="demo_note">Демо-режим: токены начисляются мгновенно, без реальной оплаты.</p>
+    <div class="buy-actions">
+      <button class="btn" id="buyConfirmBtn" onclick="confirmPurchase()" data-i18n="confirm">Подтвердить</button>
+      <button class="btn-outline" onclick="closeOv('buyModal')" data-i18n="cancel">Отмена</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -693,603 +644,471 @@ curl https://api.orbit.dev/v1/chat/completions \
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-
 <script>
-// FIREBASE
-const firebaseConfig={apiKey:"AIzaSyB5afBtmKeT0clRbGlztLPJp7yEDbJURDo",authDomain:"sayt-8f6d1.firebaseapp.com",projectId:"sayt-8f6d1",storageBucket:"sayt-8f6d1.firebasestorage.app",messagingSenderId:"51073229890",appId:"1:51073229890:web:d4a082cb8163bd56f4b9db"};
-let auth,db;
-try{firebase.initializeApp(firebaseConfig);auth=firebase.auth();db=firebase.firestore()}catch(e){console.error(e)}
+/* ================= HELPERS ================= */
+const $=id=>document.getElementById(id);
+const lsGet=k=>{try{return localStorage.getItem(k)}catch(e){return null}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+const lsDel=k=>{try{localStorage.removeItem(k)}catch(e){}};
+const isMobile=matchMedia('(max-width:768px)').matches||('ontouchstart' in window&&matchMedia('(max-width:1024px)').matches);
+const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-const isMobile=window.innerWidth<768||('ontouchstart' in window);
-
-// THEME
-function toggleTheme(){
-const html=document.documentElement;
-const current=html.getAttribute('data-theme');
-const next=current==='light'?'dark':'light';
-html.setAttribute('data-theme',next);
-localStorage.setItem('orbit_theme',next);
-}
-
-const savedTheme=localStorage.getItem('orbit_theme')||'dark';
-document.documentElement.setAttribute('data-theme',savedTheme);
-
-// PRELOADER
-window.addEventListener('load',()=>{setTimeout(()=>{document.getElementById('preloader').classList.add('hidden');document.body.classList.add('loaded')},800)});
-
-// STARS
-const starsEl=document.getElementById('stars');
-const starsCount=isMobile?60:150;
-for(let i=0;i<starsCount;i++){const s=document.createElement('div');s.className='star';s.style.left=Math.random()*100+'%';s.style.top=Math.random()*100+'%';s.style.setProperty('--dur',(Math.random()*3+2)+'s');s.style.setProperty('--del',Math.random()*4+'s');starsEl.appendChild(s)}
-
-// 3D PLANET - более видимый
-const canvas=document.getElementById('planet-canvas');
-const ctx=canvas.getContext('2d');
-let W,H;
-function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight}
-resize();
-window.addEventListener('resize',resize);
-
-const dots=[];
-const N=isMobile?600:1500;
-const R=isMobile?140:200;
-for(let i=0;i<N;i++){
-const th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1),r=R*Math.cbrt(Math.random());
-dots.push({bx:r*Math.sin(ph)*Math.cos(th),by:r*Math.sin(ph)*Math.sin(th),bz:r*Math.cos(ph)})
-}
-
-let rotX=0,rotY=0,targetRotX=0,targetRotY=0;
-
-if(!isMobile){
-document.addEventListener('mousemove',e=>{
-targetRotX=(e.clientY/H-.5)*.5;
-targetRotY=(e.clientX/W-.5)*.5;
-});
-}else{
-let autoRot=0;
-setInterval(()=>{autoRot+=.01;targetRotY=autoRot},50);
-if(window.DeviceOrientationEvent){
-window.addEventListener('deviceorientation',e=>{
-if(e.gamma!==null){targetRotY=(e.gamma/90)*.5}
-if(e.beta!==null){targetRotX=((e.beta-45)/90)*.5}
-});
-}
-}
-
-let lastFrame=0;
-function animate(ts){
-requestAnimationFrame(animate);
-if(ts-lastFrame<(isMobile?33:16))return;
-lastFrame=ts;
-
-ctx.clearRect(0,0,W,H);
-rotX+=(targetRotX-rotX)*.05;
-rotY+=(targetRotY-rotY)*.05;
-
-const cx=W/2,cy=H/2;
-const dotSize=isMobile?2:1.5;
-const theme=document.documentElement.getAttribute('data-theme');
-const baseAlpha=theme==='light'?0.55:0.65;
-
-dots.forEach(d=>{
-const cosY=Math.cos(rotY),sinY=Math.sin(rotY);
-const x1=d.bx*cosY-d.bz*sinY,z1=d.bx*sinY+d.bz*cosY;
-const cosX=Math.cos(rotX),sinX=Math.sin(rotX);
-const y1=d.by*cosX-z1*sinX,z2=d.by*sinX+z1*cosX;
-
-const sc=600/(600+z2);
-const px=cx+x1*sc,py=cy+y1*sc;
-const a=((z2+R)/(2*R))*baseAlpha;
-if(a>.08){
-  const brightness=theme==='light'?180:220;
-  ctx.fillStyle=`rgba(${brightness},${brightness},${brightness},${a})`;
-  ctx.fillRect(px,py,dotSize,dotSize);
-}
-});
-}
-requestAnimationFrame(animate);
-
-// TYPEWRITER
+/* ================= I18N ================= */
 const T={
 ru:{
 typewriter:"Все модели.\nОдин ключ.",
-nav_pricing:"Тарифы",nav_models:"Модели",nav_faq:"FAQ",login:"Войти",logout:"Выйти",get_key:"Получить ключ",
-hero_subtitle:"GPT, Claude, Gemini, DeepSeek — через один OpenAI-совместимый endpoint. Платите только за токены.",
-buy_tokens:"Купить токены →",view_models:"Модели",
-code_title:"Начните за 2 минуты",code_desc:"Скопируйте код, вставьте свой API-ключ и начните использовать все модели.",
-copy:"Копировать",copied:"Скопировано!",
-pricing_title:"Выберите пакет токенов",pricing_desc:"Чем больше пакет — тем ниже цена за токен. Токены не сгорают и работают со всеми моделями.",
-pack_starter_label:"Стартовый пакет",pack_pro_label:"Профессиональный",pack_biz_label:"Бизнес",pack_ent_label:"Корпоративный",
-pack_per_m:"/млн токенов",buy:"Купить",
-pack_feat_1:"Доступ ко всем моделям",pack_feat_2:"SSE стриминг",pack_feat_3:"Поддержка 24/7",
-pack_feat_4:"Приоритетная поддержка",pack_feat_5:"Скидка 30%",pack_feat_6:"Всё из Бизнес",pack_feat_7:"Скидка 40%",pack_feat_8:"Персональный менеджер",
-models_title:"Модели и цены",models_desc:"Цены указаны за 1 млн токенов. Все модели доступны сразу после покупки пакета.",
-th_model:"МОДЕЛЬ",th_input:"ВХОД $/1M",th_output:"ВЫХОД $/1M",th_features:"ОСОБЕННОСТИ",
-tag_new:"новая",tag_reason:"рассуждающая",tag_code:"код",tag_universal:"универсальная",
-faq_title:"Коротко<br>о главном",faq_subtitle:"Не нашли ответ — напишите нам в Telegram.",
-faq1_q:"Как получить API-ключ?",faq1_a:"Купите пакет токенов и войдите в личный кабинет — ключ создаётся автоматически.",
-faq2_q:"Токены сгорают?",faq2_a:"Нет. Купленные токены хранятся на балансе бессрочно и списываются по мере использования.",
-faq3_q:"Какие модели доступны?",faq3_a:"GPT-4o, Claude Sonnet/Opus, Gemini, DeepSeek, Qwen, GLM, Kimi и другие — все через один ключ.",
-faq4_q:"Есть ли стриминг?",faq4_a:"Да, полноценный SSE-стриминг. Токены приходят по мере генерации.",
-cta_title:"Готовы к запуску?",cta_subtitle:"Купите пакет токенов — первый ответ через минуту.",
-auth_title:"Добро пожаловать",auth_subtitle:"Войдите или создайте аккаунт",
-login_google:"Войти через Google",login_github:"Войти через GitHub",or_email:"или через email",login_email:"Войти через Email",
-submit_login:"Войти",no_account:"Нет аккаунта?",register:"Зарегистрироваться",back:"← Назад",
-dashboard:"Личный кабинет",your_balance:"Ваш баланс",tokens:"токенов",your_keys:"Ваши API-ключи",
-generate_key:"+ Сгенерировать новый ключ",buy_more:"Купить ещё токенов",
-buy_success:"Пакет куплен! Токены зачислены на баланс.",login_success:"Добро пожаловать!",
-logout_msg:"Вы вышли",fill_fields:"Заполните поля",pass_min:"Пароль мин. 6 символов",
-email_taken:"Email уже занят",error:"Ошибка",use_live:"Открой через Live Server!",
-key_copied:"Ключ скопирован!",no_keys:"У вас пока нет ключей. Сгенерируйте первый!",
-confirm_buy:"Подтвердить покупку",cancel:"Отмена",buy_pack_title:"Покупка пакета"
+nav_pricing:"Тарифы",nav_code:"Код",nav_models:"Модели",nav_faq:"FAQ",
+login:"Войти",logout:"Выйти",get_key:"Получить ключ",theme_toggle:"Сменить тему",
+hero_sub:"GPT, Claude, Gemini, DeepSeek — через один OpenAI-совместимый endpoint. Платите только за токены.",
+buy_tokens:"Купить токены →",view_code:"Как подключить",
+code_label:"интеграция",code_title:"Начните за 2 минуты",code_desc:"Купите пакет, скопируйте код, вставьте свой API-ключ — и все модели работают в вашем проекте.",
+copy:"Копировать",copied:"Скопировано ✓",
+pricing_label:"тарифы",pricing_title:"Выберите пакет токенов",pricing_desc:"Чем больше пакет — тем ниже цена за токен. Токены не сгорают и работают со всеми моделями.",
+pack_starter:"Стартовый",pack_pro:"Профессиональный",pack_biz:"Бизнес",pack_ent:"Корпоративный",
+per_m:"/ 1M токенов",buy:"Купить",popular:"ХИТ",
+f_all:"Все модели каталога",f_stream:"SSE-стриминг",f_support:"Поддержка 24/7",f_priority:"Приоритетная поддержка",f_disc30:"Скидка 30% за объём",f_disc40:"Скидка 40% за объём",f_biz_all:"Всё из «Бизнес»",f_manager:"Персональный менеджер",
+models_label:"каталог",models_title:"Модели и цены",models_desc:"Цены за 1 млн токенов. Все модели доступны сразу после покупки пакета.",
+th_model:"Модель",th_input:"Вход $/1M",th_output:"Выход $/1M",th_features:"Особенности",table_hint:"← листайте таблицу →",
+tag_new:"новая",tag_reason:"рассуждающая",tag_code:"код",tag_universal:"универсальная",tag_flagship:"флагман",tag_agents:"агенты",
+faq_label:"вопросы",faq_title:"Коротко о главном",faq_sub:"Не нашли ответ — напишите нам в Telegram.",
+q1:"Как получить API-ключ?",a1:"Купите пакет и откройте личный кабинет — ключ создаётся автоматически и работает со всеми моделями.",
+q2:"Токены сгорают?",a2:"Нет. Баланс хранится бессрочно и списывается только по мере использования.",
+q3:"Какие модели доступны?",a3:"GPT, Claude, Gemini, DeepSeek, Qwen, GLM, Kimi и другие — весь каталог через один ключ.",
+q4:"Есть ли стриминг?",a4:"Да, полноценный SSE-стриминг: токены приходят по мере генерации, как у официальных API.",
+q5:"Как устроена оплата?",a5:"Сейчас сайт в демо-режиме: токены начисляются мгновенно. В боевой версии — карта, СБП и крипта.",
+cta_label:"старт",cta_title:"Готовы к запуску?",cta_sub:"Купите пакет токенов — первый ответ через минуту.",
+footer_tag:"Единый API для языковых моделей",
+auth_title:"Добро пожаловать",auth_sub:"Войдите или создайте аккаунт",
+g_login:"Войти через Google",gh_login:"Войти через GitHub",or_email:"или через email",email_login:"Войти через Email",
+email_ph:"Email",pass_ph:"Пароль (мин. 6 символов)",submit_login:"Войти",submit_register:"Создать аккаунт",
+no_account:"Нет аккаунта?",have_account:"Уже есть аккаунт?",register:"Создать",signin_link:"Войти",back:"← Назад",
+dash_title:"Личный кабинет",balance:"Баланс",tokens:"токенов",your_keys:"API-ключи",purchases:"Покупки",
+gen_key:"+ Сгенерировать ключ",buy_more:"Купить ещё токенов",no_keys:"Ключей пока нет — создайте первый.",no_purchases:"Покупок пока нет.",
+key_copied:"Ключ скопирован",key_deleted:"Ключ удалён",key_created:"Ключ создан",
+buy_title:"Покупка пакета",confirm:"Подтвердить",cancel:"Отмена",processing:"Обработка…",
+demo_note:"Демо-режим: токены начисляются мгновенно, без реальной оплаты.",
+buy_success:"Пакет куплен — токены на балансе ✓",login_success:"Добро пожаловать!",logout_msg:"Вы вышли из аккаунта",
+fill_fields:"Заполните email и пароль",bad_email:"Некорректный email",pass_min:"Пароль минимум 6 символов",
+bad_credentials:"Неверный email или пароль",email_taken:"Этот email уже зарегистрирован",
+err:"Ошибка",use_live:"Откройте сайт через Live Server — Firebase не работает с file://",
+cancelled:"Вход отменён",allow_popups:"Разрешите всплывающие окна для входа",sign_first:"Сначала войдите в аккаунт",
+file_banner:"Файл открыт напрямую — вход не работает. Запусти через <b>Live Server</b>.",
+copy_btn:"копировать",revoke:"удалить"
 },
 en:{
 typewriter:"Every model.\nOne key.",
-nav_pricing:"Pricing",nav_models:"Models",nav_faq:"FAQ",login:"Sign in",logout:"Sign out",get_key:"Get key",
-hero_subtitle:"GPT, Claude, Gemini, DeepSeek — through one OpenAI-compatible endpoint. Pay only for tokens.",
-buy_tokens:"Buy tokens →",view_models:"Models",
-code_title:"Start in 2 minutes",code_desc:"Copy the code, insert your API key and start using all models.",
-copy:"Copy",copied:"Copied!",
-pricing_title:"Choose a token pack",pricing_desc:"The bigger the pack, the lower the price per token. Tokens never expire and work with all models.",
-pack_starter_label:"Starter pack",pack_pro_label:"Professional",pack_biz_label:"Business",pack_ent_label:"Enterprise",
-pack_per_m:"/M tokens",buy:"Buy",
-pack_feat_1:"Access to all models",pack_feat_2:"SSE streaming",pack_feat_3:"24/7 support",
-pack_feat_4:"Priority support",pack_feat_5:"30% discount",pack_feat_6:"Everything in Business",pack_feat_7:"40% discount",pack_feat_8:"Personal manager",
-models_title:"Models & Pricing",models_desc:"Prices per 1M tokens. All models available immediately after purchase.",
-th_model:"MODEL",th_input:"INPUT $/1M",th_output:"OUTPUT $/1M",th_features:"FEATURES",
-tag_new:"new",tag_reason:"reasoning",tag_code:"code",tag_universal:"universal",
-faq_title:"Quick<br>FAQ",faq_subtitle:"Can't find an answer? Message us on Telegram.",
-faq1_q:"How to get an API key?",faq1_a:"Buy a token pack and sign in to your dashboard — the key is created automatically.",
-faq2_q:"Do tokens expire?",faq2_a:"No. Purchased tokens stay on your balance forever and are spent as you use them.",
-faq3_q:"Which models are available?",faq3_a:"GPT-4o, Claude Sonnet/Opus, Gemini, DeepSeek, Qwen, GLM, Kimi and more — all via one key.",
-faq4_q:"Is streaming supported?",faq4_a:"Yes, full SSE streaming. Tokens arrive as they're generated.",
-cta_title:"Ready for launch?",cta_subtitle:"Buy a token pack — first response in a minute.",
-auth_title:"Welcome",auth_subtitle:"Sign in or create an account",
-login_google:"Sign in with Google",login_github:"Sign in with GitHub",or_email:"or via email",login_email:"Sign in with Email",
-submit_login:"Sign in",no_account:"No account?",register:"Register",back:"← Back",
-dashboard:"Dashboard",your_balance:"Your balance",tokens:"tokens",your_keys:"Your API keys",
-generate_key:"+ Generate new key",buy_more:"Buy more tokens",
-buy_success:"Pack purchased! Tokens added to balance.",login_success:"Welcome!",
-logout_msg:"Signed out",fill_fields:"Fill in all fields",pass_min:"Password min 6 chars",
-email_taken:"Email already in use",error:"Error",use_live:"Open via Live Server!",
-key_copied:"Key copied!",no_keys:"No keys yet. Generate your first one!",
-confirm_buy:"Confirm purchase",cancel:"Cancel",buy_pack_title:"Purchase pack"
+nav_pricing:"Pricing",nav_code:"Code",nav_models:"Models",nav_faq:"FAQ",
+login:"Sign in",logout:"Sign out",get_key:"Get key",theme_toggle:"Toggle theme",
+hero_sub:"GPT, Claude, Gemini, DeepSeek — through one OpenAI-compatible endpoint. Pay only for tokens.",
+buy_tokens:"Buy tokens →",view_code:"How to connect",
+code_label:"integration",code_title:"Start in 2 minutes",code_desc:"Buy a pack, copy the code, paste your API key — every model works in your project.",
+copy:"Copy",copied:"Copied ✓",
+pricing_label:"pricing",pricing_title:"Choose a token pack",pricing_desc:"Bigger pack — lower price per token. Tokens never expire and work with every model.",
+pack_starter:"Starter",pack_pro:"Professional",pack_biz:"Business",pack_ent:"Enterprise",
+per_m:"/ 1M tokens",buy:"Buy",popular:"POPULAR",
+f_all:"Every model in catalog",f_stream:"SSE streaming",f_support:"24/7 support",f_priority:"Priority support",f_disc30:"30% volume discount",f_disc40:"40% volume discount",f_biz_all:"Everything in Business",f_manager:"Personal manager",
+models_label:"catalog",models_title:"Models & pricing",models_desc:"Prices per 1M tokens. Every model is available right after purchase.",
+th_model:"Model",th_input:"Input $/1M",th_output:"Output $/1M",th_features:"Features",table_hint:"← swipe the table →",
+tag_new:"new",tag_reason:"reasoning",tag_code:"code",tag_universal:"universal",tag_flagship:"flagship",tag_agents:"agents",
+faq_label:"questions",faq_title:"The short version",faq_sub:"No answer? Message us on Telegram.",
+q1:"How do I get an API key?",a1:"Buy a pack and open the dashboard — a key is created automatically and works with every model.",
+q2:"Do tokens expire?",a2:"No. Your balance never expires and is spent only as you use it.",
+q3:"Which models are available?",a3:"GPT, Claude, Gemini, DeepSeek, Qwen, GLM, Kimi and more — the whole catalog via one key.",
+q4:"Is streaming supported?",a4:"Yes, full SSE streaming: tokens arrive as they are generated, just like official APIs.",
+q5:"How does payment work?",a5:"The site is in demo mode: tokens are credited instantly. Production will support cards and crypto.",
+cta_label:"start",cta_title:"Ready for launch?",cta_sub:"Buy a token pack — first response in a minute.",
+footer_tag:"One API for language models",
+auth_title:"Welcome",auth_sub:"Sign in or create an account",
+g_login:"Sign in with Google",gh_login:"Sign in with GitHub",or_email:"or via email",email_login:"Sign in with Email",
+email_ph:"Email",pass_ph:"Password (min 6 chars)",submit_login:"Sign in",submit_register:"Create account",
+no_account:"No account?",have_account:"Already have an account?",register:"Create",signin_link:"Sign in",back:"← Back",
+dash_title:"Dashboard",balance:"Balance",tokens:"tokens",your_keys:"API keys",purchases:"Purchases",
+gen_key:"+ Generate key",buy_more:"Buy more tokens",no_keys:"No keys yet — create your first one.",no_purchases:"No purchases yet.",
+key_copied:"Key copied",key_deleted:"Key deleted",key_created:"Key created",
+buy_title:"Purchase pack",confirm:"Confirm",cancel:"Cancel",processing:"Processing…",
+demo_note:"Demo mode: tokens are credited instantly, no real payment.",
+buy_success:"Pack purchased — tokens added ✓",login_success:"Welcome!",logout_msg:"Signed out",
+fill_fields:"Enter email and password",bad_email:"Invalid email",pass_min:"Password must be at least 6 characters",
+bad_credentials:"Wrong email or password",email_taken:"This email is already registered",
+err:"Error",use_live:"Open the site via Live Server — Firebase doesn't work with file://",
+cancelled:"Sign-in cancelled",allow_popups:"Allow popups to sign in",sign_first:"Sign in first",
+file_banner:"Opened as a local file — auth won't work. Run via <b>Live Server</b>.",
+copy_btn:"copy",revoke:"delete"
 },
 zh:{
 typewriter:"所有模型。\n一个密钥。",
-nav_pricing:"价格",nav_models:"模型",nav_faq:"常见问题",login:"登录",logout:"退出",get_key:"获取密钥",
-hero_subtitle:"GPT、Claude、Gemini、DeepSeek — 通过一个兼容 OpenAI 的端点。按令牌付费。",
-buy_tokens:"购买令牌 →",view_models:"模型",
-code_title:"2分钟开始使用",code_desc:"复制代码，插入您的 API 密钥并开始使用所有模型。",
-copy:"复制",copied:"已复制!",
-pricing_title:"选择令牌包",pricing_desc:"包越大，单价越低。令牌永不过期，适用于所有模型。",
-pack_starter_label:"入门包",pack_pro_label:"专业版",pack_biz_label:"商业版",pack_ent_label:"企业版",
-pack_per_m:"/百万令牌",buy:"购买",
-pack_feat_1:"访问所有模型",pack_feat_2:"SSE 流式传输",pack_feat_3:"24/7 支持",
-pack_feat_4:"优先支持",pack_feat_5:"30% 折扣",pack_feat_6:"包含商业版全部功能",pack_feat_7:"40% 折扣",pack_feat_8:"专属经理",
-models_title:"模型与定价",models_desc:"价格为每百万令牌。购买包后立即访问所有模型。",
-th_model:"模型",th_input:"输入 $/1M",th_output:"输出 $/1M",th_features:"特性",
-tag_new:"新",tag_reason:"推理",tag_code:"代码",tag_universal:"通用",
-faq_title:"快速<br>问答",faq_subtitle:"找不到答案？通过 Telegram 联系我们。",
-faq1_q:"如何获取 API 密钥？",faq1_a:"购买令牌包并登录仪表板 — 密钥自动生成。",
-faq2_q:"令牌会过期吗？",faq2_a:"不会。购买的令牌永久保存在余额中，使用时扣除。",
-faq3_q:"有哪些模型可用？",faq3_a:"GPT-4o、Claude Sonnet/Opus、Gemini、DeepSeek、Qwen、GLM、Kimi 等 — 全部通过一个密钥。",
-faq4_q:"支持流式传输吗？",faq4_a:"支持完整的 SSE 流式传输。令牌在生成时到达。",
-cta_title:"准备启动？",cta_subtitle:"购买令牌包 — 一分钟内获得首个响应。",
-auth_title:"欢迎",auth_subtitle:"登录或创建账户",
-login_google:"通过 Google 登录",login_github:"通过 GitHub 登录",or_email:"或通过邮箱",login_email:"通过邮箱登录",
-submit_login:"登录",no_account:"没有账户？",register:"注册",back:"← 返回",
-dashboard:"仪表板",your_balance:"您的余额",tokens:"令牌",your_keys:"您的 API 密钥",
-generate_key:"+ 生成新密钥",buy_more:"购买更多令牌",
-buy_success:"包已购买！令牌已添加到余额。",login_success:"欢迎！",
-logout_msg:"已退出",fill_fields:"请填写所有字段",pass_min:"密码至少 6 位",
-email_taken:"邮箱已被使用",error:"错误",use_live:"请通过 Live Server 打开！",
-key_copied:"密钥已复制！",no_keys:"还没有密钥。生成第一个！",
-confirm_buy:"确认购买",cancel:"取消",buy_pack_title:"购买包"
-}
-};
+nav_pricing:"价格",nav_code:"代码",nav_models:"模型",nav_faq:"常见问题",
+login:"登录",logout:"退出",get_key:"获取密钥",theme_toggle:"切换主题",
+hero_sub:"GPT、Claude、Gemini、DeepSeek — 通过一个兼容 OpenAI 的端点。按令牌付费。",
+buy_tokens:"购买令牌 →",view_code:"如何接入",
+code_label:"集成",code_title:"两分钟开始使用",code_desc:"购买套餐，复制代码，填入 API 密钥 — 所有模型即可在您的项目中使用。",
+copy:"复制",copied:"已复制 ✓",
+pricing_label:"价格",pricing_title:"选择令牌套餐",pricing_desc:"套餐越大，单价越低。令牌永不过期，适用于所有模型。",
+pack_starter:"入门版",pack_pro:"专业版",pack_biz:"商业版",pack_ent:"企业版",
+per_m:"/ 1M 令牌",buy:"购买",popular:"热门",
+f_all:"全部模型",f_stream:"SSE 流式传输",f_support:"24/7 支持",f_priority:"优先支持",f_disc30:"批量优惠 30%",f_disc40:"批量优惠 40%",f_biz_all:"包含商业版全部功能",f_manager:"专属客户经理",
+models_label:"目录",models_title:"模型与价格",models_desc:"价格为每 100 万令牌。购买后立即可用所有模型。",
+th_model:"模型",th_input:"输入 $/1M",th_output:"输出 $/1M",th_features:"特性",table_hint:"← 左右滑动表格 →",
+tag_new:"新",tag_reason:"推理",tag_code:"代码",tag_universal:"通用",tag_flagship:"旗舰",tag_agents:"智能体",
+faq_label:"问题",faq_title:"常见问题",faq_sub:"没有找到答案？请通过 Telegram 联系我们。",
+q1:"如何获取 API 密钥？",a1:"购买套餐后打开控制台 — 密钥自动生成，适用于所有模型。",
+q2:"令牌会过期吗？",a2:"不会。余额永久有效，仅在使用时扣除。",
+q3:"有哪些模型？",a3:"GPT、Claude、Gemini、DeepSeek、Qwen、GLM、Kimi 等 — 一个密钥访问全部目录。",
+q4:"支持流式传输吗？",a4:"支持完整的 SSE 流式传输：令牌边生成边返回，与官方 API 一致。",
+q5:"如何付款？",a5:"当前为演示模式：令牌即时到账。正式版将支持银行卡与加密货币。",
+cta_label:"开始",cta_title:"准备启动？",cta_sub:"购买令牌套餐 — 一分钟内获得首个响应。",
+footer_tag:"统一的语言模型 API",
+auth_title:"欢迎",auth_sub:"登录或创建账户",
+g_login:"通过 Google 登录",gh_login:"通过 GitHub 登录",or_email:"或通过邮箱",email_login:"通过邮箱登录",
+email_ph:"邮箱",pass_ph:"密码（至少 6 位）",submit_login:"登录",submit_register:"创建账户",
+no_account:"没有账户？",have_account:"已有账户？",register:"创建",signin_link:"登录",back:"← 返回",
+dash_title:"控制台",balance:"余额",tokens:"令牌",your_keys:"API 密钥",purchases:"购买记录",
+gen_key:"+ 生成密钥",buy_more:"购买更多令牌",no_keys:"还没有密钥 — 创建第一个。",no_purchases:"暂无购买记录。",
+key_copied:"密钥已复制",key_deleted:"密钥已删除",key_created:"密钥已创建",
+buy_title:"购买套餐",confirm:"确认",cancel:"取消",processing:"处理中…",
+demo_note:"演示模式：令牌即时到账，无需真实付款。",
+buy_success:"购买成功 — 令牌已到账 ✓",login_success:"欢迎！",logout_msg:"已退出登录",
+fill_fields:"请填写邮箱和密码",bad_email:"邮箱格式不正确",pass_min:"密码至少 6 位",
+bad_credentials:"邮箱或密码错误",email_taken:"该邮箱已注册",
+err:"错误",use_live:"请通过 Live Server 打开 — Firebase 不支持 file://",
+cancelled:"已取消登录",allow_popups:"请允许弹窗以完成登录",sign_first:"请先登录",
+file_banner:"本地文件直接打开 — 登录不可用。请通过 <b>Live Server</b> 运行。",
+copy_btn:"复制",revoke:"删除"
+}};
+let currentLang=lsGet('orbit_lang')||'ru';
+if(!T[currentLang])currentLang='ru';
+const t=k=>(T[currentLang]&&T[currentLang][k])||T.ru[k]||k;
 
-let currentLang='ru';
-
+/* typewriter — single loop, cancellation token (fixes doubled letters) */
+let twToken=0;
 function typeWriter(text){
-const el=document.getElementById('typewriter');
-el.innerHTML='';
-let i=0;
-function type(){
-if(i<text.length){
-const c=text[i];
-el.innerHTML+=c==='\n'?'<br>':c;
-i++;
-setTimeout(type,80);
-}
-}
-type();
+  const token=++twToken, el=$('typewriter');
+  el.innerHTML=''; let buf='',i=0;
+  const speed=reducedMotion?0:55;
+  (function tick(){
+    if(token!==twToken)return;
+    if(i>=text.length)return;
+    const ch=text[i++]; buf+=ch;
+    el.innerHTML=esc(buf).replace(/\n/g,'<br>');
+    setTimeout(tick, ch==='\n'?160:speed);
+  })();
 }
 
 function setLang(lang){
-currentLang=lang;
-document.querySelectorAll('.lang-btn').forEach(b=>b.classList.remove('active'));
-event.target.classList.add('active');
-
-typeWriter(T[lang].typewriter);
-
-const els=document.querySelectorAll('[data-i18n]');
-els.forEach((el,i)=>{
-setTimeout(()=>{
-el.style.transition='opacity .3s, transform .3s';
-el.style.opacity='0';
-el.style.transform='translateY(-10px)';
-setTimeout(()=>{
-const key=el.getAttribute('data-i18n');
-if(T[lang][key]){
-el.innerHTML=T[lang][key];
-}
-el.style.opacity='1';
-el.style.transform='translateY(0)';
-},150);
-},i*20);
-});
-
-localStorage.setItem('orbit_lang',lang);
+  if(!T[lang])return;
+  currentLang=lang; lsSet('orbit_lang',lang);
+  document.documentElement.lang=lang==='zh'?'zh-CN':lang;
+  document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===lang));
+  typeWriter(T[lang].typewriter);
+  document.querySelectorAll('[data-i18n]').forEach((el,i)=>{
+    const key=el.getAttribute('data-i18n');
+    if(!T[lang][key])return;
+    setTimeout(()=>{
+      el.classList.add('i18n-fade');
+      setTimeout(()=>{ el.innerHTML=T[lang][key]; el.classList.remove('i18n-fade'); },180);
+    },Math.min(i*14,320));
+  });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el=>{const k=el.getAttribute('data-i18n-ph'); if(T[lang][k])el.placeholder=T[lang][k];});
+  document.querySelectorAll('[data-i18n-title]').forEach(el=>{const k=el.getAttribute('data-i18n-title'); if(T[lang][k])el.title=T[lang][k];});
+  if(currentUser)renderDashboard();
 }
 
-// CODE SWITCH
+/* ================= THEME ================= */
+let planetRGB='236,236,246', planetAlpha=.8;
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme',theme);
+  $('metaTheme').setAttribute('content',theme==='light'?'#f4f4f6':'#050506');
+  if(theme==='light'){planetRGB='22,22,28';planetAlpha=.5;}else{planetRGB='236,236,246';planetAlpha=.8;}
+  lsSet('orbit_theme',theme);
+}
+function toggleTheme(){
+  const next=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';
+  applyTheme(next);
+}
+applyTheme(lsGet('orbit_theme')||'dark');
+
+/* ================= BACKGROUND ================= */
+(function buildStars(){
+  const wrap=$('stars'), n=isMobile?45:100, frag=document.createDocumentFragment();
+  for(let i=0;i<n;i++){const s=document.createElement('div');s.className='star';
+    s.style.left=Math.random()*100+'%';s.style.top=Math.random()*100+'%';
+    s.style.setProperty('--dur',(2.5+Math.random()*3.5)+'s');s.style.setProperty('--del',(Math.random()*4)+'s');
+    frag.appendChild(s);}
+  wrap.appendChild(frag);
+})();
+
+(function initPlanet(){
+  const canvas=$('planetCanvas'), ctx=canvas.getContext('2d');
+  let W,H,R,dpr;
+  const N=isMobile?550:1400, pts=[];
+  for(let i=0;i<N;i++){
+    const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1), r=Math.cbrt(Math.random());
+    pts.push({x:r*Math.sin(ph)*Math.cos(th),y:r*Math.sin(ph)*Math.sin(th),z:r*Math.cos(ph)});
+  }
+  function resize(){
+    W=innerWidth;H=innerHeight;dpr=Math.min(devicePixelRatio||1,isMobile?1.5:2);
+    canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+'px';canvas.style.height=H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    R=Math.max(110,Math.min(240,Math.min(W,H)*.3))*(isMobile?.8:1);
+  }
+  resize(); addEventListener('resize',resize);
+  let spin=0,tiltX=0,tiltY=0,tTX=0,tTY=0,last=0;
+  if(!isMobile){
+    addEventListener('mousemove',e=>{tTX=(e.clientY/H-.5)*.55;tTY=(e.clientX/W-.5)*.55;},{passive:true});
+  }else{
+    addEventListener('deviceorientation',e=>{
+      if(e.gamma!=null)tTY=Math.max(-.6,Math.min(.6,e.gamma/60));
+      if(e.beta!=null)tTX=Math.max(-.6,Math.min(.6,(e.beta-45)/80));
+    },{passive:true});
+  }
+  function frame(ts){
+    requestAnimationFrame(frame);
+    if(document.hidden)return;
+    if(ts-last<(isMobile?33:16))return; last=ts;
+    spin+=reducedMotion?0:.0016;
+    tiltX+=(tTX-tiltX)*.05; tiltY+=(tTY-tiltY)*.05;
+    ctx.clearRect(0,0,W,H);
+    const cY=Math.cos(spin+tiltY),sY=Math.sin(spin+tiltY),cX=Math.cos(tiltX),sX=Math.sin(tiltX);
+    const cx=W/2,cy=H/2,base=isMobile?2:1.6;
+    for(let i=0;i<N;i++){
+      const p=pts[i];
+      const x1=p.x*cY-p.z*sY, z1=p.x*sY+p.z*cY;
+      const y1=p.y*cX-z1*sX, z2=p.y*sX+z1*cX;
+      const s=600/(600-z2*R);
+      const px=cx+x1*R*s, py=cy+y1*R*s;
+      const depth=(z2+1)/2, a=(0.1+0.9*depth)*planetAlpha;
+      if(a<.06)continue;
+      const sz=base*(0.7+0.6*depth);
+      ctx.fillStyle='rgba('+planetRGB+','+a.toFixed(3)+')';
+      ctx.fillRect(px,py,sz,sz);
+    }
+  }
+  requestAnimationFrame(frame);
+})();
+
+/* ================= OVERLAYS / MENU ================= */
+const openStack=[];
+let menuOpen=false;
+function syncLock(){document.body.style.overflow=(openStack.length||menuOpen)?'hidden':'';}
+function openOv(id){const el=$(id);if(el.classList.contains('active'))return;el.classList.add('active');openStack.push(id);syncLock();}
+function closeOv(id){const el=$(id);if(!el.classList.contains('active'))return;el.classList.remove('active');const i=openStack.indexOf(id);if(i>-1)openStack.splice(i,1);syncLock();}
+document.querySelectorAll('.modal-overlay').forEach(ov=>ov.addEventListener('click',e=>{if(e.target===ov)closeOv(ov.id);}));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(openStack.length)closeOv(openStack[openStack.length-1]);else if(menuOpen)closeMenu();}});
+function toggleMenu(){menuOpen?closeMenu():openMenu();}
+function openMenu(){menuOpen=true;$('mobileMenu').classList.add('active');$('menuScrim').classList.add('show');$('burgerBtn').classList.add('active');syncLock();}
+function closeMenu(){menuOpen=false;$('mobileMenu').classList.remove('active');$('menuScrim').classList.remove('show');$('burgerBtn').classList.remove('active');syncLock();}
+function goTo(id){closeMenu();const el=$(id);if(el)el.scrollIntoView({behavior:reducedMotion?'auto':'smooth'});}
+function openAuth(){openOv('authModal');}
+function handleGetKey(){currentUser?openDash():openAuth();}
+
+/* ================= CODE TABS ================= */
 function switchCode(lang,btn){
-document.querySelectorAll('.code-tab').forEach(t=>t.classList.remove('active'));
-btn.classList.add('active');
-document.querySelectorAll('.code-block').forEach(b=>b.classList.remove('active'));
-document.getElementById('code-'+lang).classList.add('active');
+  document.querySelectorAll('.code-tab').forEach(b=>b.classList.toggle('active',b===btn));
+  document.querySelectorAll('.code-block').forEach(b=>b.classList.remove('active'));
+  $('code-'+lang).classList.add('active');
+}
+function getActiveCode(){
+  const block=document.querySelector('.code-block.active');
+  return Array.from(block.querySelectorAll('.cl')).map(l=>l.textContent).join('\n');
+}
+async function copyText(text){
+  try{await navigator.clipboard.writeText(text);return true;}
+  catch(e){
+    const ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;opacity:0';
+    document.body.appendChild(ta);ta.select();
+    let ok=false;try{ok=document.execCommand('copy')}catch(_){}
+    ta.remove();return ok;
+  }
+}
+async function copyActiveCode(){
+  const ok=await copyText(getActiveCode());
+  const btn=$('copyBtn');
+  if(ok){btn.textContent=t('copied');showToast(t('copied'),'success');setTimeout(()=>btn.textContent=t('copy'),1600);}
+  else showToast(t('err'),'error');
 }
 
-function copyCode(btn){
-const activeBlock=document.querySelector('.code-block.active pre');
-const text=activeBlock.textContent;
-navigator.clipboard.writeText(text);
-const orig=btn.textContent;
-btn.textContent=T[currentLang].copied;
-setTimeout(()=>btn.textContent=orig,2000);
+/* ================= FAQ / REVEAL / SPY ================= */
+function toggleFaq(el){
+  const item=el.parentElement, was=item.classList.contains('active');
+  document.querySelectorAll('.faq-item').forEach(i=>i.classList.remove('active'));
+  if(!was)item.classList.add('active');
+}
+const revealObs=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');revealObs.unobserve(e.target);}}),{threshold:.12,rootMargin:'0px 0px -40px 0px'});
+document.querySelectorAll('.reveal').forEach((el,i)=>{el.style.transitionDelay=(i%5)*70+'ms';revealObs.observe(el);});
+const spyObs=new IntersectionObserver(es=>es.forEach(e=>{
+  if(e.isIntersecting){document.querySelectorAll('[data-spy]').forEach(a=>a.classList.toggle('active',a.dataset.spy===e.target.id));}
+}),{rootMargin:'-40% 0px -55% 0px'});
+['pricing','code','models','faq'].forEach(id=>spyObs.observe($(id)));
+/* card specular highlight */
+if(!isMobile){document.querySelectorAll('.pack-card').forEach(card=>{
+  card.addEventListener('mousemove',e=>{const r=card.getBoundingClientRect();card.style.setProperty('--mx',(e.clientX-r.left)+'px');card.style.setProperty('--my',(e.clientY-r.top)+'px');},{passive:true});
+});}
+
+/* ================= TOAST ================= */
+let toastTimer;
+function showToast(msg,type){
+  const el=$('toast');el.textContent=msg;el.className='toast show '+(type||'success');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2800);
 }
 
-// SCROLL ANIMATIONS
-const obs=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')}),{threshold:.1,rootMargin:'0px 0px -50px 0px'});
-document.querySelectorAll('.pack-card,.faq-item,.section-label,.section-title,.section-desc,.code-showcase').forEach((el,i)=>{el.style.transitionDelay=(i*.08)+'s';obs.observe(el)});
-
-// FAQ
-function toggleFaq(el){const it=el.parentElement;document.querySelectorAll('.faq-item').forEach(i=>{if(i!==it)i.classList.remove('active')});it.classList.toggle('active')}
-
-// MOBILE MENU
-function toggleMobileMenu(){
-const m=document.getElementById('mobileMenu');
-const b=document.getElementById('burger');
-m.classList.toggle('active');
-b.classList.toggle('active');
-document.body.style.overflow=m.classList.contains('active')?'hidden':'';
-}
-function closeMobileMenu(){
-document.getElementById('mobileMenu').classList.remove('active');
-document.getElementById('burger').classList.remove('active');
-document.body.style.overflow='';
-}
-
-// MODAL
-const modal=document.getElementById('modal');
-const dashModal=document.getElementById('dashboardModal');
-const loginWrapper=document.getElementById('loginWrapper');
-const mobileLoginWrapper=document.getElementById('mobileLoginWrapper');
-const userProfile=document.getElementById('userProfile');
-const mobileUserProfile=document.getElementById('mobileUserProfile');
-const userAvatar=document.getElementById('userAvatar');
-const mobileUserAvatar=document.getElementById('mobileUserAvatar');
-const userName=document.getElementById('userName');
-const mobileUserName=document.getElementById('mobileUserName');
-
-function openModal(){modal.classList.add('active');document.body.style.overflow='hidden'}
-function closeModal(){modal.classList.remove('active');if(!document.getElementById('mobileMenu').classList.contains('active'))document.body.style.overflow='';setTimeout(showSocialButtons,400)}
-modal.addEventListener('click',e=>{if(e.target===modal)closeModal()});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeDashboard();closeMobileMenu()}});
-
-function showSocialButtons(){document.getElementById('socialButtons').style.display='block';document.getElementById('emailForm').style.display='none'}
-function showEmailForm(){document.getElementById('socialButtons').style.display='none';document.getElementById('emailForm').style.display='block'}
-
-function toggleAuthMode(){
-const btn=document.querySelector('.submit-btn');
-if(btn.textContent.includes(T[currentLang].submit_login)){btn.textContent=T[currentLang].register}else{btn.textContent=T[currentLang].submit_login}
-}
-
-// DASHBOARD
-function openDashboard(){
-if(!currentUser)return;
-dashModal.classList.add('active');
-document.body.style.overflow='hidden';
-renderDashboard();
-}
-function closeDashboard(){dashModal.classList.remove('active');if(!document.getElementById('mobileMenu').classList.contains('active'))document.body.style.overflow=''}
-dashModal.addEventListener('click',e=>{if(e.target===dashModal)closeDashboard()});
-
+/* ================= FIREBASE ================= */
+const firebaseConfig={apiKey:"AIzaSyB5afBtmKeT0clRbGlztLPJp7yEDbJURDo",authDomain:"sayt-8f6d1.firebaseapp.com",projectId:"sayt-8f6d1",storageBucket:"sayt-8f6d1.firebasestorage.app",messagingSenderId:"51073229890",appId:"1:51073229890:web:d4a082cb8163bd56f4b9db"};
+let auth=null,db=null;
+if(window.firebase){try{firebase.initializeApp(firebaseConfig);auth=firebase.auth();db=firebase.firestore();}catch(e){console.warn('Firebase init:',e);}}
 let currentUser=null;
-
-function renderDashboard(){
-if(!currentUser)return;
-const bal=currentUser.balance||0;
-document.getElementById('balanceValue').textContent=bal.toLocaleString();
-const keysList=document.getElementById('keysList');
-const keys=currentUser.keys||[];
-if(keys.length===0){
-keysList.innerHTML=`<div class="empty-state"><div class="empty-state-icon">🔑</div><div>${T[currentLang].no_keys}</div></div>`;
-}else{
-keysList.innerHTML=keys.map((k,i)=>`
-<div class="api-key-item">
-<div class="api-key-value">${k}</div>
-<button class="api-key-copy" onclick="copyKey('${k}',this)">copy</button>
-</div>
-`).join('');
-}
-}
-
-function copyKey(key,btn){
-navigator.clipboard.writeText(key);
-const orig=btn.textContent;
-btn.textContent='✓';
-setTimeout(()=>btn.textContent=orig,1500);
-showToast(T[currentLang].key_copied,'success');
-}
-
-function generateKey(){
-if(!currentUser)return;
-const key='orbit_'+Math.random().toString(36).substr(2,24)+Math.random().toString(36).substr(2,16);
-if(!currentUser.keys)currentUser.keys=[];
-currentUser.keys.unshift(key);
-saveUser();
-renderDashboard();
-showToast('API key: '+key.substr(0,20)+'...','success');
-}
-
-// BUY PACK
-let pendingPack=null;
-
-function buyPack(name,tokens,price){
-if(!currentUser){
-showToast(currentLang==='ru'?'Сначала войдите в аккаунт':currentLang==='en'?'Sign in first':'请先登录','error');
-openModal();
-return;
-}
-pendingPack={name,tokens,price};
-showBuyConfirm();
-}
-
-function showBuyConfirm(){
-if(!pendingPack)return;
-const p=pendingPack;
-const overlay=document.createElement('div');
-overlay.className='modal-overlay active';
-overlay.style.zIndex='1100';
-overlay.innerHTML=`
-<div class="modal" style="max-width:400px">
-<button class="modal-close" onclick="this.parentElement.parentElement.remove()">×</button>
-<h2 style="font-size:1.3rem">${T[currentLang].buy_pack_title}</h2>
-<p class="modal-subtitle">${p.name.toUpperCase()} · ${p.tokens.toLocaleString()} ${T[currentLang].tokens}</p>
-<div style="text-align:center;font-size:2.5rem;font-weight:700;margin:20px 0">$${p.price}</div>
-<button class="btn" style="width:100%;margin-bottom:12px;min-height:48px" onclick="confirmPurchase(this.parentElement.parentElement)">${T[currentLang].confirm_buy}</button>
-<button class="btn-outline" style="width:100%;min-height:48px" onclick="this.parentElement.parentElement.remove()">${T[currentLang].cancel}</button>
-</div>`;
-document.body.appendChild(overlay);
-}
-
-function confirmPurchase(modalEl){
-if(!pendingPack||!currentUser)return;
-currentUser.balance=(currentUser.balance||0)+pendingPack.tokens;
-if(!currentUser.purchases)currentUser.purchases=[];
-currentUser.purchases.unshift({
-pack:pendingPack.name,
-tokens:pendingPack.tokens,
-price:pendingPack.price,
-date:new Date().toISOString()
-});
-saveUser();
-modalEl.parentElement.remove();
-renderDashboard();
-showToast(T[currentLang].buy_success,'success');
-pendingPack=null;
-}
-
-function saveUser(){
-if(currentUser&&db){
-db.collection('users').doc(currentUser.uid).set({
-balance:currentUser.balance,
-keys:currentUser.keys||[],
-purchases:currentUser.purchases||[],
-email:currentUser.email,
-name:currentUser.name,
-updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-},{merge:true}).catch(e=>console.error(e));
-}
-localStorage.setItem('orbit_user',JSON.stringify(currentUser));
-}
-
-// FIREBASE AUTH
-function setLoading(id,load){
-const b=document.getElementById(id);
-if(!b)return;
-if(load){b.disabled=true;b.dataset.orig=b.innerHTML;b.innerHTML='<span style="display:inline-block;width:16px;height:16px;border:2px solid rgba(128,128,128,.3);border-top-color:var(--text);border-radius:50%;animation:spin .8s linear infinite;margin-right:8px"></span>...'}
-else{b.disabled=false;b.innerHTML=b.dataset.orig}
-}
-
 function checkFB(){
-if(!auth){showToast(T[currentLang].use_live,'error');return false}
-return true;
+  if(!auth){showToast(location.protocol==='file:'?t('use_live'):t('err'),'error');return false;}
+  return true;
 }
+function setBtnLoading(id,on){
+  const b=$(id);if(!b)return;
+  if(on){b.dataset.orig=b.innerHTML;b.disabled=true;b.innerHTML='<span class="spinner"></span>';}
+  else{b.disabled=false;if(b.dataset.orig)b.innerHTML=b.dataset.orig;}
+}
+function authError(e){
+  const c=e&&e.code||'';
+  if(c==='auth/popup-closed-by-user'||c==='auth/cancelled-popup-request')showToast(t('cancelled'),'error');
+  else if(c==='auth/popup-blocked')showToast(t('allow_popups'),'error');
+  else if(c==='auth/operation-not-supported-in-this-environment')showToast(t('use_live'),'error');
+  else if(c==='auth/invalid-credential'||c==='auth/wrong-password'||c==='auth/user-not-found')showToast(t('bad_credentials'),'error');
+  else if(c==='auth/email-already-in-use')showToast(t('email_taken'),'error');
+  else if(c==='auth/weak-password')showToast(t('pass_min'),'error');
+  else showToast(t('err')+': '+(e.message||c),'error');
+}
+function loginWithGoogle(){if(!checkFB())return;setBtnLoading('googleBtn',true);
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(authError).finally(()=>setBtnLoading('googleBtn',false));}
+function loginWithGithub(){if(!checkFB())return;setBtnLoading('githubBtn',true);
+  auth.signInWithPopup(new firebase.auth.GithubAuthProvider()).catch(authError).finally(()=>setBtnLoading('githubBtn',false));}
 
-function loginWithGoogle(){
-if(!checkFB())return;
-setLoading('googleBtn',true);
-auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
-.then(r=>handleSuccess(r.user)).catch(handleError).finally(()=>setLoading('googleBtn',false));
+let authMode='login';
+function showEmailForm(){$('socialWrap').style.display='none';$('emailForm').style.display='block';setTimeout(()=>$('emailInput').focus(),80);}
+function showSocial(){$('socialWrap').style.display='block';$('emailForm').style.display='none';}
+function renderAuthMode(){
+  const s=$('authSubmit'),txt=$('authSwitchText'),lnk=$('authSwitchLink');
+  const sk=authMode==='login'?'submit_login':'submit_register';
+  const tk=authMode==='login'?'no_account':'have_account';
+  const lk=authMode==='login'?'register':'signin_link';
+  s.dataset.i18n=sk;s.textContent=t(sk);
+  txt.dataset.i18n=tk;txt.textContent=t(tk);
+  lnk.dataset.i18n=lk;lnk.textContent=t(lk);
+  $('passInput').autocomplete=authMode==='login'?'current-password':'new-password';
 }
-
-function loginWithGithub(){
-if(!checkFB())return;
-setLoading('githubBtn',true);
-auth.signInWithPopup(new firebase.auth.GithubAuthProvider())
-.then(r=>handleSuccess(r.user)).catch(handleError).finally(()=>setLoading('githubBtn',false));
+function toggleAuthMode(){authMode=authMode==='login'?'register':'login';renderAuthMode();}
+function submitEmail(){
+  if(!checkFB())return;
+  const email=$('emailInput').value.trim(),pass=$('passInput').value;
+  if(!email||!pass)return showToast(t('fill_fields'),'error');
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return showToast(t('bad_email'),'error');
+  if(pass.length<6)return showToast(t('pass_min'),'error');
+  const btn=$('authSubmit');btn.disabled=true;const orig=btn.innerHTML;btn.innerHTML='<span class="spinner"></span>';
+  const op=authMode==='login'?auth.signInWithEmailAndPassword(email,pass):auth.createUserWithEmailAndPassword(email,pass);
+  op.catch(authError).finally(()=>{btn.disabled=false;btn.innerHTML=orig;renderAuthMode();});
 }
-
-function loginWithEmail(){
-if(!checkFB())return;
-const e=document.getElementById('emailInput').value.trim();
-const p=document.getElementById('passwordInput').value;
-if(!e||!p)return showToast(T[currentLang].fill_fields,'error');
-auth.signInWithEmailAndPassword(e,p)
-.then(r=>handleSuccess(r.user))
-.catch(err=>{
-if(err.code==='auth/user-not-found'||err.code==='auth/invalid-credential'||err.code==='auth/wrong-password')registerWithEmail(e,p);
-else showToast(T[currentLang].error+': '+err.message,'error');
-});
+function baseUser(u){
+  return {uid:u.uid,email:u.email||'',name:u.displayName||(u.email?u.email.split('@')[0]:'User'),
+    avatar:(u.displayName||u.email||'U').charAt(0).toUpperCase(),photoURL:u.photoURL||'',balance:0,keys:[],purchases:[]};
 }
-
-function registerWithEmail(e,p){
-if(p.length<6)return showToast(T[currentLang].pass_min,'error');
-auth.createUserWithEmailAndPassword(e,p)
-.then(r=>handleSuccess(r.user))
-.catch(err=>showToast(err.code==='auth/email-already-in-use'?T[currentLang].email_taken:err.message,'error'));
+function loadUserDoc(u){
+  const data=baseUser(u);
+  const finish=()=>{currentUser=data;updateUserUI(data);if($('dashModal').classList.contains('active'))renderDashboard();};
+  if(db){db.collection('users').doc(u.uid).get().then(doc=>{
+    if(doc.exists){const d=doc.data();data.balance=d.balance||0;data.keys=d.keys||[];data.purchases=d.purchases||[];if(d.name)data.name=d.name;}
+    finish();
+  }).catch(finish);}else finish();
 }
-
-function handleSuccess(user){
-const data={
-name:user.displayName||user.email.split('@')[0],
-email:user.email,
-avatar:(user.displayName||user.email).charAt(0).toUpperCase(),
-uid:user.uid,
-photoURL:user.photoURL,
-balance:0,
-keys:[],
-purchases:[]
-};
-
-if(db){
-db.collection('users').doc(user.uid).get().then(doc=>{
-if(doc.exists){
-const d=doc.data();
-data.balance=d.balance||0;
-data.keys=d.keys||[];
-data.purchases=d.purchases||[];
-}
-currentUser=data;
-localStorage.setItem('orbit_user',JSON.stringify(data));
-closeModal();
-updateUserUI(data);
-showToast(T[currentLang].login_success,'success');
-}).catch(()=>{
-currentUser=data;
-saveUser();
-closeModal();
-updateUserUI(data);
-showToast(T[currentLang].login_success,'success');
-});
-}else{
-currentUser=data;
-localStorage.setItem('orbit_user',JSON.stringify(data));
-closeModal();
-updateUserUI(data);
-showToast(T[currentLang].login_success,'success');
-}
-}
-
-function handleError(e){
-let m=T[currentLang].error;
-if(e.code==='auth/popup-closed-by-user')m=currentLang==='ru'?'Вход отменён':currentLang==='en'?'Cancelled':'已取消';
-else if(e.code==='auth/popup-blocked')m=currentLang==='ru'?'Разреши всплывающие окна':currentLang==='en'?'Allow popups':'允许弹窗';
-else if(e.code==='auth/operation-not-supported-in-this-environment')m=T[currentLang].use_live;
-else m=e.message;
-showToast(m,'error');
-}
-
-function logout(){
-if(auth){
-auth.signOut().then(()=>{
-currentUser=null;
-localStorage.removeItem('orbit_user');
-loginWrapper.style.display='block';
-mobileLoginWrapper.style.display='block';
-userProfile.classList.remove('active');
-mobileUserProfile.classList.remove('active');
-userAvatar.style.background='linear-gradient(135deg,#fff,#888)';
-userAvatar.textContent='U';
-mobileUserAvatar.style.background='linear-gradient(135deg,#fff,#888)';
-mobileUserAvatar.textContent='U';
-showToast(T[currentLang].logout_msg,'success');
-});
-}
-}
-
+if(auth){auth.onAuthStateChanged(u=>{
+  if(u){loadUserDoc(u);}
+  else{currentUser=null;updateUserUI(null);}
+});}
 function updateUserUI(d){
-loginWrapper.style.display='none';
-mobileLoginWrapper.style.display='none';
-userProfile.classList.add('active');
-mobileUserProfile.classList.add('active');
-userAvatar.textContent=d.avatar;
-mobileUserAvatar.textContent=d.avatar;
-userName.textContent=d.name;
-mobileUserName.textContent=d.name;
-if(d.photoURL){
-const bg=`url(${d.photoURL}) center/cover`;
-userAvatar.style.background=bg;
-mobileUserAvatar.style.background=bg;
-userAvatar.textContent='';
-mobileUserAvatar.textContent='';
-}else{
-userAvatar.style.background='linear-gradient(135deg,#fff,#888)';
-mobileUserAvatar.style.background='linear-gradient(135deg,#fff,#888)';
+  const pairs=[['loginWrap','userProfile','userAvatar','userName'],['mLoginWrap','mUserProfile','mUserAvatar','mUserName']];
+  pairs.forEach(([lw,up,ua,un])=>{
+    const L=$(lw),P=$(up),A=$(ua),N=$(un);
+    if(d){L.style.display='none';P.classList.add('active');N.textContent=d.name;
+      if(d.photoURL){A.style.backgroundImage='url('+d.photoURL+')';A.textContent='';}
+      else{A.style.backgroundImage='';A.textContent=d.avatar;}
+    }else{L.style.display='';P.classList.remove('active');A.style.backgroundImage='';A.textContent='U';N.textContent='User';}
+  });
 }
+function logout(){
+  if(!auth)return;
+  auth.signOut().then(()=>{closeOv('dashModal');showToast(t('logout_msg'),'success');}).catch(authError);
+}
+function saveUser(){
+  if(!currentUser)return;
+  if(db){db.collection('users').doc(currentUser.uid).set({
+    balance:currentUser.balance,keys:currentUser.keys,purchases:currentUser.purchases,
+    email:currentUser.email,name:currentUser.name,updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  },{merge:true}).catch(e=>console.warn('save:',e));}
 }
 
-if(auth){
-auth.onAuthStateChanged(u=>{
-if(u){
-const d={name:u.displayName||u.email.split('@')[0],email:u.email,avatar:(u.displayName||u.email).charAt(0).toUpperCase(),uid:u.uid,photoURL:u.photoURL,balance:0,keys:[],purchases:[]};
-if(db){
-db.collection('users').doc(u.uid).get().then(doc=>{
-if(doc.exists){const x=doc.data();d.balance=x.balance||0;d.keys=x.keys||[];d.purchases=x.purchases||[]}
-currentUser=d;
-localStorage.setItem('orbit_user',JSON.stringify(d));
-updateUserUI(d);
-}).catch(()=>{currentUser=d;updateUserUI(d)});
-}else{currentUser=d;updateUserUI(d)}
-}else{
-loginWrapper.style.display='block';
-mobileLoginWrapper.style.display='block';
-userProfile.classList.remove('active');
-mobileUserProfile.classList.remove('active');
+/* ================= DASHBOARD ================= */
+function openDash(){if(!currentUser)return openAuth();renderDashboard();openOv('dashModal');}
+const fmt=n=>Number(n||0).toLocaleString(currentLang==='zh'?'zh-CN':currentLang);
+function renderDashboard(){
+  if(!currentUser)return;
+  $('dashEmail').textContent=currentUser.email;
+  $('balanceValue').textContent=fmt(currentUser.balance);
+  const kl=$('keysList');
+  if(!currentUser.keys.length){kl.innerHTML='<div class="empty-state"><div class="es-icon">🔑</div>'+t('no_keys')+'</div>';}
+  else{kl.innerHTML=currentUser.keys.map((k,i)=>
+    '<div class="api-key-item"><span class="api-key-value">'+esc(k)+'</span>'+
+    '<button class="key-act" data-act="copy" data-idx="'+i+'">'+t('copy_btn')+'</button>'+
+    '<button class="key-act danger" data-act="del" data-idx="'+i+'">'+t('revoke')+'</button></div>').join('');}
+  const pl=$('purchasesList');
+  if(!currentUser.purchases.length){pl.innerHTML='<div class="empty-state">'+t('no_purchases')+'</div>';}
+  else{pl.innerHTML=currentUser.purchases.map(p=>{
+    const d=new Date(p.date);const ds=d.toLocaleDateString(currentLang==='zh'?'zh-CN':currentLang);
+    return '<div class="purchase-item"><span><b>'+t('pack_'+(p.pack==='starter'?'starter':p.pack==='pro'?'pro':p.pack==='business'?'biz':'ent'))+'</b> · '+fmt(p.tokens)+'</span><span>$'+p.price+' · '+ds+'</span></div>';
+  }).join('');}
 }
+$('keysList').addEventListener('click',async e=>{
+  const btn=e.target.closest('[data-act]');if(!btn||!currentUser)return;
+  const idx=+btn.dataset.idx,key=currentUser.keys[idx];if(key==null)return;
+  if(btn.dataset.act==='copy'){if(await copyText(key))showToast(t('key_copied'),'success');}
+  else{currentUser.keys.splice(idx,1);saveUser();renderDashboard();showToast(t('key_deleted'),'success');}
 });
+function generateKey(){
+  if(!currentUser)return;
+  const bytes=new Uint8Array(20);crypto.getRandomValues(bytes);
+  const key='orbit_'+Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
+  currentUser.keys.unshift(key);saveUser();renderDashboard();showToast(t('key_created'),'success');
 }
 
-function showToast(m,t='success'){
-const el=document.getElementById('toast');
-el.textContent=m;
-el.className='toast '+t+' show';
-setTimeout(()=>el.classList.remove('show'),3000);
+/* ================= PURCHASE ================= */
+const PACKS={starter:{tokens:1e6,price:5,label:'pack_starter'},pro:{tokens:5e6,price:20,label:'pack_pro'},business:{tokens:1e7,price:35,label:'pack_biz'},enterprise:{tokens:5e7,price:150,label:'pack_ent'}};
+let pendingPack=null;
+function openBuy(id){
+  if(!currentUser){showToast(t('sign_first'),'error');openAuth();return;}
+  pendingPack=id;const p=PACKS[id];
+  $('buyPackName').textContent=t(p.label);
+  $('buyPackTokens').textContent=fmt(p.tokens)+' '+t('tokens');
+  $('buyPackPrice').textContent='$'+p.price;
+  openOv('buyModal');
+}
+function confirmPurchase(){
+  if(!pendingPack||!currentUser)return;
+  const p=PACKS[pendingPack],btn=$('buyConfirmBtn');
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span>'+t('processing');
+  setTimeout(()=>{
+    currentUser.balance=(currentUser.balance||0)+p.tokens;
+    currentUser.purchases.unshift({pack:pendingPack,tokens:p.tokens,price:p.price,date:new Date().toISOString()});
+    saveUser();
+    btn.disabled=false;btn.textContent=t('confirm');
+    closeOv('buyModal');pendingPack=null;
+    showToast(t('buy_success'),'success');
+    openDash();
+  },650);
 }
 
-// INIT
-window.addEventListener('DOMContentLoaded',()=>{
-const saved=localStorage.getItem('orbit_user');
-if(saved){
-try{
-const d=JSON.parse(saved);
-currentUser=d;
-updateUserUI(d);
-}catch(e){localStorage.removeItem('orbit_user')}
-}
-const savedLang=localStorage.getItem('orbit_lang')||'ru';
-typeWriter(T[savedLang].typewriter);
-const btn=document.querySelector(`button[onclick="setLang('${savedLang}')"]`);
-if(btn)btn.click();
-});
-
-window.addEventListener('resize',()=>{
-const newIsMobile=window.innerWidth<768;
-if(newIsMobile!==isMobile){location.reload()}
-});
+/* ================= INIT ================= */
+if(location.protocol==='file:')$('fileBanner').classList.add('show');
+setLang(currentLang);
+renderAuthMode();
+function hidePreloader(){$('preloader').classList.add('hidden');document.body.classList.add('loaded');}
+window.addEventListener('load',()=>setTimeout(hidePreloader,500));
+setTimeout(hidePreloader,2600); /* fallback if CDN slow */
 </script>
 </body>
 </html>
