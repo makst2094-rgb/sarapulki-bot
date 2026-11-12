@@ -28,7 +28,7 @@ active_cases = {}
 CITIES_LIST = [
     {"id": 1, "name": "Москва", "emoji": "🏛️", "work_bonus": 0.20, "desc": "+20% к зарплате", "bonus_type": "work", "bonus_value": 20},
     {"id": 2, "name": "Сарапул", "emoji": "🏘️", "market_discount": 0.15, "desc": "-15% на покупки", "bonus_type": "market", "bonus_value": 15},
-    {"id": 3, "name": "Сыктывкар", "emoji": "🌲", "rob_bonus": 0.10, "desc": "+10% к шансу ограбления", "bonus_type": "rob", "bonus_value": 10},
+    {"id": 3, "name": "Санкт-Питербург", "emoji": "🏛️", "rob_bonus": 0.10, "desc": "+10% к шансу ограбления", "bonus_type": "rob", "bonus_value": 10},
 ]
 
 # ═══════════════════════════════════════════
