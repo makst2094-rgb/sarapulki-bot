@@ -79,7 +79,6 @@ JAIL_DEBT_THRESHOLD = 500
 JAIL_DEBT_TIMEOUT = 7200
 MAX_BUSINESSES_PER_TYPE = 10
 
-# Расходы казны (в день)
 FEDERAL_SALARY_PRESIDENT = 50000
 FEDERAL_SALARY_PRIME = 30000
 FEDERAL_SOCIAL_AID = 1000
@@ -223,11 +222,6 @@ async def init_db():
         return
 
     async with pool.acquire() as conn:
-        # ВАЖНО: Мы больше не удаляем таблицы при каждом запуске, чтобы сохранить данные пользователей.
-        # Если нужно сбросить всё, раскомментируйте следующие строки ОДИН РАЗ:
-        # for table in ["stock_holdings", "stocks", "marketplace", "robbery", "mafia_threats", "auctions", "auction_bids", "heist_cooldowns", "credits", "users", "profiles", "inventory", "businesses", "garage", "daily_bonus", "lottery_tickets", "usernames", "bank", "education", "loans", "jail", "jail_fines", "achievements", "debts", "state_debts", "cities", "player_cities", "city_treasury", "mayors", "mayor_candidates", "mayor_votes", "city_decrees", "state_treasury", "federal_roles", "federal_candidates", "federal_votes", "federal_elections_start", "mayor_elections_start", "federal_decrees", "mayor_reports", "impeachment_votes", "mayor_projects"]:
-        #     await conn.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
-
         tables = [
             "CREATE TABLE IF NOT EXISTS users (chat_id BIGINT, user_id BIGINT, balance INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id))",
             "CREATE TABLE IF NOT EXISTS profiles (chat_id BIGINT, user_id BIGINT, job_key TEXT DEFAULT 'novice', level INTEGER DEFAULT 1, last_work_time REAL DEFAULT 0, coffee_level INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id))",
@@ -267,7 +261,6 @@ async def init_db():
         for t in tables:
             await conn.execute(t)
         
-        # Проверка наличия колонки coffee_level
         try:
             await conn.execute("ALTER TABLE profiles ADD COLUMN coffee_level INTEGER DEFAULT 0")
         except: 
@@ -385,13 +378,6 @@ async def cleanup_old_cases():
     now = time.time()
     to_delete = [cid for cid, case in active_cases.items() if now - int(cid.split("<em>")[-1]) > 600]
     for case_id in to_delete:
-        parts = case_id.split("</em>")
-        # Внимание: здесь была ошибка в парсинге ID, исправляем логику удаления
-        try:
-            # Предполагаем формат ID из original кода, но лучше использовать отдельное поле
-            pass 
-        except:
-            pass
         del active_cases[case_id]
 
 async def auto_cleanup_timer(case_id):
@@ -403,7 +389,6 @@ async def arrest_player(cid, uid):
     arrested = []
     total_value = 0
     
-    # Банк
     bank_data = await get_bank(cid, uid)
     if bank_data['deposit'] > 0:
         total_value += bank_data['deposit']
@@ -411,7 +396,6 @@ async def arrest_player(cid, uid):
         async with pool.acquire() as conn:
             await conn.execute("UPDATE bank SET deposit=0, last_interest_time=$1 WHERE chat_id=$2 AND user_id=$3", time.time(), cid, uid)
 
-    # Машины
     async with pool.acquire() as conn:
         cars = await conn.fetch("SELECT car_key FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
         if cars:
@@ -420,19 +404,16 @@ async def arrest_player(cid, uid):
             arrested.append(f"🚗 Машины: {', '.join(car_names)}")
             await conn.execute("DELETE FROM garage WHERE chat_id=$1 AND user_id=$2", cid, uid)
 
-    # Бизнесы
     async with pool.acquire() as conn:
         businesses = await conn.fetch("SELECT business_name, income FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
         if businesses:
             biz_names = [b['business_name'] for b in businesses]
             for biz in businesses:
-                # Оценка бизнеса примерно в 6 месяцев дохода
                 biz_price = biz['income'] * 180 
                 total_value += biz_price
             arrested.append(f"🏢 Бизнесы: {', '.join(biz_names)}")
             await conn.execute("DELETE FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, uid)
 
-    # Инвентарь
     async with pool.acquire() as conn:
         items = await conn.fetch("SELECT item_name, rarity FROM inventory WHERE chat_id=$1 AND user_id=$2", cid, uid)
         if items:
@@ -441,7 +422,6 @@ async def arrest_player(cid, uid):
             arrested.append(f"🎒 Предметы: {', '.join(item_names)}")
             await conn.execute("DELETE FROM inventory WHERE chat_id=$1 AND user_id=$2", cid, uid)
 
-    # Сброс профессии
     p = await get_profile(cid, uid)
     if p['level'] > 1:
         total_value += (p['level'] - 1) * 5000
@@ -541,13 +521,11 @@ async def loan_interest_loop():
                 cid, uid = loan['chat_id'], loan['user_id']
                 if time.time() > loan['due_date']:
                     total_debt = loan['amount'] + loan['interest']
-                    # Проверка баланса перед арестом
                     user = await get_user(cid, uid)
                     if user['balance'] < total_debt:
                          arrested, confiscated_value = await arrest_player(cid, uid)
                          remaining_debt = total_debt - confiscated_value
                          if remaining_debt > 0:
-                             # Если после конфискации все еще долг, пытаемся снять с баланса (если вдруг остался)
                              current_bal = (await get_user(cid, uid))['balance']
                              if current_bal > 0:
                                  pay = min(current_bal, remaining_debt)
@@ -561,7 +539,6 @@ async def loan_interest_loop():
                          except: pass
                          await clear_loan(cid, uid)
                     else:
-                        # Если денег хватает, просто списываем
                         await update_balance(cid, uid, -total_debt)
                         await clear_loan(cid, uid)
                         try: await bot.send_message(cid, f"✅ Кредит погашен автоматически со счета. Списано: {fmt_money(total_debt)}", parse_mode="HTML")
@@ -622,7 +599,6 @@ async def run_collectors(debt):
     seized_items = []
     
     async with pool.acquire() as conn:
-        # Изъятие машин
         cars = await conn.fetch("SELECT id, car_name FROM garage WHERE chat_id=$1 AND user_id=$2", cid, borrower_id)
         for car in cars:
             if collected >= total_debt: break
@@ -632,7 +608,6 @@ async def run_collectors(debt):
                 collected += car_price
                 seized_items.append(f"🚗 {car['car_name']} ({fmt_money(car_price)})")
 
-        # Изъятие бизнесов
         if collected < total_debt:
             businesses = await conn.fetch("SELECT id, business_name FROM businesses WHERE chat_id=$1 AND user_id=$2", cid, borrower_id)
             for biz in businesses:
@@ -643,7 +618,6 @@ async def run_collectors(debt):
                     collected += biz_price
                     seized_items.append(f"🏪 {biz['business_name']} ({fmt_money(biz_price)})")
 
-        # Списание с баланса
         user = await get_user(cid, borrower_id)
         if collected < total_debt and user['balance'] > 0:
             take = min(user['balance'], total_debt - collected)
@@ -654,10 +628,9 @@ async def run_collectors(debt):
         remaining = total_debt - collected
         if remaining > 0:
             await conn.execute("INSERT INTO state_debts VALUES ($1,$2,$3) ON CONFLICT (chat_id, user_id) DO UPDATE SET amount=state_debts.amount+$3", cid, borrower_id, remaining)
-            # Если остаток положительный, значит мы не добрали, но долг уже переведен в state_debts
         
         await conn.execute("UPDATE debts SET status='collected' WHERE id=$1", debt['id'])
-        await update_balance(cid, lender_id, debt_amount) # Возвращаем основную сумму кредитору
+        await update_balance(cid, lender_id, debt_amount)
 
     try: b_name = (await bot.get_chat_member(cid, borrower_id)).user.full_name
     except: b_name = "Должник"
@@ -1059,6 +1032,109 @@ def get_federal_decree_name(decree_type):
     names = {'amnesty': '🕊️ Амнистия', 'tax_cut': '📉 Снижение налога до 5%', 'tax_boost': '📈 Повышение до 15%', 'emergency': '🚨 ЧП', 'subsidy': '💰 Субсидии (+10%)', 'investment': '🏗️ Инвестиции (+5000)'}
     return names.get(decree_type, 'Неизвестный указ')
 
+# --- ПРОВЕРКА ВЫБОРОВ И СРОКОВ (ДОБАВЛЕНО!) ---
+async def check_all_elections_and_terms():
+    print("🏛️ Единая проверка сроков и выборов запущена")
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            async with pool.acquire() as conn:
+                now = time.time()
+                
+                # Проверка истёкших сроков мэров
+                expired_mayors = await conn.fetch("SELECT chat_id, city_id FROM mayors WHERE expires_at <= $1", now)
+                for mayor_data in expired_mayors:
+                    cid = mayor_data['chat_id']
+                    city_id = mayor_data['city_id']
+                    await conn.execute("DELETE FROM mayors WHERE chat_id=$1 AND city_id=$2", cid, city_id)
+                    await conn.execute("DELETE FROM mayor_elections_start WHERE chat_id=$1 AND city_id=$2", cid, city_id)
+                    city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+                    if city:
+                        try: await bot.send_message(cid, f"🏛️ <b>СРОК МЭРА В {city['emoji']} {city['name']} ИСТЁК!</b>\n\n⏳ Открыто окно для новых выборов на 24 часа.\nИспользуйте /mayor_nominate", parse_mode="HTML")
+                        except: pass
+                
+                # Финализация выборов мэров
+                expired_mayor_elections = await conn.fetch("SELECT chat_id, city_id, election_id FROM mayor_elections_start WHERE started_at < $1", now - MAYOR_ELECTION_DURATION)
+                for elec in expired_mayor_elections:
+                    cid = elec['chat_id']
+                    city_id = elec['city_id']
+                    result = await finalize_mayor_election(cid, city_id)
+                    await conn.execute("DELETE FROM mayor_elections_start WHERE chat_id=$1 AND city_id=$2 AND election_id=$3", cid, city_id, elec['election_id'])
+                    city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+                    if city:
+                        if result:
+                            try: winner_name = (await bot.get_chat_member(cid, result['user_id'])).user.full_name
+                            except: winner_name = f"User{result['user_id']}"
+                            msg = f"🎉 <b>ВЫБОРЫ МЭРА В {city['emoji']} {city['name']} ЗАВЕРШЕНЫ!</b>\n\n👤 Победитель: {winner_name}\n🗳️ Голосов: {result['votes']}\n⏰ Срок: {MAYOR_TERM_DAYS} дней"
+                        else: msg = f"🏛️ <b>ВЫБОРЫ МЭРА В {city['emoji']} {city['name']} ЗАВЕРШЕНЫ</b>\n\n❌ Никто не баллотировался."
+                        try: await bot.send_message(cid, msg, parse_mode="HTML")
+                        except: pass
+                
+                # Проверка истёкших сроков федеральных ролей
+                expired_federal = await conn.fetch("SELECT chat_id, role FROM federal_roles WHERE expires_at <= $1", now)
+                for role_data in expired_federal:
+                    cid = role_data['chat_id']
+                    role = role_data['role']
+                    await conn.execute("DELETE FROM federal_roles WHERE chat_id=$1 AND role=$2", cid, role)
+                    await conn.execute("DELETE FROM federal_elections_start WHERE chat_id=$1 AND role=$2", cid, role)
+                    role_name = "Президент" if role == 'president' else "Премьер-министр"
+                    emoji = "🏛️" if role == 'president' else "💼"
+                    try: await bot.send_message(cid, f"{emoji} <b>СРОК ПОЛНОМОЧИЙ {role_name.upper()} ИСТЁК!</b>\n\n⏳ Открыто окно для новых выборов на 24 часа.\nИспользуйте /{'president' if role=='president' else 'prime'}_nominate", parse_mode="HTML")
+                    except: pass
+                
+                # Финализация федеральных выборов
+                expired_federal_elections = await conn.fetch("SELECT chat_id, role, election_id FROM federal_elections_start WHERE started_at < $1", now - FEDERAL_ELECTION_DURATION)
+                for elec in expired_federal_elections:
+                    cid = elec['chat_id']
+                    role = elec['role']
+                    result = await finalize_federal_election(cid, role)
+                    await conn.execute("DELETE FROM federal_elections_start WHERE chat_id=$1 AND role=$2 AND election_id=$3", cid, role, elec['election_id'])
+                    role_name = "Президент" if role == 'president' else "Премьер-министр"
+                    emoji = "🏛️" if role == 'president' else "💼"
+                    if result:
+                        try: winner_name = (await bot.get_chat_member(cid, result['user_id'])).user.full_name
+                        except: winner_name = f"User{result['user_id']}"
+                        msg = f"{emoji} <b>ВЫБОРЫ {role_name.upper()} ЗАВЕРШЕНЫ!</b>\n\n👤 Победитель: {winner_name}\n🗳️ Голосов: {result['votes']}\n⏰ Срок: {PRESIDENT_TERM_DAYS} дней"
+                    else: msg = f"{emoji} <b>ВЫБОРЫ {role_name.upper()} ЗАВЕРШЕНЫ</b>\n\n❌ Никто не баллотировался."
+                    try: await bot.send_message(cid, msg, parse_mode="HTML")
+                    except: pass
+        except Exception as e:
+            print(f"Ошибка проверки выборов и сроков: {e}")
+
+# --- ПРОВЕРКА ПРОСРОЧЕННЫХ ПРОЕКТОВ (ДОБАВЛЕНО!) ---
+async def check_overdue_projects():
+    print("⏰ Цикл проверки проектов мэров запущен")
+    while True:
+        await asyncio.sleep(1800)
+        try:
+            async with pool.acquire() as conn:
+                overdue = await conn.fetch("""SELECT * FROM mayor_projects WHERE status='active' AND deadline < $1""", time.time())
+                for proj in overdue:
+                    cid = proj['chat_id']
+                    city_id = proj['city_id']
+                    mayor_id = proj['mayor_id']
+                    fail_count = proj['fail_count'] + 1
+                    city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+                    city_name = city['name'] if city else f"город #{city_id}"
+                    try: mayor_name = (await bot.get_chat_member(cid, mayor_id)).user.full_name
+                    except: mayor_name = f"User{mayor_id}"
+                    
+                    if fail_count >= 2:
+                        await send_to_jail(cid, mayor_id, 6)
+                        await conn.execute("DELETE FROM mayors WHERE chat_id=$1 AND city_id=$2", cid, city_id)
+                        await conn.execute("UPDATE mayor_projects SET status='failed', fail_count=$1, review_result='Авто-снятие' WHERE id=$2", fail_count, proj['id'])
+                        msg = f"🚨 <b>МЭР АВТОМАТИЧЕСКИ СНЯТ!</b>\n\n🏙️ {city_name}\n👤 {mayor_name}\n⚠️ 2-й провал (просрочка)\n🔒 Тюрьма: 6 часов\n📉 Должность: ВАКАНТНО"
+                    else:
+                        fine = int(proj['budget'] * 0.50)
+                        await update_balance(cid, mayor_id, -fine)
+                        await conn.execute("""UPDATE mayors SET approval_rating = GREATEST(0, approval_rating - 20) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
+                        await conn.execute("UPDATE mayor_projects SET status='failed', fail_count=$1, review_result='Авто-штраф' WHERE id=$2", fail_count, proj['id'])
+                        msg = f"⏰ <b>ПРОЕКТ ПРОСРОЧЕН!</b>\n\n🏙️ {city_name}\n👤 Мэр: {mayor_name}\n💸 Авто-штраф: {fmt_money(fine)}\n📉 Рейтинг: -20%\n⚠️ Провалов: {fail_count}/2"
+                    try: await bot.send_message(cid, msg, parse_mode="HTML")
+                    except: pass
+        except Exception as e:
+            print(f"Ошибка проверки проектов: {e}")
+
 # --- МЕНЮ С КНОПКАМИ ---
 @dp.message(Command("start"))
 async def cmd_start(m: Message):
@@ -1146,7 +1222,7 @@ async def callback_menu(callback: CallbackQuery):
         await callback.message.edit_text(text, parse_mode="HTML")
     await callback.answer()
 
-# --- УЛУЧШЕННЫЙ МАРКЕТ С КНОПКАМИ ---
+# --- МАРКЕТ ---
 @dp.message(Command("market"))
 async def cmd_market(m: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -1186,42 +1262,24 @@ async def callback_market(callback: CallbackQuery):
                 text += f"🔹 {v['name']}\n   💰 Цена: {fmt_money(v['price'])}\n   🛒 /buy_market {k}\n\n"
         text += "━━━━━━━━━━━━━━━━━━━━\n🎁 Шансы:\n🟡 Легендарный: 5%\n🔵 Редкий: 20%\n🟢 Обычный: 75%"
         await callback.message.edit_text(text, parse_mode="HTML")
-    elif action == "small":
-        text = "🏢 <b>МАЛЫЙ БИЗНЕС</b>\n\n━━━━━━━━━━━━━━━━━━━━\n"
+    elif action in ("small", "medium", "large", "elite"):
+        ranges = {
+            "small": (0, 15000, "МАЛЫЙ БИЗНЕС", "Идеально для начинающих!"),
+            "medium": (15000, 150000, "СРЕДНИЙ БИЗНЕС", "Стабильный доход!"),
+            "large": (150000, 15000000, "КРУПНЫЙ БИЗНЕС", "Для опытных бизнесменов!"),
+            "elite": (15000000, float('inf'), "ЭЛИТНЫЙ БИЗНЕС", "Максимальный доход!"),
+        }
+        min_p, max_p, title, desc = ranges[action]
+        text = f"🏢 <b>{title}</b>\n\n━━━━━━━━━━━━━━━━━━━━\n"
         for k, v in MARKET.items():
-            if v["type"] == "business" and v["price"] <= 15000:
-                # Исправлен расчет окупаемости: Цена / Доход в сутки
+            if v["type"] == "business" and min_p < v["price"] <= max_p:
                 roi = int(v['price'] / v['income']) if v['income'] > 0 else 0
                 text += f"🔸 {v['name']}\n   💰 Цена: {fmt_money(v['price'])}\n   📈 Доход: {fmt_money(v['income'])}/сутки\n   ⏱️ Окупаемость: ~{roi} дн.\n   🛒 /buy_market {k}\n\n"
-        text += "━━━━━━━━━━━━━━━━━━━━\n💡 Идеально для начинающих!"
-        await callback.message.edit_text(text, parse_mode="HTML")
-    elif action == "medium":
-        text = "🏭 <b>СРЕДНИЙ БИЗНЕС</b>\n\n━━━━━━━━━━━━━━━━━━━━\n"
-        for k, v in MARKET.items():
-            if v["type"] == "business" and 15000 < v["price"] <= 150000:
-                roi = int(v['price'] / v['income']) if v['income'] > 0 else 0
-                text += f"🔸 {v['name']}\n   💰 Цена: {fmt_money(v['price'])}\n   📈 Доход: {fmt_money(v['income'])}/сутки\n   ⏱️ Окупаемость: ~{roi} дн.\n   🛒 /buy_market {k}\n\n"
-        text += "━━━━━━━━━━━━━━━━━━━━\n💡 Стабильный доход!"
-        await callback.message.edit_text(text, parse_mode="HTML")
-    elif action == "large":
-        text = "🏗️ <b>КРУПНЫЙ БИЗНЕС</b>\n\n━━━━━━━━━━━━━━━━━━━━\n"
-        for k, v in MARKET.items():
-            if v["type"] == "business" and 150000 < v["price"] <= 15000000:
-                roi = int(v['price'] / v['income']) if v['income'] > 0 else 0
-                text += f"🔸 {v['name']}\n   💰 Цена: {fmt_money(v['price'])}\n   📈 Доход: {fmt_money(v['income'])}/сутки\n   ⏱️ Окупаемость: ~{roi} дн.\n   🛒 /buy_market {k}\n\n"
-        text += "━━━━━━━━━━━━━━━━━━━━\n💡 Для опытных бизнесменов!"
-        await callback.message.edit_text(text, parse_mode="HTML")
-    elif action == "elite":
-        text = "👑 <b>ЭЛИТНЫЙ БИЗНЕС</b>\n\n━━━━━━━━━━━━━━━━━━━━\n"
-        for k, v in MARKET.items():
-            if v["type"] == "business" and v["price"] > 15000000:
-                roi = int(v['price'] / v['income']) if v['income'] > 0 else 0
-                text += f"🔸 {v['name']}\n   💰 Цена: {fmt_money(v['price'])}\n   📈 Доход: {fmt_money(v['income'])}/сутки\n   ⏱️ Окупаемость: ~{roi} дн.\n   🛒 /buy_market {k}\n\n"
-        text += "━━━━━━━━━━━━━━━━━━━━\n💎 Максимальный доход!"
+        text += f"━━━━━━━━━━━━━━━━━━━━\n💡 {desc}"
         await callback.message.edit_text(text, parse_mode="HTML")
     await callback.answer()
 
-# --- ИСПРАВЛЕННЫЙ /COLLECT ---
+# --- COLLECT (ИСПРАВЛЕНО: раз в 24 часа) ---
 @dp.message(Command("collect"))
 async def cmd_collect(m: Message):
     try:
@@ -1242,7 +1300,7 @@ async def cmd_collect(m: Message):
         
         for b in bz:
             time_since = now - (b['last_collect_time'] or 0)
-            # Исправлено: сбор прибыли строго раз в 24 часа (86400 секунд)
+            # ИСПРАВЛЕНО: сбор прибыли строго раз в 24 часа (86400 секунд)
             if time_since >= 86400: 
                 income = b['income'] or 0
                 tot += income
@@ -1352,7 +1410,6 @@ async def cmd_work(m: Message):
     loan = await get_loan(cid, uid)
     if loan['amount'] > 0 and time.time() > loan['due_date']:
         total_debt = loan['amount'] + loan['interest']
-        # Проверка, хватает ли денег на балансе, прежде чем арестовывать
         if user['balance'] < total_debt:
             arrested, confiscated_value = await arrest_player(cid, uid)
             remaining_debt = total_debt - confiscated_value
@@ -1368,7 +1425,6 @@ async def cmd_work(m: Message):
                 except: pass
                 return await m.answer(f"⛔ Имущество конфисковано!", parse_mode="HTML")
         else:
-            # Если денег хватает, просто списываем
             await update_balance(cid, uid, -total_debt)
             await clear_loan(cid, uid)
             return await m.answer(f"✅ Кредит погашен автоматически. Списано: {fmt_money(total_debt)}", parse_mode="HTML")
@@ -1377,7 +1433,6 @@ async def cmd_work(m: Message):
     p = await get_profile(cid, uid)
     jk = p['job_key']
     
-    # Проверка образования
     if jk != 'novice':
         edu = await get_education(cid, uid)
         if jk not in edu['completed_courses']:
@@ -1389,7 +1444,6 @@ async def cmd_work(m: Message):
     j = JOBS[jk]
     ct = time.time()
     
-    # Расчет кулдауна
     work_bonus_multiplier = 1.0
     player_city = await get_player_city(cid, uid)
     if player_city:
@@ -1403,7 +1457,6 @@ async def cmd_work(m: Message):
     if subsidy_decree: work_bonus_multiplier += 0.10
     
     coffee_level = p.get('coffee_level', 0)
-    # Кофе уменьшает кулдаун на 10% за уровень (макс 50%)
     coffee_bonus = 1.0 - (coffee_level * 0.1)
     cd = j['cooldown'] * coffee_bonus
     
@@ -2369,7 +2422,7 @@ async def callback_admin_panel(callback: CallbackQuery):
                 cid = ADMIN_CHAT_ID
                 week_num = int(time.time() // 604800)
                 text = "🗳️ <b>ГОЛОСА</b>\n\n"
-                mayor_election_id = f"elec_{cid}<em>w{week_num}"
+                mayor_election_id = f"elec_{cid}_{week_num}"
                 mayors = await conn.fetch("SELECT user_id, votes FROM mayor_candidates WHERE chat_id=$1 AND election_id=$2 ORDER BY votes DESC", cid, mayor_election_id)
                 if mayors:
                     text += "🏛️ <b>Мэры:</b>\n"
@@ -2378,7 +2431,7 @@ async def callback_admin_panel(callback: CallbackQuery):
                         except: name = f"User{c['user_id']}"
                         text += f"{i}. {name} — {c['votes']}\n"
                     text += "\n"
-                pres_election_id = f"federal</em>{cid}<em>president_w{week_num}"
+                pres_election_id = f"federal_{cid}_president_w{week_num}"
                 presidents = await conn.fetch("SELECT user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='president' AND election_id=$2 ORDER BY votes DESC", cid, pres_election_id)
                 if presidents:
                     text += "🇷🇺 <b>Президент:</b>\n"
@@ -2387,7 +2440,7 @@ async def callback_admin_panel(callback: CallbackQuery):
                         except: name = f"User{c['user_id']}"
                         text += f"{i}. {name} — {c['votes']}\n"
                     text += "\n"
-                prime_election_id = f"federal</em>{cid}_prime_minister_w{week_num}"
+                prime_election_id = f"federal_{cid}_prime_minister_w{week_num}"
                 primes = await conn.fetch("SELECT user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='prime_minister' AND election_id=$2 ORDER BY votes DESC", cid, prime_election_id)
                 if primes:
                     text += "💼 <b>Премьер:</b>\n"
@@ -2447,15 +2500,15 @@ async def cmd_sys_remove(m: Message):
             cid = ADMIN_CHAT_ID
             week_num = int(time.time() // 604800)
             if election_type == 'mayor':
-                election_id = f"elec_{cid}<em>w{week_num}"
+                election_id = f"elec_{cid}_{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM mayor_candidates WHERE chat_id=$1 AND election_id=$2 ORDER BY id ASC", cid, election_id)
                 table = 'mayor_candidates'; role_name = 'мэра'
             elif election_type == 'president':
-                election_id = f"federal</em>{cid}<em>president_w{week_num}"
+                election_id = f"federal_{cid}_president_w{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='president' AND election_id=$2 ORDER BY id ASC", cid, election_id)
                 table = 'federal_candidates'; role_name = 'президента'
             elif election_type == 'prime':
-                election_id = f"federal</em>{cid}_prime_minister_w{week_num}"
+                election_id = f"federal_{cid}_prime_minister_w{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='prime_minister' AND election_id=$2 ORDER BY id ASC", cid, election_id)
                 table = 'federal_candidates'; role_name = 'премьера'
             else: return await m.answer("❌ Неверный тип!")
@@ -2487,15 +2540,15 @@ async def cmd_sys_add(m: Message):
             cid = ADMIN_CHAT_ID
             week_num = int(time.time() // 604800)
             if election_type == 'mayor':
-                election_id = f"elec_{cid}<em>w{week_num}"
+                election_id = f"elec_{cid}_{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM mayor_candidates WHERE chat_id=$1 AND election_id=$2 ORDER BY id ASC", cid, election_id)
                 table = 'mayor_candidates'; role_name = 'мэра'
             elif election_type == 'president':
-                election_id = f"federal</em>{cid}<em>president_w{week_num}"
+                election_id = f"federal_{cid}_president_w{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='president' AND election_id=$2 ORDER BY id ASC", cid, election_id)
                 table = 'federal_candidates'; role_name = 'президента'
             elif election_type == 'prime':
-                election_id = f"federal</em>{cid}_prime_minister_w{week_num}"
+                election_id = f"federal_{cid}_prime_minister_w{week_num}"
                 candidates = await conn.fetch("SELECT id, user_id, votes FROM federal_candidates WHERE chat_id=$1 AND role='prime_minister' AND election_id=$2 ORDER BY id ASC", cid, election_id)
                 table = 'federal_candidates'; role_name = 'премьера'
             else: return await m.answer("❌ Неверный тип!")
@@ -2921,6 +2974,119 @@ async def cmd_debt_list(m: Message):
     else: t += "\n✅ Мне никто не должен"
     await m.answer(t, parse_mode="HTML")
 
+@dp.message(Command("mayor_project"))
+async def cmd_mayor_project(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    player_city = await get_player_city(cid, uid)
+    if not player_city: return await m.answer("❌ Нет города!")
+    mayor = await get_mayor(cid, player_city['id'])
+    if not mayor or mayor['user_id'] != uid: return await m.answer("❌ Только мэр!")
+    args = m.text.split(maxsplit=1)
+    if len(args) < 2:
+        proj_list = "\n".join([f"• /mayor_project {k} — {v['name']} ({fmt_money(v['cost'])})" for k, v in PROJECT_TYPES.items()])
+        return await m.answer(f"🏗️ <b>ПРОЕКТЫ МЭРА</b>\n\nВыбери проект:\n{proj_list}\n\n⏰ Срок: 24 часа\n⚠️ 1-й провал = штраф 50%\n⚠️ 2-й провал = тюрьма + снятие", parse_mode="HTML")
+    project_key = args[1].lower().strip()
+    if project_key not in PROJECT_TYPES: return await m.answer("❌ Неизвестный проект!")
+    project = PROJECT_TYPES[project_key]
+    cost = project['cost']
+    treasury = await get_city_treasury(cid, player_city['id'])
+    if treasury < cost: return await m.answer(f"❌ В казне только {fmt_money(treasury)}! Нужно {fmt_money(cost)}")
+    async with pool.acquire() as conn:
+        active = await conn.fetchrow("SELECT * FROM mayor_projects WHERE chat_id=$1 AND city_id=$2 AND mayor_id=$3 AND status='active'", cid, player_city['id'], uid)
+        if active: return await m.answer("⚠️ У тебя уже есть активный проект!")
+        await update_city_treasury(cid, player_city['id'], -cost)
+        deadline = time.time() + 86400
+        async with pool.acquire() as conn:
+            await conn.execute("""INSERT INTO mayor_projects (chat_id, city_id, mayor_id, project_type, budget, description, started_at, deadline) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)""", cid, player_city['id'], uid, project_key, cost, project['desc'], time.time(), deadline)
+        await m.answer(f"🏗️ <b>ПРОЕКТ ЗАПУЩЕН!</b>\n\n🏙️ {player_city['emoji']} {player_city['name']}\n📋 {project['name']} — {project['desc']}\n💰 Бюджет: {fmt_money(cost)}\n⏰ Срок: 24 часа\n\nИспользуй <b>/project_done</b> чтобы завершить", parse_mode="HTML")
+
+@dp.message(Command("project_done"))
+async def cmd_project_done(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    player_city = await get_player_city(cid, uid)
+    if not player_city: return await m.answer("❌ Нет города!")
+    async with pool.acquire() as conn:
+        project = await conn.fetchrow("""SELECT * FROM mayor_projects WHERE chat_id=$1 AND city_id=$2 AND mayor_id=$3 AND status='active' ORDER BY started_at DESC LIMIT 1""", cid, player_city['id'], uid)
+        if not project: return await m.answer("❌ Нет активного проекта!")
+        if time.time() > project['deadline']: return await m.answer("⏰ Срок уже истёк! Жди проверки Президента.")
+        await conn.execute("UPDATE mayor_projects SET status='completed', completed_at=$1 WHERE id=$2", time.time(), project['id'])
+        await m.answer(f"✅ <b>ПРОЕКТ ЗАВЕРШЁН!</b>\n\n📋 {PROJECT_TYPES[project['project_type']]['name']}\n⏳ Ожидает проверки Президентом", parse_mode="HTML")
+
+@dp.message(Command("project_check"))
+async def cmd_project_check(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    president = await get_federal_role(cid, 'president')
+    if not president or president['user_id'] != uid: return await m.answer("❌ Только Президент!")
+    args = m.text.split()
+    if len(args) < 2: return await m.answer("⚖️ <b>ПРОВЕРКА ПРОЕКТА</b>\n\n/project_check [город_id] [approve/reject]", parse_mode="HTML")
+    try: city_id = int(args[1])
+    except ValueError: return await m.answer("❌ ID города должен быть числом!")
+    action = args[2].lower() if len(args) > 2 else None
+    if action not in ['approve', 'reject']: return await m.answer("❌ Используй approve или reject!")
+    city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+    if not city: return await m.answer("❌ Город не найден!")
+    async with pool.acquire() as conn:
+        project = await conn.fetchrow("""SELECT * FROM mayor_projects WHERE chat_id=$1 AND city_id=$2 AND status IN ('active','completed') ORDER BY started_at DESC LIMIT 1""", cid, city_id)
+        if not project: return await m.answer(f"✅ В {city['emoji']} {city['name']} нет проектов!")
+        mayor_name = ""
+        try: mayor_name = (await bot.get_chat_member(cid, project['mayor_id'])).user.full_name
+        except: mayor_name = f"User{project['mayor_id']}"
+        project_info = PROJECT_TYPES.get(project['project_type'], {"name": "Неизвестно"})
+        if action == 'approve':
+            bonus = int(project['budget'] * 0.30)
+            await update_city_treasury(cid, city_id, bonus)
+            await conn.execute("""UPDATE mayors SET approval_rating = LEAST(100, approval_rating + 15) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
+            await conn.execute("UPDATE mayor_projects SET status='approved', reviewed_by=$1, review_result='Одобрено' WHERE id=$2", uid, project['id'])
+            msg = f"✅ <b>ПРОЕКТ ОДОБРЕН!</b>\n\n🏙️ {city['emoji']} {city['name']}\n📋 {project_info['name']}\n👤 Мэр: {mayor_name}\n💰 Возврат в казну: {fmt_money(bonus)}\n📈 Рейтинг мэра: +15%"
+            await bot.send_message(cid, msg, parse_mode="HTML")
+            await m.answer("✅ Проект одобрен!")
+        elif action == 'reject':
+            fail_count = project['fail_count'] + 1
+            if fail_count >= 2:
+                await send_to_jail(cid, project['mayor_id'], 6)
+                await conn.execute("DELETE FROM mayors WHERE chat_id=$1 AND city_id=$2", cid, city_id)
+                await conn.execute("UPDATE mayor_projects SET status='failed', fail_count=$1, reviewed_by=$2, review_result='Снят' WHERE id=$3", fail_count, uid, project['id'])
+                msg = f"🔒 <b>МЭР СНЯТ С ДОЛЖНОСТИ!</b>\n\n🏙️ {city['emoji']} {city['name']}\n📋 {project_info['name']}\n👤 {mayor_name}\n⚠️ 2-й провал проекта!\n🔒 Тюрьма: 6 часов\n📉 Должность: ВАКАНТНО"
+            else:
+                fine = int(project['budget'] * 0.50)
+                await update_balance(cid, project['mayor_id'], -fine)
+                await conn.execute("""UPDATE mayors SET approval_rating = GREATEST(0, approval_rating - 20) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
+                await conn.execute("UPDATE mayor_projects SET status='failed', fail_count=$1, reviewed_by=$2, review_result='Штраф' WHERE id=$3", fail_count, uid, project['id'])
+                msg = f"❌ <b>ПРОЕКТ ОТКЛОНЁН!</b>\n\n🏙️ {city['emoji']} {city['name']}\n📋 {project_info['name']}\n👤 Мэр: {mayor_name}\n💸 Штраф: {fmt_money(fine)} (50% бюджета)\n📉 Рейтинг: -20%\n⚠️ Провалов: {fail_count}/2\n🔜 Следующий провал = тюрьма + снятие!"
+            await bot.send_message(cid, msg, parse_mode="HTML")
+            await m.answer("✅ Решение применено!")
+
+@dp.message(Command("project_status"))
+async def cmd_project_status(m: Message):
+    cid, uid = m.chat.id, m.from_user.id
+    args = m.text.split()
+    if len(args) < 2:
+        player_city = await get_player_city(cid, uid)
+        if not player_city: return await m.answer("❌ Нет города!")
+        city_id = player_city['id']
+        city_name = player_city['name']
+        city_emoji = player_city['emoji']
+    else:
+        try: city_id = int(args[1])
+        except ValueError: return await m.answer("❌ ID города должен быть числом!")
+        city = next((c for c in CITIES_LIST if c['id'] == city_id), None)
+        if not city: return await m.answer("❌ Город не найден!")
+        city_name = city['name']
+        city_emoji = city['emoji']
+    async with pool.acquire() as conn:
+        projects = await conn.fetch("""SELECT * FROM mayor_projects WHERE chat_id=$1 AND city_id=$2 ORDER BY started_at DESC LIMIT 5""", cid, city_id)
+        if not projects: return await m.answer(f"🏙️ {city_emoji} {city_name}\n\n📋 Нет проектов")
+        t = f"🏙️ <b>{city_emoji} {city_name}</b>\n\n📋 <b>Проекты:</b>\n\n"
+        for p in projects:
+            proj_info = PROJECT_TYPES.get(p['project_type'], {"name": "Неизвестно"})
+            status_emoji = {'active': '🔄', 'completed': '✅', 'approved': '🏆', 'failed': '❌'}.get(p['status'], '❓')
+            time_left = int(p['deadline'] - time.time())
+            if time_left > 0 and p['status'] == 'active': time_text = f"⏰ {time_left//3600}ч {(time_left%3600)//60}мин"
+            elif p['status'] == 'active': time_text = "⚠️ ПРОСРОЧЕНО"
+            else: time_text = ""
+            t += f"{status_emoji} <b>{proj_info['name']}</b>\n   💰 {fmt_money(p['budget'])} {time_text}\n   📊 Статус: {p['status']}\n\n"
+        await m.answer(t, parse_mode="HTML")
+
 @dp.message(Command("mayor_report"))
 async def cmd_mayor_report(m: Message):
     cid, uid = m.chat.id, m.from_user.id
@@ -2965,9 +3131,8 @@ async def cmd_president_check_mayor(m: Message):
     if action == 'approve':
         remaining = report['budget_allocated'] - report['budget_spent']
         if remaining > 0: await update_city_treasury(cid, city_id, remaining)
-        async with pool.acquire() as conn:
-            await conn.execute("""UPDATE mayors SET approval_rating = LEAST(100, approval_rating + 10) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
-            await conn.execute("UPDATE mayor_reports SET status='approved' WHERE id=$1", report['id'])
+        await conn.execute("""UPDATE mayors SET approval_rating = LEAST(100, approval_rating + 10) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
+        await conn.execute("UPDATE mayor_reports SET status='approved' WHERE id=$1", report['id'])
         msg = f"✅ <b>ОДОБРЕН!</b>\n\n🏙️ {city['emoji']} {city['name']}\n👤 {mayor_name}\n💰 Возврат: {fmt_money(remaining)}\n📈 Рейтинг: +10%"
         await bot.send_message(cid, msg, parse_mode="HTML")
         await m.answer("✅ Одобрено!")
@@ -2977,16 +3142,13 @@ async def cmd_president_check_mayor(m: Message):
             fine_amount = int(report['budget_allocated'] * 0.5)
             await update_balance(cid, report['mayor_id'], -fine_amount)
             msg = f"❌ <b>ОТКЛОНЁН!</b>\n\n🏙️ {city['emoji']} {city['name']}\n👤 {mayor_name}\n💸 Штраф: {fmt_money(fine_amount)}\n📉 Рейтинг: -15%"
-            async with pool.acquire() as conn:
-                await conn.execute("""UPDATE mayors SET approval_rating = GREATEST(0, approval_rating - 15) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
+            await conn.execute("""UPDATE mayors SET approval_rating = GREATEST(0, approval_rating - 15) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
         else:
             jail_hours = 4
             await send_to_jail(cid, report['mayor_id'], jail_hours)
             msg = f"🔒 <b>В ТЮРЬМУ!</b>\n\n🏙️ {city['emoji']} {city['name']}\n👤 {mayor_name} на {jail_hours} ч\n📉 Рейтинг: -25%"
-            async with pool.acquire() as conn:
-                await conn.execute("""UPDATE mayors SET approval_rating = GREATEST(0, approval_rating - 25) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
-        async with pool.acquire() as conn:
-            await conn.execute("UPDATE mayor_reports SET status='rejected' WHERE id=$1", report['id'])
+            await conn.execute("""UPDATE mayors SET approval_rating = GREATEST(0, approval_rating - 25) WHERE chat_id=$1 AND city_id=$2""", cid, city_id)
+        await conn.execute("UPDATE mayor_reports SET status='rejected' WHERE id=$1", report['id'])
         await bot.send_message(cid, msg, parse_mode="HTML")
         await m.answer("✅ Наказание применено!")
 
